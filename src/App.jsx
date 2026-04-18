@@ -32,6 +32,34 @@ const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 const todayKey = () => new Date().toISOString().split("T")[0];
 
+// ── SPEECH ───────────────────────────────────────────────────────────────────
+// Browser-native Web Speech API — free, no API key, works offline on most devices.
+
+const SPEECH_LANG = {
+  English:"en-US", Spanish:"es-ES", French:"fr-FR", German:"de-DE", Italian:"it-IT",
+  Portuguese:"pt-PT", Russian:"ru-RU", "Chinese (Mandarin)":"zh-CN",
+  "Chinese (Cantonese)":"zh-HK", Japanese:"ja-JP", Korean:"ko-KR", Hebrew:"he-IL",
+  Arabic:"ar-SA", Hindi:"hi-IN", Vietnamese:"vi-VN", Thai:"th-TH", Turkish:"tr-TR",
+  Greek:"el-GR", Polish:"pl-PL", Dutch:"nl-NL", Swedish:"sv-SE", Danish:"da-DK",
+  Norwegian:"nb-NO", Finnish:"fi-FI", Czech:"cs-CZ", Hungarian:"hu-HU",
+  Romanian:"ro-RO", Ukrainian:"uk-UA", Indonesian:"id-ID", Filipino:"fil-PH",
+  Malay:"ms-MY", Swahili:"sw-KE", Afrikaans:"af-ZA", Persian:"fa-IR",
+  Bengali:"bn-IN", Urdu:"ur-PK", Tamil:"ta-IN", Telugu:"te-IN", Marathi:"mr-IN",
+  Catalan:"ca-ES", Slovak:"sk-SK", Bulgarian:"bg-BG", Croatian:"hr-HR",
+};
+
+function speak(text, language) {
+  if (!text || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = SPEECH_LANG[language] || "en-US";
+    utter.rate = 0.85;
+    utter.pitch = 1.05;
+    window.speechSynthesis.speak(utter);
+  } catch {}
+}
+
 // ── DOTS ─────────────────────────────────────────────────────────────────────
 
 function dotR(n) {
@@ -98,81 +126,63 @@ function genEquations(stage) {
   return shuffle(c);
 }
 
-function getMathCards(stage) {
-  if (stage==="dots"||stage==="numerals")
-    return shuffle(Array.from({length:100},(_,i)=>({n:i+1})));
+// Doman rolling window: start 0-10, each day drop 2 lowest and add 2 higher.
+// Day 1: 0-10  (11 numbers)
+// Day 2: 2-12  (11 numbers)
+// Day 3: 4-14  ... and so on.
+// Caps at the hundreds so the baby progresses to advanced counting.
+function getDomanWindow(dayNum) {
+  const lo = Math.max(0, (dayNum - 1) * 2);
+  const hi = lo + 10;
+  const nums = [];
+  for (let n = lo; n <= hi; n++) nums.push(n);
+  return nums;
+}
+
+function getMathCards(stage, dayNum) {
+  if (stage==="dots"||stage==="numerals") {
+    const window = getDomanWindow(dayNum);
+    // Show the set 3 times (Doman protocol: 3 sessions per day)
+    const tripled = [...window, ...window, ...window];
+    return shuffle(tripled).map(n => ({ n }));
+  }
   return genEquations(stage);
 }
 
-// ── CURATED BABY-SAFE PHOTOS ─────────────────────────────────────────────────
-// Hand-picked Unsplash photos (direct CDN URLs, no tag-search quirks).
-// Each URL points to a specific verified photo that accurately depicts the word.
-
-const CURATED_PHOTOS = {
-  mama:   "https://images.unsplash.com/photo-1581952976147-5a2d15560349?w=500&q=80",
-  dada:   "https://images.unsplash.com/photo-1560252829-804f1aedf1be?w=500&q=80",
-  baby:   "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=500&q=80",
-  ball:   "https://images.unsplash.com/photo-1510172951991-856a654063f9?w=500&q=80",
-  cat:    "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&q=80",
-  dog:    "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=500&q=80",
-  sun:    "https://images.unsplash.com/photo-1548266652-99cf27701ced?w=500&q=80",
-  moon:   "https://images.unsplash.com/photo-1532693322450-2cb5c511067d?w=500&q=80",
-  tree:   "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=500&q=80",
-  fish:   "https://images.unsplash.com/photo-1524704654690-b56c05c78a00?w=500&q=80",
-  bird:   "https://images.unsplash.com/photo-1444464666168-49d633b86797?w=500&q=80",
-  apple:  "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?w=500&q=80",
-  flower: "https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=500&q=80",
-  water:  "https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=500&q=80",
-  milk:   "https://images.unsplash.com/photo-1563636619-e9143da7973b?w=500&q=80",
-  book:   "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=500&q=80",
-  banana: "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=500&q=80",
-  car:    "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=500&q=80",
-  house:  "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=500&q=80",
-  star:   "https://images.unsplash.com/photo-1464802686167-b939a6910659?w=500&q=80",
-};
-
-// ── PHOTO DISPLAY ────────────────────────────────────────────────────────────
-
-function PhotoDisplay({ word, emoji, seed, style }) {
-  const [failed, setFailed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(()=>{ setFailed(false); setLoaded(false); }, [word, seed]);
-
-  const url = CURATED_PHOTOS[word?.toLowerCase()];
-
-  // No curated photo OR it failed to load → large emoji treatment
-  if (!url || failed) {
-    return (
-      <div style={{
-        ...style,
-        background: "linear-gradient(135deg, #FFF0F1 0%, #FFE4E6 100%)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 180,
-        lineHeight: 1,
-      }}>
-        {emoji || "📸"}
-      </div>
-    );
+// Get the day number based on when parent first opened the app.
+// Stored in localStorage; increments each new calendar day they return.
+function getDayNumber() {
+  try {
+    const key = "lb-day-start";
+    let startStr = localStorage.getItem(key);
+    if (!startStr) {
+      localStorage.setItem(key, todayKey());
+      return 1;
+    }
+    const start = new Date(startStr + "T00:00:00");
+    const today = new Date(todayKey() + "T00:00:00");
+    const days = Math.floor((today - start) / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, days);
+  } catch {
+    return 1;
   }
+}
 
+// ── PHOTO DISPLAY (large emoji in rose panel — reliable, always appropriate) ─
+
+function PhotoDisplay({ emoji, style }) {
   return (
-    <>
-      {!loaded && (
-        <div style={{...style, display:"flex", alignItems:"center", justifyContent:"center", background:"#FAFAFA"}}>
-          <Spinner/>
-        </div>
-      )}
-      <img
-        src={url}
-        alt={word}
-        onLoad={()=>setLoaded(true)}
-        onError={()=>setFailed(true)}
-        style={{...style, display: loaded ? "block" : "none"}}
-      />
-    </>
+    <div style={{
+      ...style,
+      background: "linear-gradient(135deg, #FFF0F1 0%, #FFE4E6 100%)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 200,
+      lineHeight: 1,
+    }}>
+      {emoji || "✨"}
+    </div>
   );
 }
 
@@ -371,7 +381,7 @@ function MathStagePicker({ selected, onSelect, onClose }) {
 
 // ── HOME ──────────────────────────────────────────────────────────────────────
 
-function HomeScreen({ onSelect, language, mathStage, onLang, onMath }) {
+function HomeScreen({ onSelect, language, mathStage, speechOn, onLang, onMath, onToggleSpeech }) {
   const stageName = MATH_STAGES.find(s=>s.id===mathStage)?.label||"Dots Only";
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
@@ -381,7 +391,7 @@ function HomeScreen({ onSelect, language, mathStage, onLang, onMath }) {
         <p style={{color:"#ccc",fontFamily:"Nunito,sans-serif",fontSize:12,marginTop:4,fontWeight:700,textAlign:"center"}}>early learning · every day</p>
       </div>
 
-      <div style={{display:"flex",gap:10,marginBottom:22,flexWrap:"wrap",justifyContent:"center"}}>
+      <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap",justifyContent:"center"}}>
         <button onClick={onLang} style={{display:"flex",alignItems:"center",gap:6,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:RED}}>
           🌍 {language} <span style={{fontSize:9,opacity:.5}}>▼</span>
         </button>
@@ -390,10 +400,17 @@ function HomeScreen({ onSelect, language, mathStage, onLang, onMath }) {
         </button>
       </div>
 
+      <div style={{display:"flex",gap:10,marginBottom:22,justifyContent:"center"}}>
+        <button onClick={onToggleSpeech}
+          style={{display:"flex",alignItems:"center",gap:6,background:speechOn?RED:"#f5f5f5",border:`2px solid ${speechOn?RED:"#e8e8e8"}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:speechOn?"#fff":"#555",transition:"all .2s"}}>
+          {speechOn ? "🔊" : "🔇"} {speechOn ? "Speech on" : "Speech off"}
+        </button>
+      </div>
+
       <div style={{display:"flex",flexDirection:"column",gap:11,width:"100%",maxWidth:370}}>
         {[
-          {id:"reading",      label:"Reading",   emoji:"📖", desc:"15 words · daily · real photos"},
-          {id:"math",         label:"Math",      emoji:"🔢", desc:"1–100 dots · equations"},
+          {id:"reading",      label:"Reading",   emoji:"📖", desc:"15 words · daily · read aloud"},
+          {id:"math",         label:"Math",      emoji:"🔢", desc:"Doman rolling window · day by day"},
           {id:"encyclopedia", label:"Knowledge", emoji:"🌍", desc:"12 facts · daily"},
         ].map(c=>(
           <button key={c.id} onClick={()=>onSelect(c.id)}
@@ -443,7 +460,7 @@ function ProgressBar({ index, total }) {
 
 // ── READING SESSION (3-frame Doman: word → photo → word → next) ───────────────
 
-function ReadingSession({ words, language, onBack }) {
+function ReadingSession({ words, language, speechOn, onBack }) {
   const [cards, setCards]     = useState([]);
   const [translating, setTranslating] = useState(false);
   const [transError, setTransError]   = useState(null);
@@ -469,6 +486,14 @@ function ReadingSession({ words, language, onBack }) {
     };
     run();
   },[language, words]);
+
+  // Speak the word whenever we land on a word frame (0 or 2)
+  useEffect(()=>{
+    if (!speechOn || !visible || translating) return;
+    const card = cards[idx];
+    if (!card?.word) return;
+    if (frame === 0 || frame === 2) speak(card.word, language);
+  }, [idx, frame, visible, speechOn, language, translating, cards]);
 
   const advance = useCallback(()=>{
     setVisible(false);
@@ -555,8 +580,9 @@ function ReadingSession({ words, language, onBack }) {
 
 // ── MATH SESSION ──────────────────────────────────────────────────────────────
 
-function MathSession({ mathStage, onBack }) {
-  const [cards]   = useState(()=>getMathCards(mathStage));
+function MathSession({ mathStage, language, speechOn, onBack }) {
+  const dayNum = useMemo(()=>getDayNumber(), []);
+  const [cards]   = useState(()=>getMathCards(mathStage, dayNum));
   const [idx, setIdx]     = useState(0);
   const [visible, setVisible] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
@@ -565,6 +591,13 @@ function MathSession({ mathStage, onBack }) {
   const isEq = mathStage.startsWith("eq");
 
   useEffect(()=>setRevealed(false),[idx]);
+
+  // Speak the number when a new dot/numeral card becomes visible
+  useEffect(()=>{
+    if (!speechOn || !visible || isEq) return;
+    const card = cards[idx];
+    if (card?.n !== undefined) speak(String(card.n), language);
+  }, [idx, visible, speechOn, language, isEq, cards]);
 
   const advance = useCallback(()=>{
     setVisible(false);
@@ -589,16 +622,36 @@ function MathSession({ mathStage, onBack }) {
     </div>
   );
 
+  // Calculate the current window range for the header indicator
+  const winLo = Math.max(0, (dayNum - 1) * 2);
+  const winHi = winLo + 10;
+
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
       <SessionHeader onBack={onBack} index={idx} total={cards.length} streak={streak}
         autoPlay={autoPlay} onAutoPlay={isEq?null:()=>setAutoPlay(a=>!a)}/>
 
+      {!isEq && (
+        <div style={{textAlign:"center",padding:"4px 0 0",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#bbb",letterSpacing:.5}}>
+          day {dayNum} · range {winLo}–{winHi}
+        </div>
+      )}
+
       <div onClick={isEq?undefined:advance}
         style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:isEq?"default":"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
 
-        {mathStage==="dots" && <ScatteredDots count={card.n} size={300}/>}
-        {mathStage==="numerals" && <div style={{fontSize:120,fontFamily:"'Fredoka One',cursive",color:RED,lineHeight:1}}>{card.n}</div>}
+        {mathStage==="dots" && (
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
+            <ScatteredDots count={card.n} size={300}/>
+            <div style={{fontFamily:"'Fredoka One',cursive",fontSize:22,color:"#d0d0d0",lineHeight:1,letterSpacing:1}}>
+              {card.n}
+            </div>
+          </div>
+        )}
+
+        {mathStage==="numerals" && (
+          <div style={{fontSize:140,fontFamily:"'Fredoka One',cursive",color:RED,lineHeight:1}}>{card.n}</div>
+        )}
 
         {isEq && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,width:"100%"}}>
@@ -668,6 +721,7 @@ export default function App() {
   const [mode, setMode]               = useState(null);
   const [language, setLanguage]       = useState("English");
   const [mathStage, setMathStage]     = useState("dots");
+  const [speechOn, setSpeechOn]       = useState(true);
   const [showLang, setShowLang]       = useState(false);
   const [showMath, setShowMath]       = useState(false);
   const [dailyWords, setDailyWords]   = useState([]);
@@ -686,9 +740,21 @@ export default function App() {
     };
     run();
     try { const r=localStorage.getItem("lb-math"); if(r) setMathStage(r); } catch {}
+    try { const r=localStorage.getItem("lb-speech"); if(r!==null) setSpeechOn(r==="1"); } catch {}
+    try { const r=localStorage.getItem("lb-lang"); if(r) setLanguage(r); } catch {}
   },[]);
 
   const handleMath = s=>{ setMathStage(s); try { localStorage.setItem("lb-math",s); } catch {} };
+  const handleLang = l=>{ setLanguage(l); try { localStorage.setItem("lb-lang",l); } catch {} };
+  const handleToggleSpeech = ()=>{
+    setSpeechOn(v=>{
+      const nv=!v;
+      try { localStorage.setItem("lb-speech", nv?"1":"0"); } catch {}
+      // Stop any speech in progress when turning off
+      if (!nv && window.speechSynthesis) window.speechSynthesis.cancel();
+      return nv;
+    });
+  };
 
   if (initializing) return <LoadingScreen message="Preparing today's lessons…"/>;
 
@@ -699,11 +765,11 @@ export default function App() {
         *{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#fff;}
         button:focus{outline:none;}@keyframes spin{to{transform:rotate(360deg)}}
       `}</style>
-      {mode===null       && <HomeScreen onSelect={setMode} language={language} mathStage={mathStage} onLang={()=>setShowLang(true)} onMath={()=>setShowMath(true)}/>}
-      {mode==="reading"  && <ReadingSession words={dailyWords} language={language} onBack={()=>setMode(null)}/>}
-      {mode==="math"     && <MathSession mathStage={mathStage} onBack={()=>setMode(null)}/>}
+      {mode===null       && <HomeScreen onSelect={setMode} language={language} mathStage={mathStage} speechOn={speechOn} onLang={()=>setShowLang(true)} onMath={()=>setShowMath(true)} onToggleSpeech={handleToggleSpeech}/>}
+      {mode==="reading"  && <ReadingSession words={dailyWords} language={language} speechOn={speechOn} onBack={()=>setMode(null)}/>}
+      {mode==="math"     && <MathSession mathStage={mathStage} language={language} speechOn={speechOn} onBack={()=>setMode(null)}/>}
       {mode==="encyclopedia" && <EncyclopediaSession knowledge={dailyKnow} onBack={()=>setMode(null)}/>}
-      {showLang && <LanguagePicker selected={language} onSelect={setLanguage} onClose={()=>setShowLang(false)}/>}
+      {showLang && <LanguagePicker selected={language} onSelect={handleLang} onClose={()=>setShowLang(false)}/>}
       {showMath && <MathStagePicker selected={mathStage} onSelect={handleMath} onClose={()=>setShowMath(false)}/>}
     </>
   );
