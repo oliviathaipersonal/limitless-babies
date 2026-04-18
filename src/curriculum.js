@@ -236,20 +236,20 @@ export const WORD_SETS = [
 // Only top languages for the first ~50 new words; others fall back to English.
 export const EXTRA_TRANSLATIONS = {
   // Family extended
-  "sister": { Spanish:"hermana", French:"sœur", German:"schwester", Italian:"sorella", Portuguese:"irmã", "Portuguese (Brazil)":"irmã", Russian:"сестра", "Chinese (Mandarin)":"姐妹", "Chinese (Cantonese)":"姊妹", Japanese:"しまい", Korean:"자매", Hebrew:"אחות", Arabic:"أخت", Hindi:"बहन", Vietnamese:"chị em", Turkish:"kız kardeş" },
-  "brother": { Spanish:"hermano", French:"frère", German:"bruder", Italian:"fratello", Portuguese:"irmão", "Portuguese (Brazil)":"irmão", Russian:"брат", "Chinese (Mandarin)":"兄弟", "Chinese (Cantonese)":"兄弟", Japanese:"きょうだい", Korean:"형제", Hebrew:"אח", Arabic:"أخ", Hindi:"भाई", Vietnamese:"anh em", Turkish:"erkek kardeş" },
-  "grandma": { Spanish:"abuela", French:"mamie", German:"oma", Italian:"nonna", Portuguese:"avó", "Portuguese (Brazil)":"vovó", Russian:"бабушка", "Chinese (Mandarin)":"奶奶", "Chinese (Cantonese)":"嫲嫲", Japanese:"おばあちゃん", Korean:"할머니", Hebrew:"סבתא", Arabic:"جدة", Hindi:"दादी", Vietnamese:"bà", Turkish:"nine" },
-  "grandpa": { Spanish:"abuelo", French:"papi", German:"opa", Italian:"nonno", Portuguese:"avô", "Portuguese (Brazil)":"vovô", Russian:"дедушка", "Chinese (Mandarin)":"爷爷", "Chinese (Cantonese)":"爺爺", Japanese:"おじいちゃん", Korean:"할아버지", Hebrew:"סבא", Arabic:"جد", Hindi:"दादा", Vietnamese:"ông", Turkish:"dede" },
-  "aunt": { Spanish:"tía", French:"tante", German:"tante", Italian:"zia", Portuguese:"tia", "Portuguese (Brazil)":"tia", Russian:"тётя", "Chinese (Mandarin)":"阿姨", "Chinese (Cantonese)":"阿姨", Japanese:"おば", Korean:"이모", Hebrew:"דודה", Arabic:"عمة", Hindi:"चाची", Vietnamese:"cô", Turkish:"teyze" },
-  "uncle": { Spanish:"tío", French:"oncle", German:"onkel", Italian:"zio", Portuguese:"tio", "Portuguese (Brazil)":"tio", Russian:"дядя", "Chinese (Mandarin)":"叔叔", "Chinese (Cantonese)":"叔叔", Japanese:"おじ", Korean:"삼촌", Hebrew:"דוד", Arabic:"عم", Hindi:"चाचा", Vietnamese:"chú", Turkish:"amca" },
-  "cousin": { Spanish:"primo", French:"cousin", German:"cousin", Italian:"cugino", Portuguese:"primo", "Portuguese (Brazil)":"primo", Russian:"кузен", Japanese:"いとこ", Korean:"사촌", Hebrew:"בן דוד", Arabic:"ابن عم", Hindi:"चचेरा भाई", Vietnamese:"anh họ", Turkish:"kuzen" },
+  "sister": { Spanish:"hermana", French:"sœur", German:"schwester", Italian:"sorella", Portuguese:"irmã", "Portuguese (Brazil)":"irmã", Russian:"сестра", "Chinese (Mandarin)":"姐妹", "Chinese (Cantonese)":"姊妹", Japanese:"しまい", Korean:"자매", Hebrew:"אחות", Arabic:"أخت", Hindi:"बहन", Vietnamese:"chị em", Turkish:"kız kardeş", Lao:"ເອື້ອຍ" },
+  "brother": { Spanish:"hermano", French:"frère", German:"bruder", Italian:"fratello", Portuguese:"irmão", "Portuguese (Brazil)":"irmão", Russian:"брат", "Chinese (Mandarin)":"兄弟", "Chinese (Cantonese)":"兄弟", Japanese:"きょうだい", Korean:"형제", Hebrew:"אח", Arabic:"أخ", Hindi:"भाई", Vietnamese:"anh em", Turkish:"erkek kardeş", Lao:"ອ້າຍ" },
+  "grandma": { Spanish:"abuela", French:"mamie", German:"oma", Italian:"nonna", Portuguese:"avó", "Portuguese (Brazil)":"vovó", Russian:"бабушка", "Chinese (Mandarin)":"奶奶", "Chinese (Cantonese)":"嫲嫲", Japanese:"おばあちゃん", Korean:"할머니", Hebrew:"סבתא", Arabic:"جدة", Hindi:"दादी", Vietnamese:"bà", Turkish:"nine", Lao:"ແມ່ຕູ້" },
+  "grandpa": { Spanish:"abuelo", French:"papi", German:"opa", Italian:"nonno", Portuguese:"avô", "Portuguese (Brazil)":"vovô", Russian:"дедушка", "Chinese (Mandarin)":"爷爷", "Chinese (Cantonese)":"爺爺", Japanese:"おじいちゃん", Korean:"할아버지", Hebrew:"סבא", Arabic:"جد", Hindi:"दादा", Vietnamese:"ông", Turkish:"dede", Lao:"ພໍ່ຕູ້" },
+  "aunt": { Spanish:"tía", French:"tante", German:"tante", Italian:"zia", Portuguese:"tia", "Portuguese (Brazil)":"tia", Russian:"тётя", "Chinese (Mandarin)":"阿姨", "Chinese (Cantonese)":"阿姨", Japanese:"おば", Korean:"이모", Hebrew:"דודה", Arabic:"عمة", Hindi:"चाची", Vietnamese:"cô", Turkish:"teyze", Lao:"ປ້າ" },
+  "uncle": { Spanish:"tío", French:"oncle", German:"onkel", Italian:"zio", Portuguese:"tio", "Portuguese (Brazil)":"tio", Russian:"дядя", "Chinese (Mandarin)":"叔叔", "Chinese (Cantonese)":"叔叔", Japanese:"おじ", Korean:"삼촌", Hebrew:"דוד", Arabic:"عم", Hindi:"चाचा", Vietnamese:"chú", Turkish:"amca", Lao:"ລຸງ" },
+  "cousin": { Spanish:"primo", French:"cousin", German:"cousin", Italian:"cugino", Portuguese:"primo", "Portuguese (Brazil)":"primo", Russian:"кузен", Japanese:"いとこ", Korean:"사촌", Hebrew:"בן דוד", Arabic:"ابن عم", Hindi:"चचेरा भाई", Vietnamese:"anh họ", Turkish:"kuzen", Lao:"ຫຼານ" },
 
   // Farm animals
-  "cow":     { Spanish:"vaca", French:"vache", German:"kuh", Italian:"mucca", Portuguese:"vaca", "Portuguese (Brazil)":"vaca", Russian:"корова", "Chinese (Mandarin)":"牛", "Chinese (Cantonese)":"牛", Japanese:"うし", Korean:"소", Hebrew:"פרה", Arabic:"بقرة", Hindi:"गाय", Vietnamese:"bò", Turkish:"inek" },
-  "chicken": { Spanish:"pollo", French:"poule", German:"huhn", Italian:"gallina", Portuguese:"galinha", "Portuguese (Brazil)":"galinha", Russian:"курица", "Chinese (Mandarin)":"鸡", "Chinese (Cantonese)":"雞", Japanese:"にわとり", Korean:"닭", Hebrew:"תרנגולת", Arabic:"دجاجة", Hindi:"मुर्गी", Vietnamese:"gà", Turkish:"tavuk" },
-  "duck":    { Spanish:"pato", French:"canard", German:"ente", Italian:"anatra", Portuguese:"pato", "Portuguese (Brazil)":"pato", Russian:"утка", "Chinese (Mandarin)":"鸭子", "Chinese (Cantonese)":"鴨", Japanese:"あひる", Korean:"오리", Hebrew:"ברווז", Arabic:"بطة", Hindi:"बतख", Vietnamese:"vịt", Turkish:"ördek" },
-  "sheep":   { Spanish:"oveja", French:"mouton", German:"schaf", Italian:"pecora", Portuguese:"ovelha", "Portuguese (Brazil)":"ovelha", Russian:"овца", "Chinese (Mandarin)":"羊", "Chinese (Cantonese)":"羊", Japanese:"ひつじ", Korean:"양", Hebrew:"כבש", Arabic:"خروف", Hindi:"भेड़", Vietnamese:"cừu", Turkish:"koyun" },
-  "pig":     { Spanish:"cerdo", French:"cochon", German:"schwein", Italian:"maiale", Portuguese:"porco", "Portuguese (Brazil)":"porco", Russian:"свинья", "Chinese (Mandarin)":"猪", "Chinese (Cantonese)":"豬", Japanese:"ぶた", Korean:"돼지", Hebrew:"חזיר", Arabic:"خنزير", Hindi:"सुअर", Vietnamese:"lợn", Turkish:"domuz" },
+  "cow":     { Spanish:"vaca", French:"vache", German:"kuh", Italian:"mucca", Portuguese:"vaca", "Portuguese (Brazil)":"vaca", Russian:"корова", "Chinese (Mandarin)":"牛", "Chinese (Cantonese)":"牛", Japanese:"うし", Korean:"소", Hebrew:"פרה", Arabic:"بقرة", Hindi:"गाय", Vietnamese:"bò", Turkish:"inek", Lao:"ງົວ" },
+  "chicken": { Spanish:"pollo", French:"poule", German:"huhn", Italian:"gallina", Portuguese:"galinha", "Portuguese (Brazil)":"galinha", Russian:"курица", "Chinese (Mandarin)":"鸡", "Chinese (Cantonese)":"雞", Japanese:"にわとり", Korean:"닭", Hebrew:"תרנגולת", Arabic:"دجاجة", Hindi:"मुर्गी", Vietnamese:"gà", Turkish:"tavuk", Lao:"ໄກ່" },
+  "duck":    { Spanish:"pato", French:"canard", German:"ente", Italian:"anatra", Portuguese:"pato", "Portuguese (Brazil)":"pato", Russian:"утка", "Chinese (Mandarin)":"鸭子", "Chinese (Cantonese)":"鴨", Japanese:"あひる", Korean:"오리", Hebrew:"ברווז", Arabic:"بطة", Hindi:"बतख", Vietnamese:"vịt", Turkish:"ördek", Lao:"ເປັດ" },
+  "sheep":   { Spanish:"oveja", French:"mouton", German:"schaf", Italian:"pecora", Portuguese:"ovelha", "Portuguese (Brazil)":"ovelha", Russian:"овца", "Chinese (Mandarin)":"羊", "Chinese (Cantonese)":"羊", Japanese:"ひつじ", Korean:"양", Hebrew:"כבש", Arabic:"خروف", Hindi:"भेड़", Vietnamese:"cừu", Turkish:"koyun", Lao:"ແກະ" },
+  "pig":     { Spanish:"cerdo", French:"cochon", German:"schwein", Italian:"maiale", Portuguese:"porco", "Portuguese (Brazil)":"porco", Russian:"свинья", "Chinese (Mandarin)":"猪", "Chinese (Cantonese)":"豬", Japanese:"ぶた", Korean:"돼지", Hebrew:"חזיר", Arabic:"خنزير", Hindi:"सुअर", Vietnamese:"lợn", Turkish:"domuz", Lao:"ໝູ" },
 
   // Fruits (apple/banana already in CORE)
   "grape":      { Spanish:"uva", French:"raisin", German:"traube", Italian:"uva", Portuguese:"uva", "Portuguese (Brazil)":"uva", Russian:"виноград", "Chinese (Mandarin)":"葡萄", "Chinese (Cantonese)":"葡萄", Japanese:"ぶどう", Korean:"포도", Hebrew:"ענב", Arabic:"عنب", Hindi:"अंगूर", Vietnamese:"nho", Turkish:"üzüm" },
@@ -668,17 +668,291 @@ export function getRollingSets(sets, dayNum) {
   return result;
 }
 
-// Combine items from 3 sets into an 11-card deck.
-// Take 5 from set A, 5 from set B, 1 from set C — or whatever fits to 11.
+// ── KINSHIP VARIANTS ─────────────────────────────────────────────────────────
+// East Asian languages distinguish kinship relations that English collapses into
+// a single word. For linguistic authenticity, when learning these languages,
+// babies should see the specific kinship terms they'd actually hear at home.
+//
+// This feature only activates for these languages:
+const KINSHIP_LANGUAGES = [
+  "Chinese (Mandarin)",
+  "Chinese (Cantonese)",
+  "Korean",
+  "Japanese",
+  "Vietnamese",
+  "Hindi",
+  "Urdu",
+  "Bengali",
+  "Tamil",
+  "Telugu",
+  "Marathi",
+  "Arabic",
+  "Persian",
+  "Turkish",
+  "Swahili",
+  "Thai",
+  "Indonesian",
+  "Malay",
+  "Filipino",
+];
+
+export { KINSHIP_LANGUAGES };
+//
+// Accuracy notes:
+// - Korean older sister/brother varies by the speaker's gender. We use both
+//   forms joined by "/" — parents should teach the one matching each twin.
+// - Japanese typically does NOT distinguish paternal/maternal grandparents in
+//   daily speech, so we keep those as single cards (not 2).
+// - Mandarin has many uncle terms. We use the two most common: 叔叔
+//   (father's younger brother / paternal uncle) and 舅舅 (mother's brother /
+//   maternal uncle). Other uncles (伯伯, 姑父, 姨父) are left for later.
+// - Cantonese aunts: 姑姐 (paternal, father's sister) / 姨姨 (maternal).
+
+export const KINSHIP_VARIANTS = {
+  // ── SIBLINGS: older sister / younger sister ────────────────────────────────
+  sister: {
+    "Chinese (Mandarin)":  [{ word: "姐姐",   note: "older sister",   emoji: "👩" },
+                            { word: "妹妹",   note: "younger sister", emoji: "👧" }],
+    "Chinese (Cantonese)": [{ word: "家姐",   note: "older sister",   emoji: "👩" },
+                            { word: "妹妹",   note: "younger sister", emoji: "👧" }],
+    "Korean":              [{ word: "언니/누나", note: "older sister (언니 for girls, 누나 for boys)", emoji: "👩" },
+                            { word: "여동생",  note: "younger sister", emoji: "👧" }],
+    "Japanese":            [{ word: "お姉ちゃん", note: "older sister",   emoji: "👩" },
+                            { word: "いもうと", note: "younger sister", emoji: "👧" }],
+    "Vietnamese":          [{ word: "chị",    note: "older sister",   emoji: "👩" },
+                            { word: "em gái", note: "younger sister", emoji: "👧" }],
+    "Hindi":       [{ word: "दीदी",    note: "older sister",   emoji: "👩" },
+                    { word: "छोटी बहन", note: "younger sister", emoji: "👧" }],
+    "Urdu":        [{ word: "آپا",     note: "older sister",   emoji: "👩" },
+                    { word: "چھوٹی بہن", note: "younger sister", emoji: "👧" }],
+    "Bengali":     [{ word: "দিদি",     note: "older sister",   emoji: "👩" },
+                    { word: "ছোট বোন",  note: "younger sister", emoji: "👧" }],
+    "Tamil":       [{ word: "அக்கா",   note: "older sister",   emoji: "👩" },
+                    { word: "தங்கை",   note: "younger sister", emoji: "👧" }],
+    "Telugu":      [{ word: "అక్క",    note: "older sister",   emoji: "👩" },
+                    { word: "చెల్లెలు", note: "younger sister", emoji: "👧" }],
+    "Marathi":     [{ word: "ताई",     note: "older sister",   emoji: "👩" },
+                    { word: "लहान बहीण", note: "younger sister", emoji: "👧" }],
+    "Turkish":     [{ word: "abla",    note: "older sister",   emoji: "👩" },
+                    { word: "kız kardeş", note: "younger sister", emoji: "👧" }],
+    "Swahili":     [{ word: "dada mkubwa", note: "older sister (\"big sister\")", emoji: "👩" },
+                    { word: "dada mdogo",  note: "younger sister (\"little sister\")", emoji: "👧" }],
+    "Thai":        [{ word: "พี่สาว",  note: "older sister",   emoji: "👩" },
+                    { word: "น้องสาว", note: "younger sister", emoji: "👧" }],
+    "Indonesian":  [{ word: "kakak perempuan", note: "older sister",   emoji: "👩" },
+                    { word: "adik perempuan",  note: "younger sister", emoji: "👧" }],
+    "Malay":       [{ word: "kakak",   note: "older sister",   emoji: "👩" },
+                    { word: "adik perempuan", note: "younger sister", emoji: "👧" }],
+    "Filipino":    [{ word: "ate",     note: "older sister",   emoji: "👩" },
+                    { word: "bunso",   note: "younger sister (youngest)", emoji: "👧" }],
+  },
+
+  // ── SIBLINGS: older brother / younger brother ──────────────────────────────
+  brother: {
+    "Chinese (Mandarin)":  [{ word: "哥哥",   note: "older brother",   emoji: "👨" },
+                            { word: "弟弟",   note: "younger brother", emoji: "👦" }],
+    "Chinese (Cantonese)": [{ word: "哥哥",   note: "older brother",   emoji: "👨" },
+                            { word: "細佬",   note: "younger brother", emoji: "👦" }],
+    "Korean":              [{ word: "오빠/형", note: "older brother (오빠 for girls, 형 for boys)", emoji: "👨" },
+                            { word: "남동생",  note: "younger brother", emoji: "👦" }],
+    "Japanese":            [{ word: "お兄ちゃん", note: "older brother",   emoji: "👨" },
+                            { word: "おとうと", note: "younger brother", emoji: "👦" }],
+    "Vietnamese":          [{ word: "anh",    note: "older brother",   emoji: "👨" },
+                            { word: "em trai",note: "younger brother", emoji: "👦" }],
+    "Hindi":       [{ word: "भैया",    note: "older brother",   emoji: "👨" },
+                    { word: "छोटा भाई", note: "younger brother", emoji: "👦" }],
+    "Urdu":        [{ word: "بھائی جان", note: "older brother",  emoji: "👨" },
+                    { word: "چھوٹا بھائی", note: "younger brother", emoji: "👦" }],
+    "Bengali":     [{ word: "দাদা",    note: "older brother",   emoji: "👨" },
+                    { word: "ছোট ভাই", note: "younger brother", emoji: "👦" }],
+    "Tamil":       [{ word: "அண்ணன்", note: "older brother",   emoji: "👨" },
+                    { word: "தம்பி",   note: "younger brother", emoji: "👦" }],
+    "Telugu":      [{ word: "అన్న",    note: "older brother",   emoji: "👨" },
+                    { word: "తమ్ముడు", note: "younger brother", emoji: "👦" }],
+    "Marathi":     [{ word: "दादा",    note: "older brother",   emoji: "👨" },
+                    { word: "लहान भाऊ", note: "younger brother", emoji: "👦" }],
+    "Turkish":     [{ word: "abi",     note: "older brother",   emoji: "👨" },
+                    { word: "erkek kardeş", note: "younger brother", emoji: "👦" }],
+    "Swahili":     [{ word: "kaka mkubwa", note: "older brother",   emoji: "👨" },
+                    { word: "kaka mdogo",  note: "younger brother", emoji: "👦" }],
+    "Thai":        [{ word: "พี่ชาย",  note: "older brother",   emoji: "👨" },
+                    { word: "น้องชาย", note: "younger brother", emoji: "👦" }],
+    "Indonesian":  [{ word: "kakak laki-laki", note: "older brother",   emoji: "👨" },
+                    { word: "adik laki-laki",  note: "younger brother", emoji: "👦" }],
+    "Malay":       [{ word: "abang",   note: "older brother",   emoji: "👨" },
+                    { word: "adik lelaki", note: "younger brother", emoji: "👦" }],
+    "Filipino":    [{ word: "kuya",    note: "older brother",   emoji: "👨" },
+                    { word: "bunso",   note: "youngest brother", emoji: "👦" }],
+  },
+
+  // ── GRANDMAS: paternal / maternal ──────────────────────────────────────────
+  grandma: {
+    "Chinese (Mandarin)":  [{ word: "奶奶",   note: "paternal grandma (father's mother)", emoji: "👵" },
+                            { word: "外婆",   note: "maternal grandma (mother's mother)", emoji: "👵" }],
+    "Chinese (Cantonese)": [{ word: "嫲嫲",   note: "paternal grandma", emoji: "👵" },
+                            { word: "婆婆",   note: "maternal grandma", emoji: "👵" }],
+    "Korean":              [{ word: "친할머니", note: "paternal grandma", emoji: "👵" },
+                            { word: "외할머니", note: "maternal grandma", emoji: "👵" }],
+    "Japanese":            [{ word: "おばあちゃん", note: "grandma", emoji: "👵" }],
+    "Vietnamese":          [{ word: "bà nội", note: "paternal grandma (father's mother)", emoji: "👵" },
+                            { word: "bà ngoại", note: "maternal grandma (mother's mother)", emoji: "👵" }],
+    "Hindi":       [{ word: "दादी",    note: "paternal grandma (father's mother)", emoji: "👵" },
+                    { word: "नानी",    note: "maternal grandma (mother's mother)", emoji: "👵" }],
+    "Urdu":        [{ word: "دادی",     note: "paternal grandma", emoji: "👵" },
+                    { word: "نانی",     note: "maternal grandma", emoji: "👵" }],
+    "Bengali":     [{ word: "দাদি",     note: "paternal grandma (Bangladesh Bengali)", emoji: "👵" },
+                    { word: "নানি",     note: "maternal grandma", emoji: "👵" }],
+    "Tamil":       [{ word: "பாட்டி",   note: "paternal grandma (father's mother)", emoji: "👵" },
+                    { word: "அம்மம்மா", note: "maternal grandma (mother's mother)", emoji: "👵" }],
+    "Telugu":      [{ word: "నాన్నమ్మ", note: "paternal grandma", emoji: "👵" },
+                    { word: "అమ్మమ్మ", note: "maternal grandma", emoji: "👵" }],
+    "Turkish":     [{ word: "babaanne", note: "paternal grandma (father's mother)", emoji: "👵" },
+                    { word: "anneanne", note: "maternal grandma (mother's mother)", emoji: "👵" }],
+    "Thai":        [{ word: "ย่า",      note: "paternal grandma", emoji: "👵" },
+                    { word: "ยาย",     note: "maternal grandma", emoji: "👵" }],
+  },
+
+  // ── GRANDPAS: paternal / maternal ──────────────────────────────────────────
+  grandpa: {
+    "Chinese (Mandarin)":  [{ word: "爷爷",   note: "paternal grandpa (father's father)", emoji: "👴" },
+                            { word: "外公",   note: "maternal grandpa (mother's father)", emoji: "👴" }],
+    "Chinese (Cantonese)": [{ word: "爺爺",   note: "paternal grandpa", emoji: "👴" },
+                            { word: "公公",   note: "maternal grandpa", emoji: "👴" }],
+    "Korean":              [{ word: "친할아버지", note: "paternal grandpa", emoji: "👴" },
+                            { word: "외할아버지", note: "maternal grandpa", emoji: "👴" }],
+    "Japanese":            [{ word: "おじいちゃん", note: "grandpa", emoji: "👴" }],
+    "Vietnamese":          [{ word: "ông nội",  note: "paternal grandpa (father's father)", emoji: "👴" },
+                            { word: "ông ngoại",note: "maternal grandpa (mother's father)", emoji: "👴" }],
+    "Hindi":       [{ word: "दादा",    note: "paternal grandpa (father's father)", emoji: "👴" },
+                    { word: "नाना",    note: "maternal grandpa (mother's father)", emoji: "👴" }],
+    "Urdu":        [{ word: "دادا",     note: "paternal grandpa", emoji: "👴" },
+                    { word: "نانا",     note: "maternal grandpa", emoji: "👴" }],
+    "Bengali":     [{ word: "দাদু",     note: "paternal grandpa", emoji: "👴" },
+                    { word: "নানা",     note: "maternal grandpa", emoji: "👴" }],
+    "Tamil":       [{ word: "தாத்தா", note: "paternal grandpa",  emoji: "👴" },
+                    { word: "அம்மப்பா", note: "maternal grandpa", emoji: "👴" }],
+    "Telugu":      [{ word: "తాతయ్య", note: "paternal grandpa",  emoji: "👴" },
+                    { word: "అమ్మగారి తాత", note: "maternal grandpa", emoji: "👴" }],
+    "Thai":        [{ word: "ปู่",      note: "paternal grandpa", emoji: "👴" },
+                    { word: "ตา",      note: "maternal grandpa", emoji: "👴" }],
+  },
+
+  // ── AUNTS: paternal / maternal ─────────────────────────────────────────────
+  aunt: {
+    "Chinese (Mandarin)":  [{ word: "姑姑",   note: "paternal aunt (father's sister)", emoji: "🧑" },
+                            { word: "阿姨",   note: "maternal aunt (mother's sister)", emoji: "🧑" }],
+    "Chinese (Cantonese)": [{ word: "姑姐",   note: "paternal aunt", emoji: "🧑" },
+                            { word: "阿姨",   note: "maternal aunt", emoji: "🧑" }],
+    "Korean":              [{ word: "고모",   note: "paternal aunt (father's sister)", emoji: "🧑" },
+                            { word: "이모",   note: "maternal aunt (mother's sister)", emoji: "🧑" }],
+    "Japanese":            [{ word: "おば",   note: "aunt", emoji: "🧑" }],
+    "Vietnamese":          [{ word: "cô",     note: "paternal aunt (father's sister)", emoji: "🧑" },
+                            { word: "dì",     note: "maternal aunt (mother's sister)", emoji: "🧑" }],
+    "Hindi":       [{ word: "बुआ",     note: "paternal aunt (father's sister)", emoji: "🧑" },
+                    { word: "मौसी",     note: "maternal aunt (mother's sister)", emoji: "🧑" }],
+    "Urdu":        [{ word: "پھپھو",    note: "paternal aunt", emoji: "🧑" },
+                    { word: "خالہ",     note: "maternal aunt", emoji: "🧑" }],
+    "Bengali":     [{ word: "ফুফু",     note: "paternal aunt", emoji: "🧑" },
+                    { word: "খালা",     note: "maternal aunt", emoji: "🧑" }],
+    "Tamil":       [{ word: "அத்தை",  note: "paternal aunt", emoji: "🧑" },
+                    { word: "சித்தி",  note: "maternal aunt", emoji: "🧑" }],
+    "Telugu":      [{ word: "అత్త",    note: "paternal aunt", emoji: "🧑" },
+                    { word: "పిన్ని",    note: "maternal aunt", emoji: "🧑" }],
+    "Marathi":     [{ word: "आत्या",   note: "paternal aunt", emoji: "🧑" },
+                    { word: "मावशी",   note: "maternal aunt", emoji: "🧑" }],
+    "Arabic":      [{ word: "عمة",     note: "paternal aunt (father's sister)", emoji: "🧑" },
+                    { word: "خالة",    note: "maternal aunt (mother's sister)", emoji: "🧑" }],
+    "Persian":     [{ word: "عمه",     note: "paternal aunt", emoji: "🧑" },
+                    { word: "خاله",    note: "maternal aunt", emoji: "🧑" }],
+    "Turkish":     [{ word: "hala",    note: "paternal aunt (father's sister)", emoji: "🧑" },
+                    { word: "teyze",   note: "maternal aunt (mother's sister)", emoji: "🧑" }],
+    "Swahili":     [{ word: "shangazi", note: "paternal aunt (father's sister)", emoji: "🧑" },
+                    { word: "mama mdogo", note: "maternal aunt (mother's younger sister)", emoji: "🧑" }],
+    "Thai":        [{ word: "อา",       note: "paternal aunt (informal)", emoji: "🧑" },
+                    { word: "น้า",       note: "maternal aunt (informal)", emoji: "🧑" }],
+  },
+
+  // ── UNCLES: paternal / maternal ────────────────────────────────────────────
+  uncle: {
+    "Chinese (Mandarin)":  [{ word: "叔叔",   note: "paternal uncle (father's brother)", emoji: "🧔" },
+                            { word: "舅舅",   note: "maternal uncle (mother's brother)", emoji: "🧔" }],
+    "Chinese (Cantonese)": [{ word: "叔叔",   note: "paternal uncle", emoji: "🧔" },
+                            { word: "舅父",   note: "maternal uncle", emoji: "🧔" }],
+    "Korean":              [{ word: "삼촌",   note: "paternal uncle (father's brother)", emoji: "🧔" },
+                            { word: "외삼촌", note: "maternal uncle (mother's brother)", emoji: "🧔" }],
+    "Japanese":            [{ word: "おじ",   note: "uncle", emoji: "🧔" }],
+    "Vietnamese":          [{ word: "chú",    note: "paternal uncle (father's younger brother)", emoji: "🧔" },
+                            { word: "cậu",    note: "maternal uncle (mother's brother)", emoji: "🧔" }],
+    "Hindi":       [{ word: "चाचा",    note: "paternal uncle (father's brother)", emoji: "🧔" },
+                    { word: "मामा",    note: "maternal uncle (mother's brother)", emoji: "🧔" }],
+    "Urdu":        [{ word: "چچا",     note: "paternal uncle", emoji: "🧔" },
+                    { word: "ماموں",   note: "maternal uncle", emoji: "🧔" }],
+    "Bengali":     [{ word: "চাচা",    note: "paternal uncle", emoji: "🧔" },
+                    { word: "মামা",    note: "maternal uncle", emoji: "🧔" }],
+    "Tamil":       [{ word: "சித்தப்பா", note: "paternal uncle", emoji: "🧔" },
+                    { word: "மாமா",    note: "maternal uncle (mother's brother)", emoji: "🧔" }],
+    "Telugu":      [{ word: "బాబాయి", note: "paternal uncle", emoji: "🧔" },
+                    { word: "మామ",     note: "maternal uncle", emoji: "🧔" }],
+    "Marathi":     [{ word: "काका",    note: "paternal uncle", emoji: "🧔" },
+                    { word: "मामा",    note: "maternal uncle", emoji: "🧔" }],
+    "Arabic":      [{ word: "عم",      note: "paternal uncle (father's brother)", emoji: "🧔" },
+                    { word: "خال",     note: "maternal uncle (mother's brother)", emoji: "🧔" }],
+    "Persian":     [{ word: "عمو",     note: "paternal uncle", emoji: "🧔" },
+                    { word: "دایی",    note: "maternal uncle", emoji: "🧔" }],
+    "Turkish":     [{ word: "amca",    note: "paternal uncle (father's brother)", emoji: "🧔" },
+                    { word: "dayı",    note: "maternal uncle (mother's brother)", emoji: "🧔" }],
+    "Swahili":     [{ word: "baba mdogo", note: "paternal uncle (father's younger brother)", emoji: "🧔" },
+                    { word: "mjomba", note: "maternal uncle (mother's brother)", emoji: "🧔" }],
+    "Thai":        [{ word: "อา",       note: "paternal uncle (informal)", emoji: "🧔" },
+                    { word: "น้า",       note: "maternal uncle (informal)", emoji: "🧔" }],
+  },
+};
+
+// Expand a single word into multiple cards if kinship variants exist for this language
+function expandWordForLanguage(item, lang) {
+  const variants = KINSHIP_VARIANTS[item.word]?.[lang];
+  if (!variants) return [{ ...item }];
+  return variants.map(v => ({
+    ...item,                    // preserve setName, setId, original emoji (if no override)
+    word: v.word,               // the kinship-specific translated word
+    emoji: v.emoji || item.emoji,
+    note: v.note,               // "older sister", "paternal grandma", etc.
+    original: item.word,        // the English source word
+    preTranslated: true,        // signal: don't re-translate this one
+  }));
+}
+
+// Combine items from 3 sets into a deck, expanding kinship variants per language.
+// For English/Spanish/French/etc., returns exactly 15 cards.
+// For Chinese/Korean/Japanese/Vietnamese, may return up to 21 cards on Day 1
+// (when family + family-extended + farm-animals are in rotation).
+export function buildDeckForLanguage(rollingSets, lang) {
+  const useKinship = KINSHIP_LANGUAGES.includes(lang);
+  const out = [];
+  for (const s of rollingSets) {
+    for (const item of s.items) {
+      const baseCard = { ...item, setName: s.name, setId: s.id };
+      const expanded = useKinship
+        ? expandWordForLanguage(baseCard, lang)
+        : [baseCard];
+      for (const card of expanded) {
+        out.push(card);
+      }
+    }
+  }
+  return out;
+}
+
+// Backwards-compatible 15-card version (used for non-language-specific preview).
 export function buildDeckFromSets(rollingSets) {
   const out = [];
   for (const s of rollingSets) {
     for (const item of s.items) {
       out.push({ ...item, setName: s.name, setId: s.id });
-      if (out.length >= 11) return out.slice(0, 11);
+      if (out.length >= 15) return out.slice(0, 15);
     }
   }
-  return out.slice(0, 11);
+  return out.slice(0, 15);
 }
 
 // Count total unique words a child has been exposed to, based on history.
