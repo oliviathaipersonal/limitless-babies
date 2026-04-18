@@ -25,13 +25,48 @@ const LANGUAGES = [
   "Xhosa","Yiddish","Yoruba","Zulu"
 ];
 
+// ── MATH CURRICULUM ──────────────────────────────────────────────────────────
+// The math progression follows the Doman arc from concrete quantity (dots) to
+// abstract symbols (numerals), with equation-solving layered on top of each.
+//
+// Each stage unlocks at a specific day based on how long it takes to complete
+// the prior stage, with room to spare so no child gets left behind.
+//
+// Day 1-20   : Dots (quantity up to 100, rolling window of 11)
+// Day 21-35  : Addition with dots
+// Day 36-50  : Subtraction with dots
+// Day 51-65  : Multiplication with dots
+// Day 66-80  : Division with dots
+// Day 81-100 : Numerals (symbols up to 100, rolling window of 11)
+// Day 101-115: Addition with numerals
+// Day 116-130: Subtraction with numerals
+// Day 131-145: Multiplication with numerals
+// Day 146-160: Division with numerals
+// Day 161+   : Mixed equations (both dots and numerals shown)
+
 const MATH_STAGES = [
-  { id:"dots",        label:"Dots Only",           desc:"Scattered dots, 1–100"               },
-  { id:"numerals",    label:"Numerals Only",        desc:"Number symbols, 1–100"               },
-  { id:"eq-dots",     label:"Equations · Dots",     desc:"All four operations in dot form"     },
-  { id:"eq-numerals", label:"Equations · Numerals", desc:"Equations with number symbols"       },
-  { id:"eq-both",     label:"Equations · Both",     desc:"Dots and numerals together"          },
+  { id:"dots",           label:"Dots",           desc:"Scattered quantities 0–100",       unlockDay:1,   op:null,    showDots:true,  showNumerals:false, isEq:false },
+  { id:"add-dots",       label:"Addition (dots)",      desc:"Adding with dot quantities",       unlockDay:21,  op:"+",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"sub-dots",       label:"Subtraction (dots)",   desc:"Subtracting with dot quantities",  unlockDay:36,  op:"-",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"mul-dots",       label:"Multiplication (dots)",desc:"Multiplying with dot quantities",  unlockDay:51,  op:"×",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"div-dots",       label:"Division (dots)",      desc:"Dividing with dot quantities",     unlockDay:66,  op:"÷",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"numerals",       label:"Numerals",        desc:"Number symbols 0–100",             unlockDay:81,  op:null,    showDots:false, showNumerals:true,  isEq:false },
+  { id:"add-nums",       label:"Addition (numerals)",      desc:"Adding with number symbols",       unlockDay:101, op:"+",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"sub-nums",       label:"Subtraction (numerals)",   desc:"Subtracting with number symbols",  unlockDay:116, op:"-",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"mul-nums",       label:"Multiplication (numerals)",desc:"Multiplying with number symbols",  unlockDay:131, op:"×",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"div-nums",       label:"Division (numerals)",      desc:"Dividing with number symbols",     unlockDay:146, op:"÷",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"eq-both",        label:"Equations (both)",     desc:"Dots and numerals together",       unlockDay:161, op:"mix",   showDots:true,  showNumerals:true,  isEq:true  },
 ];
+
+// Return the single stage the child should be doing today.
+// Picks the highest-unlocked stage for their current day number.
+function getTodayMathStage(dayNum) {
+  let current = MATH_STAGES[0];
+  for (const s of MATH_STAGES) {
+    if (dayNum >= s.unlockDay) current = s;
+  }
+  return current;
+}
 
 const RED   = "#E8192C";
 const MODEL = "claude-sonnet-4-20250514";
@@ -207,14 +242,53 @@ function MiniDots({ count, size=100 }) {
 
 // ── EQUATIONS ─────────────────────────────────────────────────────────────────
 
-function genEquations(stage) {
-  const isDots=stage==="eq-dots", mx=isDots?9:20, mm=isDots?5:10;
-  const c=[];
-  for (let a=1;a<=mx;a++) for (let b=1;b<=mx;b++) if(!isDots||a+b<=18) c.push({op:"+",a,b,result:a+b});
-  for (let a=2;a<=mx+5;a++) for (let b=1;b<a;b++) c.push({op:"−",a,b,result:a-b});
-  for (let a=1;a<=mm;a++) for (let b=1;b<=mm;b++) c.push({op:"×",a,b,result:a*b});
-  for (let a=1;a<=mm;a++) for (let b=1;b<=mm;b++) c.push({op:"÷",a:a*b,b,result:a});
-  return shuffle(c);
+// Generate 11 equations for a given stage, on a given day.
+// Difficulty scales with how long the child has been on this stage.
+function genEquations(stageId, dayNum) {
+  const stage = MATH_STAGES.find(s => s.id === stageId);
+  if (!stage || !stage.isEq) return [];
+
+  // How many days into this stage is the child? This scales difficulty.
+  const daysIntoStage = Math.max(0, dayNum - stage.unlockDay);
+  // Cap the max operand to keep things baby-friendly in early days.
+  // Dot equations stay small (visual cards can't hold too many dots);
+  // numeral equations can go higher.
+  const isDotEq = stage.showDots && !stage.showNumerals;
+  const maxOperand = isDotEq
+    ? Math.min(9, 3 + Math.floor(daysIntoStage / 3))
+    : Math.min(20, 5 + Math.floor(daysIntoStage / 2));
+
+  const out = [];
+  for (let i = 0; i < 11; i++) {
+    let a, b, result, op;
+    if (stage.op === "mix") {
+      const ops = ["+","-","×","÷"];
+      op = ops[Math.floor(Math.random() * ops.length)];
+    } else {
+      op = stage.op;
+    }
+    if (op === "+") {
+      a = Math.floor(Math.random() * maxOperand) + 1;
+      b = Math.floor(Math.random() * maxOperand) + 1;
+      result = a + b;
+    } else if (op === "-") {
+      a = Math.floor(Math.random() * maxOperand) + 1;
+      b = Math.floor(Math.random() * a) + 1; // keep result positive
+      result = a - b;
+    } else if (op === "×") {
+      const mm = Math.min(5, Math.max(2, Math.ceil(maxOperand / 2)));
+      a = Math.floor(Math.random() * mm) + 1;
+      b = Math.floor(Math.random() * mm) + 1;
+      result = a * b;
+    } else if (op === "÷") {
+      const mm = Math.min(5, Math.max(2, Math.ceil(maxOperand / 2)));
+      result = Math.floor(Math.random() * mm) + 1;
+      b = Math.floor(Math.random() * mm) + 1;
+      a = result * b;
+    }
+    out.push({ op, a, b, result });
+  }
+  return out;
 }
 
 // Doman rolling window: start 0-10, each day drop 2 lowest and add 2 higher.
@@ -222,8 +296,12 @@ function genEquations(stage) {
 // Day 2: 2-12  (11 numbers)
 // Day 3: 4-14  ... and so on.
 // Caps at the hundreds so the baby progresses to advanced counting.
-function getDomanWindow(dayNum) {
-  const lo = Math.max(0, (dayNum - 1) * 2);
+function getDomanWindow(dayNum, stageId) {
+  // For numerals (unlocking at day 81), we want them to start at 0-10 again,
+  // not at 160+. Use a stage-relative day number.
+  const stage = MATH_STAGES.find(s => s.id === stageId);
+  const offsetDay = stage ? Math.max(1, dayNum - stage.unlockDay + 1) : dayNum;
+  const lo = Math.max(0, (offsetDay - 1) * 2);
   const hi = lo + 10;
   const nums = [];
   for (let n = lo; n <= hi; n++) nums.push(n);
@@ -233,13 +311,15 @@ function getDomanWindow(dayNum) {
 // One session = 11 cards.
 // Session 1 of the day: in order (0,1,2…10)
 // Sessions 2 & 3: shuffled
-function getMathCards(stage, dayNum, sessionNum) {
-  if (stage==="dots"||stage==="numerals") {
-    const w = getDomanWindow(dayNum);
+function getMathCards(stageId, dayNum, sessionNum) {
+  const stage = MATH_STAGES.find(s => s.id === stageId);
+  if (!stage) return [];
+  if (!stage.isEq) {
+    const w = getDomanWindow(dayNum, stageId);
     const ordered = sessionNum === 1 ? w : shuffle(w);
     return ordered.map(n => ({ n }));
   }
-  return genEquations(stage);
+  return genEquations(stageId, dayNum);
 }
 
 // Get the day number based on when parent first opened the app.
@@ -1931,11 +2011,10 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
   );
 }
 
-function HomeScreen({ activeChild, streak, onSelect, language, mathStage, speechOn, onLang, onMath, onToggleSpeech, onProgress, onOpenChildren }) {
-  const stageName = MATH_STAGES.find(s=>s.id===mathStage)?.label||"Dots Only";
+function HomeScreen({ activeChild, streak, onSelectCategory, language, speechOn, onLang, onToggleSpeech, onProgress, onOpenChildren }) {
+  const dayNum = getDayNumber();
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",padding:"16px 20px 24px"}}>
-      {/* Top bar: child switcher + streak flame */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
         <ChildSwitcher activeChild={activeChild} onOpen={onOpenChildren}/>
         <button onClick={onProgress}
@@ -1945,57 +2024,147 @@ function HomeScreen({ activeChild, streak, onSelect, language, mathStage, speech
       </div>
 
       <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-        <div style={{textAlign:"center",marginBottom:20,display:"flex",flexDirection:"column",alignItems:"center"}}>
-          <img src={LOGO_SRC} alt="Limitless Babies" style={{width:130,height:"auto",objectFit:"contain",marginBottom:4,display:"block"}}/>
-          <h1 style={{fontSize:32,color:"#111",margin:0,fontFamily:"'Fredoka One',cursive",letterSpacing:-.5,textAlign:"center"}}>Limitless Babies</h1>
-          <p style={{color:"#ccc",fontFamily:"Nunito,sans-serif",fontSize:12,marginTop:4,fontWeight:700,textAlign:"center"}}>early learning · every day</p>
+        <div style={{textAlign:"center",marginBottom:14,display:"flex",flexDirection:"column",alignItems:"center"}}>
+          <img src={LOGO_SRC} alt="Limitless Babies" style={{width:120,height:"auto",objectFit:"contain",marginBottom:4,display:"block"}}/>
+          <h1 style={{fontSize:28,color:"#111",margin:0,fontFamily:"'Fredoka One',cursive",letterSpacing:-.5,textAlign:"center"}}>Limitless Babies</h1>
+          <p style={{color:"#ccc",fontFamily:"Nunito,sans-serif",fontSize:12,marginTop:3,fontWeight:700,textAlign:"center"}}>day {dayNum} · early learning</p>
         </div>
 
-        <div style={{display:"flex",gap:10,marginBottom:10,flexWrap:"wrap",justifyContent:"center"}}>
-          <button onClick={onLang} style={{display:"flex",alignItems:"center",gap:6,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:RED}}>
+        <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap",justifyContent:"center"}}>
+          <button onClick={onLang} style={{display:"flex",alignItems:"center",gap:6,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"7px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:RED}}>
             🌍 {language} <span style={{fontSize:9,opacity:.5}}>▼</span>
           </button>
-          <button onClick={onMath} style={{display:"flex",alignItems:"center",gap:6,background:"#f5f5f5",border:"2px solid #e8e8e8",borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#555"}}>
-            🔢 {stageName} <span style={{fontSize:9,opacity:.4}}>▼</span>
-          </button>
-        </div>
-
-        <div style={{display:"flex",gap:10,marginBottom:20,justifyContent:"center"}}>
           <button onClick={onToggleSpeech}
-            style={{display:"flex",alignItems:"center",gap:6,background:speechOn?RED:"#f5f5f5",border:`2px solid ${speechOn?RED:"#e8e8e8"}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:speechOn?"#fff":"#555",transition:"all .2s"}}>
-            {speechOn ? "🔊" : "🔇"} {speechOn ? "Speech on" : "Speech off"}
+            style={{display:"flex",alignItems:"center",gap:6,background:speechOn?RED:"#f5f5f5",border:`2px solid ${speechOn?RED:"#e8e8e8"}`,borderRadius:50,padding:"7px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:speechOn?"#fff":"#555"}}>
+            {speechOn ? "🔊" : "🔇"}
           </button>
         </div>
 
-        <div style={{display:"flex",flexDirection:"column",gap:11,width:"100%",maxWidth:370}}>
+        {/* Three big category tiles */}
+        <div style={{display:"flex",flexDirection:"column",gap:14,width:"100%",maxWidth:380}}>
           {[
-            {id:"reading",      label:"Reading",   emoji:"📖", desc:"Single words · 3 sessions a day", unlockDay:1},
-            {id:"couplets",     label:"Couplets",  emoji:"📝", desc:"Two-word phrases · 3 sessions a day", unlockDay:31, lockedDesc:"Unlocks at day 31 (month 2)"},
-            {id:"sentences",    label:"Sentences", emoji:"✍️", desc:"Short sentences · 3 sessions a day", unlockDay:61, lockedDesc:"Unlocks at day 61 (month 3)"},
-            {id:"book",         label:"Book",      emoji:"📚", desc:"Read a short story · 3 sessions a day", unlockDay:91, lockedDesc:"Unlocks at day 91 (month 4)"},
-            {id:"math",         label:"Math",      emoji:"🔢", desc:"Rolling number window · 3 sessions", unlockDay:1},
-            {id:"encyclopedia", label:"Knowledge", emoji:"🌍", desc:"11 facts · 3 sessions a day", unlockDay:1},
-          ].map(c=>{
-            const locked = (getDayNumber() < c.unlockDay);
-            return (
-              <button key={c.id} onClick={()=>!locked && onSelect(c.id)} disabled={locked}
-                style={{background:locked?"#fafafa":"#fff",border:"2px solid #f0f0f0",borderRadius:20,padding:"17px 22px",display:"flex",alignItems:"center",gap:14,cursor:locked?"not-allowed":"pointer",boxShadow:"0 4px 16px rgba(0,0,0,.04)",transition:"all .15s",opacity:locked?0.55:1}}
-                onMouseEnter={e=>{if(!locked){e.currentTarget.style.borderColor=RED;e.currentTarget.style.boxShadow=`0 6px 24px rgba(232,25,44,.1)`;}}}
-                onMouseLeave={e=>{if(!locked){e.currentTarget.style.borderColor="#f0f0f0";e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,.04)";}}}>
-                <span style={{fontSize:34,filter:locked?"grayscale(1)":"none"}}>{c.emoji}</span>
-                <div style={{textAlign:"left",flex:1}}>
-                  <div style={{fontSize:21,color:locked?"#999":"#111",fontFamily:"'Fredoka One',cursive"}}>
-                    {c.label} {locked && <span style={{fontSize:13}}>🔒</span>}
-                  </div>
-                  <div style={{fontSize:11,color:"#bbb",fontFamily:"Nunito,sans-serif",fontWeight:700}}>
-                    {locked ? c.lockedDesc : c.desc}
-                  </div>
-                </div>
-                {!locked && <span style={{marginLeft:"auto",fontSize:18,color:"#ddd"}}>›</span>}
-              </button>
-            );
-          })}
+            {id:"reading",  label:"Reading",    emoji:"📖", desc:"Words, phrases, and stories", color:"#FFF0F1" },
+            {id:"math",     label:"Math",       emoji:"🔢", desc:"Quantities and equations", color:"#F0F8FF" },
+            {id:"knowledge",label:"Knowledge",  emoji:"🌍", desc:"Facts about the world", color:"#F0FFF4" },
+          ].map(c=>(
+            <button key={c.id} onClick={()=>onSelectCategory(c.id)}
+              style={{background:c.color,border:"2px solid transparent",borderRadius:24,padding:"24px 24px",display:"flex",alignItems:"center",gap:16,cursor:"pointer",boxShadow:"0 6px 20px rgba(0,0,0,.05)",transition:"all .15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=RED;e.currentTarget.style.boxShadow=`0 8px 28px rgba(232,25,44,.12)`;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,.05)";}}>
+              <span style={{fontSize:52}}>{c.emoji}</span>
+              <div style={{textAlign:"left",flex:1}}>
+                <div style={{fontSize:26,color:"#111",fontFamily:"'Fredoka One',cursive",lineHeight:1}}>{c.label}</div>
+                <div style={{fontSize:12,color:"#888",fontFamily:"Nunito,sans-serif",fontWeight:700,marginTop:4}}>{c.desc}</div>
+              </div>
+              <span style={{fontSize:22,color:"#ccc"}}>›</span>
+            </button>
+          ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── CATEGORY MENU SCREENS ────────────────────────────────────────────────────
+// Shown after tapping a home-screen category. Displays today's lesson plan +
+// the full roadmap of unlocked/upcoming stages.
+
+function CategoryMenu({ category, onSelect, onBack }) {
+  const dayNum = getDayNumber();
+
+  // Each category defines its stages, along with unlock day.
+  // For reading, the categories unlock progressively (single words → couplets → sentences → book).
+  // For math, we use MATH_STAGES.
+  // For knowledge, there's really just one session type but we can show the theme rotation.
+
+  let stages = [];
+  let categoryIcon = "";
+  let categoryLabel = "";
+  let categoryColor = "#FFF0F1";
+
+  if (category === "reading") {
+    categoryIcon = "📖";
+    categoryLabel = "Reading";
+    categoryColor = "#FFF0F1";
+    stages = [
+      { id:"reading",   label:"Single Words",    emoji:"📖", desc:"11 words per session · 3 per day",   unlockDay:1  },
+      { id:"couplets",  label:"Couplets",        emoji:"📝", desc:"Two-word phrases · 3 sessions/day",   unlockDay:31 },
+      { id:"sentences", label:"Sentences",       emoji:"✍️", desc:"Three-word sentences · 3 per day",    unlockDay:61 },
+      { id:"book",      label:"Book",            emoji:"📚", desc:"Read a short story · 3 times/day",    unlockDay:91 },
+    ];
+  } else if (category === "math") {
+    categoryIcon = "🔢";
+    categoryLabel = "Math";
+    categoryColor = "#F0F8FF";
+    stages = MATH_STAGES.map(s => ({
+      id: s.id, label: s.label, desc: s.desc, unlockDay: s.unlockDay,
+      emoji: s.isEq ? "🧮" : (s.showDots ? "🔴" : "🔢")
+    }));
+  } else if (category === "knowledge") {
+    categoryIcon = "🌍";
+    categoryLabel = "Knowledge";
+    categoryColor = "#F0FFF4";
+    stages = [
+      { id:"encyclopedia", label:"Knowledge Cards", emoji:"🌍", desc:"11 facts across rolling themes",  unlockDay:1 },
+    ];
+  }
+
+  // Today's recommended stage = highest unlocked
+  let todayStage = stages[0];
+  for (const s of stages) if (dayNum >= s.unlockDay) todayStage = s;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
+        <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <h2 style={{fontFamily:"'Fredoka One',cursive",fontSize:20,color:"#111",margin:0}}>{categoryIcon} {categoryLabel}</h2>
+        <div style={{width:38}}/>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"20px 20px 32px"}}>
+        {/* Today's lesson card */}
+        <div style={{background:categoryColor,border:`2px solid ${RED}`,borderRadius:22,padding:"18px 20px",marginBottom:22,boxShadow:"0 6px 20px rgba(232,25,44,.08)"}}>
+          <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:RED,textTransform:"uppercase",letterSpacing:.8,marginBottom:6}}>today's lesson</div>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <span style={{fontSize:44}}>{todayStage.emoji}</span>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:"'Fredoka One',cursive",fontSize:22,color:"#111",lineHeight:1.1}}>{todayStage.label}</div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#888",marginTop:2}}>{todayStage.desc}</div>
+            </div>
+          </div>
+          <button onClick={()=>onSelect(todayStage.id)}
+            style={{marginTop:14,width:"100%",background:RED,border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
+            start today's session →
+          </button>
+        </div>
+
+        {/* Roadmap */}
+        {stages.length > 1 && (
+          <>
+            <div style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:"#111",marginBottom:12,paddingLeft:4}}>roadmap</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {stages.map(s => {
+                const unlocked = dayNum >= s.unlockDay;
+                const isToday = s.id === todayStage.id;
+                return (
+                  <button key={s.id} onClick={()=>unlocked && onSelect(s.id)} disabled={!unlocked}
+                    style={{background:isToday?"#FFF0F1":"#fff",border:`2px solid ${isToday?RED:"#f0f0f0"}`,borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,cursor:unlocked?"pointer":"not-allowed",opacity:unlocked?1:0.55,textAlign:"left"}}>
+                    <span style={{fontSize:28,filter:unlocked?"none":"grayscale(1)"}}>{s.emoji}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:unlocked?"#111":"#999"}}>
+                        {s.label} {!unlocked && <span style={{fontSize:11}}>🔒</span>}
+                      </div>
+                      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#aaa",marginTop:2}}>
+                        {unlocked ? s.desc : `unlocks at day ${s.unlockDay}`}
+                      </div>
+                    </div>
+                    {unlocked && <span style={{fontSize:16,color:"#ccc"}}>›</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -2164,13 +2333,14 @@ function ReadingSession({ words, language, speechOn, sessionNum, onBack, onCompl
 
 function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComplete }) {
   const dayNum = useMemo(()=>getDayNumber(), []);
+  const stage = useMemo(()=>MATH_STAGES.find(s => s.id === mathStage) || MATH_STAGES[0], [mathStage]);
   const cards = useMemo(()=>getMathCards(mathStage, dayNum, sessionNum), [mathStage, dayNum, sessionNum]);
   const [idx, setIdx]     = useState(0);
   const [visible, setVisible] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [finished, setFinished] = useState(false);
-  const isEq = mathStage.startsWith("eq");
+  const isEq = stage.isEq;
 
   useEffect(()=>setRevealed(false),[idx]);
 
@@ -2201,8 +2371,8 @@ function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComp
   if (finished) return <CompleteScreen category="math" sessionNum={sessionNum} onBack={onBack}/>;
 
   const card=cards[idx]||{};
-  const showDots=mathStage==="eq-dots"||mathStage==="eq-both";
-  const showNums=mathStage==="eq-numerals"||mathStage==="eq-both";
+  const showDots = stage.showDots && stage.isEq;  // only show dots in equation mode if stage config says so
+  const showNums = stage.showNumerals && stage.isEq;
   const bigN={fontSize:showDots?22:50,fontFamily:"'Fredoka One',cursive",color:RED,textAlign:"center",lineHeight:1};
   const opSty={fontSize:showDots?28:52,fontFamily:"'Fredoka One',cursive",color:"#222",lineHeight:1,padding:"0 4px"};
 
@@ -2213,7 +2383,7 @@ function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComp
     </div>
   );
 
-  const winLo = Math.max(0, (dayNum - 1) * 2);
+  const winLo = Math.max(0, (Math.max(1, dayNum - stage.unlockDay + 1) - 1) * 2);
   const winHi = winLo + 10;
 
   return (
@@ -2221,11 +2391,9 @@ function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComp
       <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={isEq ? null : sessionNum}
         autoPlay={autoPlay} onAutoPlay={isEq?null:()=>setAutoPlay(a=>!a)}/>
 
-      {!isEq && (
-        <div style={{textAlign:"center",padding:"4px 0 0",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#bbb",letterSpacing:.5}}>
-          day {dayNum} · range {winLo}–{winHi} {sessionNum === 1 ? "· in order" : "· shuffled"}
-        </div>
-      )}
+      <div style={{textAlign:"center",padding:"4px 0 0",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#bbb",letterSpacing:.5}}>
+        {stage.label.toLowerCase()}{!isEq ? ` · range ${winLo}–${winHi} · ${sessionNum === 1 ? "in order" : "shuffled"}` : ""}
+      </div>
 
       <div onClick={isEq?undefined:advance}
         style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:isEq?"default":"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
@@ -2541,11 +2709,45 @@ export default function App() {
     });
   };
 
-  const handleSelect = (category) => {
+  // Parent taps one of the 3 big tiles on the home screen → open category menu
+  const handleSelectCategory = (category) => {
+    setMode(`menu:${category}`);
+  };
+
+  // Parent taps a specific stage from inside a category menu → start session
+  const handleStartSession = (stageId) => {
     if (!activeChildId) return;
-    const status = getSessionStatus(activeChildId, category, language);
+    // For math, the stageId IS the stage (e.g., "dots", "add-dots", "numerals")
+    // For reading, it's one of: reading, couplets, sentences, book
+    // For knowledge, it's "encyclopedia"
+
+    // Determine the category this stage belongs to (for session tracking key)
+    let sessionCategory = stageId;
+    if (MATH_STAGES.find(s => s.id === stageId)) {
+      // All math stages share one "math" session quota per day
+      sessionCategory = "math";
+      setMathStage(stageId);
+      try { localStorage.setItem("lb-math", stageId); } catch {}
+    }
+
+    const status = getSessionStatus(activeChildId, sessionCategory, language);
     setSessionStatus(status);
-    setMode(category);
+    setMode(stageId);
+  };
+
+  // Back from session → return to the category menu they came from
+  const handleBackFromSession = () => {
+    // Figure out which category menu to return to based on the current mode
+    let returnTo = null;
+    if (mode === "reading" || mode === "couplets" || mode === "sentences" || mode === "book") {
+      returnTo = "menu:reading";
+    } else if (MATH_STAGES.find(s => s.id === mode)) {
+      returnTo = "menu:math";
+    } else if (mode === "encyclopedia") {
+      returnTo = "menu:knowledge";
+    }
+    setMode(returnTo);
+    setSessionStatus(null);
   };
 
   const handleBackToHome = () => {
@@ -2577,7 +2779,9 @@ export default function App() {
   }
 
   // Cooldown / all-done gate
-  if (mode && sessionStatus?.locked && mode !== "progress") {
+  if (mode && sessionStatus?.locked && mode !== "progress" && !mode.startsWith("menu:")) {
+    // Display a friendly category label — math stages all display as "math"
+    const prettyCategory = MATH_STAGES.find(s => s.id === mode) ? "math" : mode;
     return (
       <>
         <style>{baseStyles}</style>
@@ -2585,8 +2789,8 @@ export default function App() {
           reason={sessionStatus.reason}
           secondsUntilReady={sessionStatus.secondsUntilReady}
           sessionNum={sessionStatus.sessionNum}
-          category={mode}
-          onBack={handleBackToHome}
+          category={prettyCategory}
+          onBack={handleBackFromSession}
         />
       </>
     );
@@ -2595,14 +2799,19 @@ export default function App() {
   return (
     <>
       <style>{baseStyles}</style>
-      {mode===null       && <HomeScreen activeChild={activeChild} streak={streak} onSelect={handleSelect} language={language} mathStage={mathStage} speechOn={speechOn} onLang={()=>setShowLang(true)} onMath={()=>setShowMath(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)}/>}
+      {mode===null       && <HomeScreen activeChild={activeChild} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)}/>}
+
+      {mode==="menu:reading"   && <CategoryMenu category="reading"   onSelect={handleStartSession} onBack={handleBackToHome}/>}
+      {mode==="menu:math"      && <CategoryMenu category="math"      onSelect={handleStartSession} onBack={handleBackToHome}/>}
+      {mode==="menu:knowledge" && <CategoryMenu category="knowledge" onSelect={handleStartSession} onBack={handleBackToHome}/>}
+
       {mode==="progress" && <ProgressScreen child={activeChild} onBack={handleBackToHome}/>}
-      {mode==="reading"  && sessionStatus && <ReadingSession words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("reading")}/>}
-      {mode==="couplets" && sessionStatus && <ReadingSession words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("couplets")}/>}
-      {mode==="sentences"&& sessionStatus && <ReadingSession words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("sentences")}/>}
-      {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("book")}/>}
-      {mode==="math"     && sessionStatus && <MathSession mathStage={mathStage} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("math")}/>}
-      {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
+      {mode==="reading"  && sessionStatus && <ReadingSession words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
+      {mode==="couplets" && sessionStatus && <ReadingSession words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
+      {mode==="sentences"&& sessionStatus && <ReadingSession words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
+      {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("book")}/>}
+      {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
+      {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
 
       {showLang && activeChild && (
         <ChildLanguagePicker
