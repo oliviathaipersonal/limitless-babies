@@ -190,21 +190,49 @@ function getDayNumber() {
   }
 }
 
-// ── SESSION TRACKING ─────────────────────────────────────────────────────────
-// Doman protocol: exactly 3 sessions per day, per category,
+// ── CHILD PROFILES ───────────────────────────────────────────────────────────
+// Each child has: id, name, emoji, languages (array), createdAt
+// Stored in localStorage as "lb-children" — array of child objects.
+// Also tracks "lb-active-child" = current child id.
+
+function loadChildren() {
+  try {
+    const raw = localStorage.getItem("lb-children");
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveChildren(children) {
+  try { localStorage.setItem("lb-children", JSON.stringify(children)); } catch {}
+}
+
+function getActiveChildId() {
+  try { return localStorage.getItem("lb-active-child") || null; } catch { return null; }
+}
+
+function setActiveChildId(id) {
+  try { localStorage.setItem("lb-active-child", id); } catch {}
+}
+
+function newChildId() {
+  return "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+}
+
+// ── SESSION TRACKING (per-child, per-language) ───────────────────────────────
+// Doman protocol: 3 sessions per day per (child, category, language),
 // with at least 5 minutes between sessions.
 
-const SESSION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+const SESSION_COOLDOWN_MS = 5 * 60 * 1000;
 const MAX_SESSIONS_PER_DAY = 3;
 
-// Returns { sessionNum, locked, secondsUntilReady }
-// sessionNum is 1, 2, or 3 (the next available session).
-// locked=true means all 3 sessions done OR cooldown active.
-function getSessionStatus(category) {
+function sessionKey(childId, category, language, dk) {
+  return `lb-sess-${childId}-${category}-${language}-${dk}`;
+}
+
+function getSessionStatus(childId, category, language) {
   try {
     const dk = todayKey();
-    const key = `lb-sess-${category}-${dk}`;
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(sessionKey(childId, category, language, dk));
     const data = raw ? JSON.parse(raw) : { count: 0, lastAt: 0 };
 
     if (data.count >= MAX_SESSIONS_PER_DAY) {
@@ -224,32 +252,64 @@ function getSessionStatus(category) {
   }
 }
 
-function markSessionComplete(category) {
+function markSessionComplete(childId, category, language) {
   try {
     const dk = todayKey();
-    const key = `lb-sess-${category}-${dk}`;
+    const key = sessionKey(childId, category, language, dk);
     const raw = localStorage.getItem(key);
     const data = raw ? JSON.parse(raw) : { count: 0, lastAt: 0 };
     data.count = Math.min(MAX_SESSIONS_PER_DAY, data.count + 1);
     data.lastAt = Date.now();
     localStorage.setItem(key, JSON.stringify(data));
 
-    // Also log in history for the progress report
-    const histKey = "lb-history";
+    // Log in history: per child, by date, by category, by language
+    const histKey = `lb-history-${childId}`;
     const hist = JSON.parse(localStorage.getItem(histKey) || "{}");
-    if (!hist[dk]) hist[dk] = { reading: 0, math: 0, encyclopedia: 0 };
-    hist[dk][category] = (hist[dk][category] || 0) + 1;
+    if (!hist[dk]) hist[dk] = {};
+    const dayKey = `${category}:${language}`;
+    hist[dk][dayKey] = (hist[dk][dayKey] || 0) + 1;
     localStorage.setItem(histKey, JSON.stringify(hist));
   } catch {}
 }
 
-// Read history for the progress report
-function getHistory() {
+function getHistory(childId) {
   try {
-    return JSON.parse(localStorage.getItem("lb-history") || "{}");
-  } catch {
-    return {};
+    return JSON.parse(localStorage.getItem(`lb-history-${childId}`) || "{}");
+  } catch { return {}; }
+}
+
+// Compute streak (consecutive days with at least one session of any kind)
+function computeStreak(hist) {
+  const today = todayKey();
+  const oneDay = 1000 * 60 * 60 * 24;
+  let streak = 0;
+  let cursor = new Date(today + "T00:00:00");
+  for (;;) {
+    const key = cursor.toISOString().split("T")[0];
+    const day = hist[key];
+    const hasAny = day && Object.values(day).some(v => v > 0);
+    if (hasAny) {
+      streak++;
+      cursor = new Date(cursor.getTime() - oneDay);
+    } else break;
   }
+  // If no session today yet but yesterday had one, streak is still "alive" showing yesterday's count
+  if (streak === 0) {
+    const yest = new Date(new Date(today+"T00:00:00").getTime() - oneDay).toISOString().split("T")[0];
+    const day = hist[yest];
+    const hasAny = day && Object.values(day).some(v => v > 0);
+    if (hasAny) {
+      // Calculate from yesterday backward
+      let c = new Date(yest + "T00:00:00");
+      for (;;) {
+        const key = c.toISOString().split("T")[0];
+        const d = hist[key];
+        const has = d && Object.values(d).some(v => v > 0);
+        if (has) { streak++; c = new Date(c.getTime() - oneDay); } else break;
+      }
+    }
+  }
+  return streak;
 }
 
 // ── PHOTO DISPLAY (large emoji in rose panel — reliable, always appropriate) ─
@@ -904,41 +964,40 @@ function CompleteScreen({ category, sessionNum, onBack }) {
   );
 }
 
-function ProgressScreen({ onBack }) {
-  const hist = useMemo(()=>getHistory(), []);
+function ProgressScreen({ child, onBack }) {
+  const hist = useMemo(()=>getHistory(child?.id), [child?.id]);
   const dayNum = useMemo(()=>getDayNumber(), []);
-  const dates = Object.keys(hist).sort().reverse(); // newest first
+  const dates = Object.keys(hist).sort().reverse();
 
-  // Aggregate totals
-  const totals = { reading: 0, math: 0, encyclopedia: 0 };
+  // Aggregate totals by category & by language
+  const byCategory = { reading: 0, math: 0, encyclopedia: 0 };
+  const byLanguage = {};
   dates.forEach(d => {
-    totals.reading += hist[d].reading || 0;
-    totals.math += hist[d].math || 0;
-    totals.encyclopedia += hist[d].encyclopedia || 0;
+    const day = hist[d] || {};
+    Object.entries(day).forEach(([k, count]) => {
+      const [cat, lang] = k.split(":");
+      if (byCategory[cat] !== undefined) byCategory[cat] += count;
+      if (lang) byLanguage[lang] = (byLanguage[lang] || 0) + count;
+    });
   });
-  const grandTotal = totals.reading + totals.math + totals.encyclopedia;
+  const grandTotal = byCategory.reading + byCategory.math + byCategory.encyclopedia;
 
-  // Current streak = consecutive days from today going back with at least 1 session
+  const streak = useMemo(()=>computeStreak(hist), [hist]);
   const today = todayKey();
-  let streak = 0;
   const oneDay = 1000 * 60 * 60 * 24;
-  let cursor = new Date(today + "T00:00:00");
-  for (;;) {
-    const key = cursor.toISOString().split("T")[0];
-    const day = hist[key];
-    if (day && (day.reading || day.math || day.encyclopedia)) {
-      streak++;
-      cursor = new Date(cursor.getTime() - oneDay);
-    } else break;
-  }
 
-  // Today's progress
-  const todayData = hist[today] || { reading: 0, math: 0, encyclopedia: 0 };
+  // Today's progress per category (summing all languages)
+  const todayData = { reading: 0, math: 0, encyclopedia: 0 };
+  const todayHist = hist[today] || {};
+  Object.entries(todayHist).forEach(([k, count]) => {
+    const [cat] = k.split(":");
+    if (todayData[cat] !== undefined) todayData[cat] += count;
+  });
 
   const StatCard = ({ label, value, emoji, big }) => (
     <div style={{flex:1,background:"#fff",border:"2px solid #f0f0f0",borderRadius:18,padding:"16px 14px",textAlign:"center",minWidth:0}}>
-      <div style={{fontSize:big?32:24,marginBottom:4}}>{emoji}</div>
-      <div style={{fontFamily:"'Fredoka One',cursive",fontSize:big?34:22,color:RED,lineHeight:1}}>{value}</div>
+      <div style={{fontSize:big?30:22,marginBottom:4}}>{emoji}</div>
+      <div style={{fontFamily:"'Fredoka One',cursive",fontSize:big?32:22,color:RED,lineHeight:1}}>{value}</div>
       <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#aaa",marginTop:4,textTransform:"uppercase",letterSpacing:.5}}>{label}</div>
     </div>
   );
@@ -964,12 +1023,27 @@ function ProgressScreen({ onBack }) {
     </div>
   );
 
+  // Get per-language summary for a day
+  const dayByLang = (day) => {
+    const langs = {};
+    Object.entries(day||{}).forEach(([k, c]) => {
+      const [, lang] = k.split(":");
+      if (lang) langs[lang] = (langs[lang] || 0) + c;
+    });
+    return langs;
+  };
+
+  // Sort languages by total sessions descending
+  const languageEntries = Object.entries(byLanguage).sort((a,b)=>b[1]-a[1]);
+
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
         <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
-        <h2 style={{fontFamily:"'Fredoka One',cursive",fontSize:20,color:"#111",margin:0}}>Progress</h2>
+        <div style={{textAlign:"center"}}>
+          <h2 style={{fontFamily:"'Fredoka One',cursive",fontSize:18,color:"#111",margin:0}}>Progress</h2>
+          {child && <p style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#aaa",margin:"2px 0 0"}}>{child.emoji} {child.name}</p>}
+        </div>
         <div style={{width:38}}/>
       </div>
 
@@ -984,45 +1058,64 @@ function ProgressScreen({ onBack }) {
           </div>
         ) : (
           <>
-            {/* Top stats row */}
             <div style={{display:"flex",gap:10,marginBottom:18}}>
               <StatCard label="day" value={dayNum} emoji="🗓️" big/>
               <StatCard label="streak" value={streak} emoji="🔥" big/>
               <StatCard label="sessions" value={grandTotal} emoji="⭐" big/>
             </div>
 
-            {/* Today's progress */}
             <div style={{marginBottom:22}}>
               <h3 style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>today</h3>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <TodayRow label="Reading" emoji="📖" done={todayData.reading||0}/>
-                <TodayRow label="Math" emoji="🔢" done={todayData.math||0}/>
-                <TodayRow label="Knowledge" emoji="🌍" done={todayData.encyclopedia||0}/>
+                <TodayRow label="Reading" emoji="📖" done={todayData.reading}/>
+                <TodayRow label="Math" emoji="🔢" done={todayData.math}/>
+                <TodayRow label="Knowledge" emoji="🌍" done={todayData.encyclopedia}/>
               </div>
             </div>
 
-            {/* By-category totals */}
             <div style={{marginBottom:22}}>
-              <h3 style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>all-time</h3>
+              <h3 style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>by category</h3>
               <div style={{display:"flex",gap:10}}>
-                <StatCard label="reading" value={totals.reading} emoji="📖"/>
-                <StatCard label="math" value={totals.math} emoji="🔢"/>
-                <StatCard label="knowledge" value={totals.encyclopedia} emoji="🌍"/>
+                <StatCard label="reading" value={byCategory.reading} emoji="📖"/>
+                <StatCard label="math" value={byCategory.math} emoji="🔢"/>
+                <StatCard label="knowledge" value={byCategory.encyclopedia} emoji="🌍"/>
               </div>
             </div>
 
-            {/* Day-by-day log */}
+            {languageEntries.length > 0 && (
+              <div style={{marginBottom:22}}>
+                <h3 style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>by language</h3>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {languageEntries.map(([lang, count])=>{
+                    const maxCount = languageEntries[0][1];
+                    const pct = Math.max(8, (count/maxCount)*100);
+                    return (
+                      <div key={lang} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:"#fafafa",borderRadius:12}}>
+                        <span style={{flex:"0 0 110px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#333"}}>{lang}</span>
+                        <div style={{flex:1,height:8,background:"#efefef",borderRadius:4,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${pct}%`,background:RED,borderRadius:4,transition:"width .4s"}}/>
+                        </div>
+                        <span style={{fontFamily:"'Fredoka One',cursive",fontSize:14,color:RED,minWidth:26,textAlign:"right"}}>{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div>
               <h3 style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>recent days</h3>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 {dates.slice(0,14).map(d => {
                   const day = hist[d];
-                  const total = (day.reading||0)+(day.math||0)+(day.encyclopedia||0);
+                  let total = 0;
+                  Object.values(day).forEach(v => { total += v; });
+                  const langs = Object.entries(dayByLang(day)).sort((a,b)=>b[1]-a[1]).slice(0,3);
                   return (
                     <div key={d} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:"#fafafa",borderRadius:12}}>
-                      <span style={{flex:1,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#555",textTransform:"capitalize"}}>{dayLabel(d)}</span>
-                      <span style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa"}}>
-                        📖 {day.reading||0} · 🔢 {day.math||0} · 🌍 {day.encyclopedia||0}
+                      <span style={{flex:"0 0 88px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#555",textTransform:"capitalize"}}>{dayLabel(d)}</span>
+                      <span style={{flex:1,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#aaa",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {langs.map(([l,c]) => `${l} ${c}`).join(" · ") || "—"}
                       </span>
                       <span style={{fontFamily:"'Fredoka One',cursive",fontSize:14,color:total>=9?RED:"#bbb",minWidth:22,textAlign:"right"}}>{total}</span>
                     </div>
@@ -1072,6 +1165,33 @@ function LanguagePicker({ selected, onSelect, onClose }) {
   );
 }
 
+// Simpler language picker limited to the active child's enabled languages
+function ChildLanguagePicker({ languages, selected, onSelect, onEditLanguages, onClose }) {
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{padding:"22px 22px 14px",borderBottom:"1px solid #f0f0f0"}}>
+        <h2 style={{fontFamily:"'Fredoka One',cursive",fontSize:24,color:"#111",margin:0}}>🌍 Language for this session</h2>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa",margin:"6px 0 0"}}>Choose from your child's languages</p>
+      </div>
+      <div style={{overflowY:"auto",flex:1,paddingBottom:16}}>
+        {languages.map(lang=>(
+          <button key={lang} onClick={()=>{onSelect(lang);onClose();}}
+            style={{display:"block",width:"100%",textAlign:"left",padding:"13px 22px",border:"none",background:selected===lang?"#FFF0F1":"transparent",color:selected===lang?RED:"#333",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:15,cursor:"pointer",borderLeft:selected===lang?`4px solid ${RED}`:"4px solid transparent"}}>
+            {lang}{selected===lang?" ✓":""}
+          </button>
+        ))}
+      </div>
+      <div style={{padding:"12px 22px 22px",borderTop:"1px solid #f0f0f0"}}>
+        <button onClick={()=>{onClose();onEditLanguages();}}
+          style={{width:"100%",background:"#f5f5f5",border:"2px dashed #ccc",borderRadius:50,padding:"10px 18px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#666"}}>
+          + manage child's languages
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+
 function MathStagePicker({ selected, onSelect, onClose }) {
   return (
     <Sheet onClose={onClose}>
@@ -1095,56 +1215,380 @@ function MathStagePicker({ selected, onSelect, onClose }) {
   );
 }
 
-// ── HOME ──────────────────────────────────────────────────────────────────────
+// ── CHILD AVATAR PICKER ──────────────────────────────────────────────────────
 
-function HomeScreen({ onSelect, language, mathStage, speechOn, onLang, onMath, onToggleSpeech, onProgress }) {
-  const stageName = MATH_STAGES.find(s=>s.id===mathStage)?.label||"Dots Only";
+const CHILD_EMOJIS = ["👶","🧒","👧","👦","🐣","🐥","🦊","🐻","🐨","🐼","🦁","🐰","🦄","🦋","🌸","⭐","🌟","🌈","🍎","🧚"];
+
+// ── ONBOARDING (first-time setup) ────────────────────────────────────────────
+
+function Onboarding({ onDone }) {
+  const [step, setStep] = useState(0); // 0=welcome, 1=first child, 2=ask about another
+  const [children, setChildren] = useState([]);
+  const [name, setName] = useState("");
+  const [emoji, setEmoji] = useState(CHILD_EMOJIS[0]);
+  const [langs, setLangs] = useState(["English"]);
+  const [showLangPicker, setShowLangPicker] = useState(false);
+
+  const addCurrentChild = () => {
+    if (!name.trim()) return;
+    const child = {
+      id: newChildId(),
+      name: name.trim(),
+      emoji,
+      languages: langs.length ? langs : ["English"],
+      createdAt: Date.now(),
+    };
+    const next = [...children, child];
+    setChildren(next);
+    setName(""); setEmoji(CHILD_EMOJIS[next.length % CHILD_EMOJIS.length]); setLangs(["English"]);
+    setStep(2);
+  };
+
+  const finish = () => {
+    saveChildren(children);
+    if (children.length) setActiveChildId(children[0].id);
+    onDone();
+  };
+
+  const toggleLang = (l) => {
+    setLangs(prev => prev.includes(l) ? prev.filter(x=>x!==l) : [...prev, l]);
+  };
+
   return (
-    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
-      <div style={{textAlign:"center",marginBottom:24,display:"flex",flexDirection:"column",alignItems:"center"}}>
-        <img src={LOGO_SRC} alt="Limitless Babies" style={{width:150,height:150,objectFit:"contain",marginBottom:4,display:"block"}}/>
-        <h1 style={{fontSize:36,color:"#111",margin:0,fontFamily:"'Fredoka One',cursive",letterSpacing:-.5,textAlign:"center"}}>Limitless Babies</h1>
-        <p style={{color:"#ccc",fontFamily:"Nunito,sans-serif",fontSize:12,marginTop:4,fontWeight:700,textAlign:"center"}}>early learning · every day</p>
-      </div>
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",padding:"36px 24px",overflowY:"auto"}}>
+      <img src={LOGO_SRC} alt="" style={{width:110,height:110,objectFit:"contain",marginBottom:8}}/>
+      <h1 style={{fontSize:30,color:"#111",margin:0,fontFamily:"'Fredoka One',cursive",letterSpacing:-.5,textAlign:"center"}}>Limitless Babies</h1>
 
-      <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap",justifyContent:"center"}}>
-        <button onClick={onLang} style={{display:"flex",alignItems:"center",gap:6,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:RED}}>
-          🌍 {language} <span style={{fontSize:9,opacity:.5}}>▼</span>
-        </button>
-        <button onClick={onMath} style={{display:"flex",alignItems:"center",gap:6,background:"#f5f5f5",border:"2px solid #e8e8e8",borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#555"}}>
-          🔢 {stageName} <span style={{fontSize:9,opacity:.4}}>▼</span>
-        </button>
-      </div>
+      {step === 0 && (
+        <>
+          <p style={{color:"#666",fontFamily:"Nunito,sans-serif",fontSize:15,marginTop:16,fontWeight:700,textAlign:"center",maxWidth:320,lineHeight:1.5}}>
+            Welcome! Let's set up profiles for your little learners. You can add as many children as you'd like.
+          </p>
+          <button onClick={()=>setStep(1)}
+            style={{marginTop:36,background:RED,border:"none",borderRadius:50,padding:"14px 36px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:"#fff",boxShadow:"0 6px 20px rgba(232,25,44,.25)"}}>
+            get started →
+          </button>
+        </>
+      )}
 
-      <div style={{display:"flex",gap:10,marginBottom:22,justifyContent:"center"}}>
-        <button onClick={onToggleSpeech}
-          style={{display:"flex",alignItems:"center",gap:6,background:speechOn?RED:"#f5f5f5",border:`2px solid ${speechOn?RED:"#e8e8e8"}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:speechOn?"#fff":"#555",transition:"all .2s"}}>
-          {speechOn ? "🔊" : "🔇"} {speechOn ? "Speech on" : "Speech off"}
-        </button>
-        <button onClick={onProgress}
-          style={{display:"flex",alignItems:"center",gap:6,background:"#f5f5f5",border:"2px solid #e8e8e8",borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#555"}}>
-          📊 Progress
-        </button>
-      </div>
+      {step === 1 && (
+        <>
+          <p style={{color:"#888",fontFamily:"Nunito,sans-serif",fontSize:13,marginTop:8,fontWeight:700,textAlign:"center"}}>
+            {children.length === 0 ? "First child" : `Child ${children.length + 1}`}
+          </p>
 
-      <div style={{display:"flex",flexDirection:"column",gap:11,width:"100%",maxWidth:370}}>
-        {[
-          {id:"reading",      label:"Reading",   emoji:"📖", desc:"11 words · 3 sessions a day"},
-          {id:"math",         label:"Math",      emoji:"🔢", desc:"Rolling number window · 3 sessions"},
-          {id:"encyclopedia", label:"Knowledge", emoji:"🌍", desc:"11 facts · 3 sessions a day"},
-        ].map(c=>(
-          <button key={c.id} onClick={()=>onSelect(c.id)}
-            style={{background:"#fff",border:"2px solid #f0f0f0",borderRadius:20,padding:"17px 22px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,.04)",transition:"all .15s"}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=RED;e.currentTarget.style.boxShadow=`0 6px 24px rgba(232,25,44,.1)`;}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor="#f0f0f0";e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,.04)";}}>
-            <span style={{fontSize:34}}>{c.emoji}</span>
-            <div style={{textAlign:"left"}}>
-              <div style={{fontSize:21,color:"#111",fontFamily:"'Fredoka One',cursive"}}>{c.label}</div>
-              <div style={{fontSize:11,color:"#bbb",fontFamily:"Nunito,sans-serif",fontWeight:700}}>{c.desc}</div>
+          <div style={{width:"100%",maxWidth:360,marginTop:24}}>
+            <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Name</label>
+            <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g., Lily"
+              style={{width:"100%",padding:"13px 16px",borderRadius:14,border:"2px solid #eee",fontSize:16,fontFamily:"Nunito,sans-serif",fontWeight:700,outline:"none",boxSizing:"border-box"}}
+              onFocus={e=>e.target.style.borderColor=RED} onBlur={e=>e.target.style.borderColor="#eee"}/>
+          </div>
+
+          <div style={{width:"100%",maxWidth:360,marginTop:18}}>
+            <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:8,letterSpacing:.5,textTransform:"uppercase"}}>Avatar</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {CHILD_EMOJIS.map(e=>(
+                <button key={e} onClick={()=>setEmoji(e)}
+                  style={{width:44,height:44,fontSize:24,border:`2px solid ${emoji===e?RED:"#eee"}`,background:emoji===e?"#FFF0F1":"#fff",borderRadius:12,cursor:"pointer"}}>
+                  {e}
+                </button>
+              ))}
             </div>
-            <span style={{marginLeft:"auto",fontSize:18,color:"#ddd"}}>›</span>
+          </div>
+
+          <div style={{width:"100%",maxWidth:360,marginTop:18}}>
+            <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:8,letterSpacing:.5,textTransform:"uppercase"}}>
+              Languages to learn ({langs.length})
+            </label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+              {langs.map(l=>(
+                <div key={l} style={{display:"flex",alignItems:"center",gap:6,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"6px 12px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:RED}}>
+                  {l}
+                  <button onClick={()=>toggleLang(l)} style={{background:"none",border:"none",cursor:"pointer",color:RED,padding:0,fontSize:14,lineHeight:1}}>×</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={()=>setShowLangPicker(true)}
+              style={{display:"flex",alignItems:"center",gap:6,background:"#f5f5f5",border:"2px dashed #ccc",borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#666"}}>
+              + add language
+            </button>
+          </div>
+
+          <div style={{display:"flex",gap:10,marginTop:28}}>
+            {children.length > 0 && (
+              <button onClick={()=>setStep(2)}
+                style={{background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+                skip
+              </button>
+            )}
+            <button onClick={addCurrentChild} disabled={!name.trim()}
+              style={{background:name.trim()?RED:"#ddd",border:"none",borderRadius:50,padding:"12px 26px",cursor:name.trim()?"pointer":"not-allowed",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+              save {emoji} →
+            </button>
+          </div>
+
+          {showLangPicker && (
+            <LanguageMultiPicker selected={langs} onToggle={toggleLang} onClose={()=>setShowLangPicker(false)}/>
+          )}
+        </>
+      )}
+
+      {step === 2 && (
+        <>
+          <div style={{fontSize:48,marginTop:20}}>{children[children.length-1]?.emoji}</div>
+          <p style={{fontFamily:"'Fredoka One',cursive",fontSize:22,color:"#111",marginTop:8,textAlign:"center"}}>
+            {children[children.length-1]?.name} is all set!
+          </p>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,color:"#888",fontSize:14,marginTop:10,textAlign:"center",maxWidth:300,lineHeight:1.5}}>
+            Want to add another little learner? You can always add more later.
+          </p>
+
+          <div style={{marginTop:14,display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",maxWidth:360}}>
+            {children.map(c=>(
+              <div key={c.id} style={{display:"flex",alignItems:"center",gap:6,background:"#FFF0F1",borderRadius:50,padding:"6px 14px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:RED}}>
+                {c.emoji} {c.name}
+              </div>
+            ))}
+          </div>
+
+          <div style={{display:"flex",gap:10,marginTop:32}}>
+            <button onClick={()=>setStep(1)}
+              style={{background:"#f5f5f5",border:"none",borderRadius:50,padding:"13px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+              + add another
+            </button>
+            <button onClick={finish}
+              style={{background:RED,border:"none",borderRadius:50,padding:"13px 32px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+              let's begin →
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── LANGUAGE MULTI-PICKER (used in onboarding & child settings) ──────────────
+
+function LanguageMultiPicker({ selected, onToggle, onClose }) {
+  const [q, setQ] = useState("");
+  const filtered = LANGUAGES.filter(l=>l.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{padding:"22px 22px 14px",borderBottom:"1px solid #f0f0f0"}}>
+        <h2 style={{fontFamily:"'Fredoka One',cursive",fontSize:24,color:"#111",margin:"0 0 6px"}}>🌍 Languages</h2>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa",marginBottom:10}}>Tap to add or remove. {selected.length} selected.</p>
+        <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search languages…"
+          style={{width:"100%",padding:"10px 14px",borderRadius:12,border:"2px solid #eee",fontSize:15,fontFamily:"Nunito,sans-serif",fontWeight:700,outline:"none",boxSizing:"border-box"}}
+          onFocus={e=>e.target.style.borderColor=RED} onBlur={e=>e.target.style.borderColor="#eee"}/>
+      </div>
+      <div style={{overflowY:"auto",flex:1,paddingBottom:16}}>
+        {filtered.map(lang=>(
+          <button key={lang} onClick={()=>onToggle(lang)}
+            style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",textAlign:"left",padding:"12px 22px",border:"none",background:selected.includes(lang)?"#FFF0F1":"transparent",color:selected.includes(lang)?RED:"#333",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:15,cursor:"pointer",borderLeft:selected.includes(lang)?`4px solid ${RED}`:"4px solid transparent"}}>
+            <span>{lang}</span>
+            <span style={{fontSize:16}}>{selected.includes(lang)?"✓":"+"}</span>
           </button>
         ))}
+      </div>
+      <div style={{padding:"12px 22px 20px",borderTop:"1px solid #f0f0f0"}}>
+        <button onClick={onClose} style={{width:"100%",background:RED,border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>done</button>
+      </div>
+    </Sheet>
+  );
+}
+
+// ── CHILD SWITCHER (the little pill showing active child + tap to switch) ────
+
+function ChildSwitcher({ activeChild, onOpen }) {
+  if (!activeChild) return null;
+  return (
+    <button onClick={onOpen}
+      style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:"2px solid #f0f0f0",borderRadius:50,padding:"6px 14px 6px 6px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#333",boxShadow:"0 2px 8px rgba(0,0,0,.04)"}}>
+      <span style={{width:28,height:28,borderRadius:"50%",background:"#FFF0F1",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{activeChild.emoji}</span>
+      {activeChild.name}
+      <span style={{fontSize:9,color:"#999",marginLeft:2}}>▼</span>
+    </button>
+  );
+}
+
+// ── CHILDREN MANAGEMENT SHEET ────────────────────────────────────────────────
+
+function ChildrenSheet({ children, activeId, onSelect, onAddNew, onEdit, onClose }) {
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{padding:"22px 22px 14px",borderBottom:"1px solid #f0f0f0"}}>
+        <h2 style={{fontFamily:"'Fredoka One',cursive",fontSize:24,color:"#111",margin:0}}>Who's learning?</h2>
+      </div>
+      <div style={{overflowY:"auto",flex:1,padding:"10px 14px"}}>
+        {children.map(c=>{
+          const isActive = c.id === activeId;
+          return (
+            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px",borderRadius:14,background:isActive?"#FFF0F1":"transparent",marginBottom:4}}>
+              <button onClick={()=>onSelect(c.id)}
+                style={{flex:1,display:"flex",alignItems:"center",gap:12,background:"none",border:"none",cursor:"pointer",padding:"4px",textAlign:"left"}}>
+                <span style={{width:44,height:44,borderRadius:"50%",background:isActive?"#fff":"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,border:isActive?`2px solid ${RED}`:"2px solid transparent"}}>{c.emoji}</span>
+                <div>
+                  <div style={{fontFamily:"'Fredoka One',cursive",fontSize:17,color:isActive?RED:"#111"}}>{c.name}</div>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#aaa"}}>
+                    {c.languages.length} {c.languages.length===1?"language":"languages"}
+                  </div>
+                </div>
+                {isActive && <span style={{marginLeft:"auto",color:RED,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12}}>active ✓</span>}
+              </button>
+              <button onClick={()=>onEdit(c)}
+                style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#999",padding:"6px 8px"}}>
+                ✎
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{padding:"12px 22px 22px",borderTop:"1px solid #f0f0f0"}}>
+        <button onClick={onAddNew}
+          style={{width:"100%",background:"#f5f5f5",border:"2px dashed #ccc",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#555"}}>
+          + add another child
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+// ── CHILD EDITOR SHEET (add new or edit existing) ────────────────────────────
+
+function ChildEditor({ child, onSave, onDelete, onClose }) {
+  const [name, setName] = useState(child?.name || "");
+  const [emoji, setEmoji] = useState(child?.emoji || CHILD_EMOJIS[0]);
+  const [langs, setLangs] = useState(child?.languages || ["English"]);
+  const [showLangPicker, setShowLangPicker] = useState(false);
+  const isNew = !child;
+
+  const toggleLang = (l)=>setLangs(p=>p.includes(l)?p.filter(x=>x!==l):[...p,l]);
+
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{padding:"22px 22px 14px",borderBottom:"1px solid #f0f0f0"}}>
+        <h2 style={{fontFamily:"'Fredoka One',cursive",fontSize:24,color:"#111",margin:0}}>
+          {isNew ? "Add a child" : "Edit profile"}
+        </h2>
+      </div>
+
+      <div style={{overflowY:"auto",flex:1,padding:"18px 22px"}}>
+        <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Name</label>
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Name"
+          style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"2px solid #eee",fontSize:15,fontFamily:"Nunito,sans-serif",fontWeight:700,outline:"none",boxSizing:"border-box",marginBottom:14}}/>
+
+        <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Avatar</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
+          {CHILD_EMOJIS.map(e=>(
+            <button key={e} onClick={()=>setEmoji(e)}
+              style={{width:40,height:40,fontSize:22,border:`2px solid ${emoji===e?RED:"#eee"}`,background:emoji===e?"#FFF0F1":"#fff",borderRadius:10,cursor:"pointer"}}>{e}</button>
+          ))}
+        </div>
+
+        <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Languages ({langs.length})</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+          {langs.map(l=>(
+            <div key={l} style={{display:"flex",alignItems:"center",gap:6,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"5px 11px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:RED}}>
+              {l}
+              <button onClick={()=>toggleLang(l)} style={{background:"none",border:"none",cursor:"pointer",color:RED,padding:0,fontSize:13}}>×</button>
+            </div>
+          ))}
+        </div>
+        <button onClick={()=>setShowLangPicker(true)}
+          style={{display:"flex",alignItems:"center",gap:6,background:"#f5f5f5",border:"2px dashed #ccc",borderRadius:50,padding:"8px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#666"}}>
+          + add language
+        </button>
+
+        {!isNew && onDelete && (
+          <button onClick={()=>{
+            if (confirm(`Remove ${child.name}'s profile? Their progress will be deleted.`)) onDelete(child.id);
+          }}
+            style={{marginTop:30,width:"100%",background:"#fff",border:"2px solid #eee",borderRadius:50,padding:"10px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#c44"}}>
+            remove profile
+          </button>
+        )}
+      </div>
+
+      <div style={{padding:"12px 22px 22px",borderTop:"1px solid #f0f0f0",display:"flex",gap:10}}>
+        <button onClick={onClose}
+          style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+          cancel
+        </button>
+        <button onClick={()=>{
+            if (!name.trim()) return;
+            onSave({
+              id: child?.id || newChildId(),
+              name: name.trim(), emoji, languages: langs.length ? langs : ["English"],
+              createdAt: child?.createdAt || Date.now(),
+            });
+          }} disabled={!name.trim()}
+          style={{flex:2,background:name.trim()?RED:"#ddd",border:"none",borderRadius:50,padding:"12px 22px",cursor:name.trim()?"pointer":"not-allowed",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+          save
+        </button>
+      </div>
+
+      {showLangPicker && (
+        <LanguageMultiPicker selected={langs} onToggle={toggleLang} onClose={()=>setShowLangPicker(false)}/>
+      )}
+    </Sheet>
+  );
+}
+
+function HomeScreen({ activeChild, streak, onSelect, language, mathStage, speechOn, onLang, onMath, onToggleSpeech, onProgress, onOpenChildren }) {
+  const stageName = MATH_STAGES.find(s=>s.id===mathStage)?.label||"Dots Only";
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",padding:"16px 20px 24px"}}>
+      {/* Top bar: child switcher + streak flame */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <ChildSwitcher activeChild={activeChild} onOpen={onOpenChildren}/>
+        <button onClick={onProgress}
+          style={{display:"flex",alignItems:"center",gap:6,background:streak>0?"#FFF4E6":"#f5f5f5",border:`2px solid ${streak>0?"#FFB347":"#e8e8e8"}`,borderRadius:50,padding:"6px 14px",cursor:"pointer",fontFamily:"'Fredoka One',cursive",fontSize:15,color:streak>0?"#E8850E":"#aaa"}}>
+          🔥 {streak}
+        </button>
+      </div>
+
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+        <div style={{textAlign:"center",marginBottom:20,display:"flex",flexDirection:"column",alignItems:"center"}}>
+          <img src={LOGO_SRC} alt="Limitless Babies" style={{width:130,height:130,objectFit:"contain",marginBottom:4,display:"block"}}/>
+          <h1 style={{fontSize:32,color:"#111",margin:0,fontFamily:"'Fredoka One',cursive",letterSpacing:-.5,textAlign:"center"}}>Limitless Babies</h1>
+          <p style={{color:"#ccc",fontFamily:"Nunito,sans-serif",fontSize:12,marginTop:4,fontWeight:700,textAlign:"center"}}>early learning · every day</p>
+        </div>
+
+        <div style={{display:"flex",gap:10,marginBottom:10,flexWrap:"wrap",justifyContent:"center"}}>
+          <button onClick={onLang} style={{display:"flex",alignItems:"center",gap:6,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:RED}}>
+            🌍 {language} <span style={{fontSize:9,opacity:.5}}>▼</span>
+          </button>
+          <button onClick={onMath} style={{display:"flex",alignItems:"center",gap:6,background:"#f5f5f5",border:"2px solid #e8e8e8",borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#555"}}>
+            🔢 {stageName} <span style={{fontSize:9,opacity:.4}}>▼</span>
+          </button>
+        </div>
+
+        <div style={{display:"flex",gap:10,marginBottom:20,justifyContent:"center"}}>
+          <button onClick={onToggleSpeech}
+            style={{display:"flex",alignItems:"center",gap:6,background:speechOn?RED:"#f5f5f5",border:`2px solid ${speechOn?RED:"#e8e8e8"}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:speechOn?"#fff":"#555",transition:"all .2s"}}>
+            {speechOn ? "🔊" : "🔇"} {speechOn ? "Speech on" : "Speech off"}
+          </button>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:11,width:"100%",maxWidth:370}}>
+          {[
+            {id:"reading",      label:"Reading",   emoji:"📖", desc:"11 words · 3 sessions a day"},
+            {id:"math",         label:"Math",      emoji:"🔢", desc:"Rolling number window · 3 sessions"},
+            {id:"encyclopedia", label:"Knowledge", emoji:"🌍", desc:"11 facts · 3 sessions a day"},
+          ].map(c=>(
+            <button key={c.id} onClick={()=>onSelect(c.id)}
+              style={{background:"#fff",border:"2px solid #f0f0f0",borderRadius:20,padding:"17px 22px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,.04)",transition:"all .15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=RED;e.currentTarget.style.boxShadow=`0 6px 24px rgba(232,25,44,.1)`;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="#f0f0f0";e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,.04)";}}>
+              <span style={{fontSize:34}}>{c.emoji}</span>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:21,color:"#111",fontFamily:"'Fredoka One',cursive"}}>{c.label}</div>
+                <div style={{fontSize:11,color:"#bbb",fontFamily:"Nunito,sans-serif",fontWeight:700}}>{c.desc}</div>
+              </div>
+              <span style={{marginLeft:"auto",fontSize:18,color:"#ddd"}}>›</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1482,18 +1926,43 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
 
 export default function App() {
   const [mode, setMode]               = useState(null);
-  const [sessionStatus, setSessionStatus] = useState(null); // { sessionNum, locked, reason, secondsUntilReady }
+  const [sessionStatus, setSessionStatus] = useState(null);
+  const [children, setChildren]       = useState([]);
+  const [activeChildId, setActive]    = useState(null);
   const [language, setLanguage]       = useState("English");
   const [mathStage, setMathStage]     = useState("dots");
   const [speechOn, setSpeechOn]       = useState(true);
   const [showLang, setShowLang]       = useState(false);
   const [showMath, setShowMath]       = useState(false);
+  const [showChildren, setShowChildren]   = useState(false);
+  const [editingChild, setEditingChild]   = useState(undefined); // undefined=closed, null=new, object=editing
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [dailyWords, setDailyWords]   = useState([]);
   const [dailyKnow, setDailyKnow]     = useState([]);
   const [initializing, setInit]       = useState(true);
 
+  // Compute active child + its data
+  const activeChild = children.find(c => c.id === activeChildId) || children[0] || null;
+  const history = useMemo(()=>activeChild ? getHistory(activeChild.id) : {}, [activeChild, mode]);
+  const streak = useMemo(()=>computeStreak(history), [history]);
+
   useEffect(()=>{
     const run = async ()=>{
+      // Load children first
+      const kids = loadChildren();
+      setChildren(kids);
+      if (kids.length === 0) {
+        setShowOnboarding(true);
+      } else {
+        let id = getActiveChildId();
+        if (!id || !kids.find(c=>c.id===id)) { id = kids[0].id; setActiveChildId(id); }
+        setActive(id);
+        // Default language: child's first language
+        const child = kids.find(c=>c.id===id) || kids[0];
+        if (child?.languages?.length) setLanguage(child.languages[0]);
+      }
+
+      // Load daily content
       const dk = todayKey();
       let words=null, know=null;
       try { const r=localStorage.getItem(`lb-w2-${dk}`); words=r?JSON.parse(r):null; } catch {}
@@ -1505,11 +1974,79 @@ export default function App() {
     run();
     try { const r=localStorage.getItem("lb-math"); if(r) setMathStage(r); } catch {}
     try { const r=localStorage.getItem("lb-speech"); if(r!==null) setSpeechOn(r==="1"); } catch {}
-    try { const r=localStorage.getItem("lb-lang"); if(r) setLanguage(r); } catch {}
   },[]);
 
+  const handleOnboardingDone = () => {
+    const kids = loadChildren();
+    setChildren(kids);
+    const id = getActiveChildId() || kids[0]?.id;
+    if (id) {
+      setActive(id);
+      const child = kids.find(c=>c.id===id);
+      if (child?.languages?.length) setLanguage(child.languages[0]);
+    }
+    setShowOnboarding(false);
+  };
+
+  const handleSelectChild = (id) => {
+    setActive(id);
+    setActiveChildId(id);
+    const child = children.find(c=>c.id===id);
+    // If current language isn't in this child's list, switch to their first
+    if (child && !child.languages.includes(language) && child.languages.length) {
+      setLanguage(child.languages[0]);
+    }
+    setShowChildren(false);
+  };
+
+  const handleSaveChild = (child) => {
+    setChildren(prev => {
+      const exists = prev.find(c=>c.id===child.id);
+      const next = exists ? prev.map(c=>c.id===child.id?child:c) : [...prev, child];
+      saveChildren(next);
+      return next;
+    });
+    // If this is the first child, activate them
+    if (!activeChildId) {
+      setActive(child.id);
+      setActiveChildId(child.id);
+      if (child.languages.length) setLanguage(child.languages[0]);
+    }
+    // If we edited the active child and their languages changed, adjust active language if needed
+    if (child.id === activeChildId && !child.languages.includes(language) && child.languages.length) {
+      setLanguage(child.languages[0]);
+    }
+    setEditingChild(undefined);
+  };
+
+  const handleDeleteChild = (id) => {
+    setChildren(prev => {
+      const next = prev.filter(c=>c.id!==id);
+      saveChildren(next);
+      // Clean up their history & sessions
+      try {
+        Object.keys(localStorage).forEach(k=>{
+          if (k.startsWith(`lb-history-${id}`) || k.startsWith(`lb-sess-${id}-`)) localStorage.removeItem(k);
+        });
+      } catch {}
+      // Switch active if needed
+      if (id === activeChildId) {
+        if (next.length) {
+          setActive(next[0].id);
+          setActiveChildId(next[0].id);
+          if (next[0].languages.length) setLanguage(next[0].languages[0]);
+        } else {
+          setActive(null);
+          setShowOnboarding(true);
+        }
+      }
+      return next;
+    });
+    setEditingChild(undefined);
+  };
+
   const handleMath = s=>{ setMathStage(s); try { localStorage.setItem("lb-math",s); } catch {} };
-  const handleLang = l=>{ setLanguage(l); try { localStorage.setItem("lb-lang",l); } catch {} };
+  const handleLang = l=>{ setLanguage(l); /* not persisted globally anymore — it's per-child session */ };
   const handleToggleSpeech = ()=>{
     setSpeechOn(v=>{
       const nv=!v;
@@ -1519,9 +2056,9 @@ export default function App() {
     });
   };
 
-  // When a category is selected, check session availability
   const handleSelect = (category) => {
-    const status = getSessionStatus(category);
+    if (!activeChildId) return;
+    const status = getSessionStatus(activeChildId, category, language);
     setSessionStatus(status);
     setMode(category);
   };
@@ -1532,20 +2069,33 @@ export default function App() {
   };
 
   const handleSessionComplete = (category) => {
-    markSessionComplete(category);
+    if (!activeChildId) return;
+    markSessionComplete(activeChildId, category, language);
   };
 
   if (initializing) return <LoadingScreen message="Preparing today's lessons…"/>;
 
-  // If a category is selected but locked, show cooldown / all-done screen
-  if (mode && sessionStatus?.locked) {
+  const baseStyles = `
+    @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;800;900&display=swap');
+    *{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#fff;}
+    button:focus{outline:none;}@keyframes spin{to{transform:rotate(360deg)}}
+  `;
+
+  // Onboarding takes over full screen for first-time users
+  if (showOnboarding) {
     return (
       <>
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;800;900&display=swap');
-          *{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#fff;}
-          button:focus{outline:none;}@keyframes spin{to{transform:rotate(360deg)}}
-        `}</style>
+        <style>{baseStyles}</style>
+        <Onboarding onDone={handleOnboardingDone}/>
+      </>
+    );
+  }
+
+  // Cooldown / all-done gate
+  if (mode && sessionStatus?.locked && mode !== "progress") {
+    return (
+      <>
+        <style>{baseStyles}</style>
         <CooldownScreen
           reason={sessionStatus.reason}
           secondsUntilReady={sessionStatus.secondsUntilReady}
@@ -1559,18 +2109,43 @@ export default function App() {
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;800;900&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#fff;}
-        button:focus{outline:none;}@keyframes spin{to{transform:rotate(360deg)}}
-      `}</style>
-      {mode===null       && <HomeScreen onSelect={handleSelect} language={language} mathStage={mathStage} speechOn={speechOn} onLang={()=>setShowLang(true)} onMath={()=>setShowMath(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")}/>}
-      {mode==="progress" && <ProgressScreen onBack={handleBackToHome}/>}
+      <style>{baseStyles}</style>
+      {mode===null       && <HomeScreen activeChild={activeChild} streak={streak} onSelect={handleSelect} language={language} mathStage={mathStage} speechOn={speechOn} onLang={()=>setShowLang(true)} onMath={()=>setShowMath(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)}/>}
+      {mode==="progress" && <ProgressScreen child={activeChild} onBack={handleBackToHome}/>}
       {mode==="reading"  && sessionStatus && <ReadingSession words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("reading")}/>}
       {mode==="math"     && sessionStatus && <MathSession mathStage={mathStage} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("math")}/>}
       {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
-      {showLang && <LanguagePicker selected={language} onSelect={handleLang} onClose={()=>setShowLang(false)}/>}
+
+      {showLang && activeChild && (
+        <ChildLanguagePicker
+          languages={activeChild.languages}
+          selected={language}
+          onSelect={handleLang}
+          onEditLanguages={()=>setEditingChild(activeChild)}
+          onClose={()=>setShowLang(false)}
+        />
+      )}
       {showMath && <MathStagePicker selected={mathStage} onSelect={handleMath} onClose={()=>setShowMath(false)}/>}
+
+      {showChildren && (
+        <ChildrenSheet
+          children={children}
+          activeId={activeChildId}
+          onSelect={handleSelectChild}
+          onAddNew={()=>{ setShowChildren(false); setEditingChild(null); }}
+          onEdit={(c)=>{ setShowChildren(false); setEditingChild(c); }}
+          onClose={()=>setShowChildren(false)}
+        />
+      )}
+
+      {editingChild !== undefined && (
+        <ChildEditor
+          child={editingChild}
+          onSave={handleSaveChild}
+          onDelete={editingChild ? handleDeleteChild : null}
+          onClose={()=>setEditingChild(undefined)}
+        />
+      )}
     </>
   );
 }
