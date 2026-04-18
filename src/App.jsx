@@ -12,7 +12,7 @@ const LANGUAGES = [
   "Italian","Japanese","Javanese","Kannada","Kazakh","Khmer","Korean","Kurdish",
   "Kyrgyz","Lao","Latin","Latvian","Lithuanian","Macedonian","Malagasy","Malay",
   "Malayalam","Maltese","Maori","Marathi","Mongolian","Myanmar","Nepali",
-  "Norwegian","Pashto","Persian","Polish","Portuguese","Punjabi","Romanian",
+  "Norwegian","Pashto","Persian","Polish","Portuguese","Portuguese (Brazil)","Punjabi","Romanian",
   "Russian","Samoan","Scottish Gaelic","Serbian","Sesotho","Shona","Sinhala",
   "Slovak","Slovenian","Somali","Spanish","Swahili","Swedish","Tajik","Tamil",
   "Telugu","Thai","Turkish","Ukrainian","Urdu","Uzbek","Vietnamese","Welsh",
@@ -37,7 +37,7 @@ const todayKey = () => new Date().toISOString().split("T")[0];
 
 const SPEECH_LANG = {
   English:"en-US", Spanish:"es-ES", French:"fr-FR", German:"de-DE", Italian:"it-IT",
-  Portuguese:"pt-PT", Russian:"ru-RU", "Chinese (Mandarin)":"zh-CN",
+  Portuguese:"pt-PT", "Portuguese (Brazil)":"pt-BR", Russian:"ru-RU", "Chinese (Mandarin)":"zh-CN",
   "Chinese (Cantonese)":"zh-HK", Japanese:"ja-JP", Korean:"ko-KR", Hebrew:"he-IL",
   Arabic:"ar-SA", Hindi:"hi-IN", Vietnamese:"vi-VN", Thai:"th-TH", Turkish:"tr-TR",
   Greek:"el-GR", Polish:"pl-PL", Dutch:"nl-NL", Swedish:"sv-SE", Danish:"da-DK",
@@ -218,6 +218,90 @@ function newChildId() {
   return "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 }
 
+// ── FAMILY CODE (share across caregivers) ────────────────────────────────────
+// A "family code" packages: children profiles + their history.
+// Parent A generates → shares via text/email. Parent B pastes → everything syncs.
+// Stored as base64-encoded JSON. Short enough to text easily when compressed.
+
+function buildFamilyPayload() {
+  const kids = loadChildren();
+  const histories = {};
+  kids.forEach(c => {
+    try {
+      const h = localStorage.getItem(`lb-history-${c.id}`);
+      if (h) histories[c.id] = JSON.parse(h);
+    } catch {}
+  });
+  return { v: 1, kids, histories, ts: Date.now() };
+}
+
+function encodeFamilyCode() {
+  const payload = buildFamilyPayload();
+  const json = JSON.stringify(payload);
+  try {
+    // Use TextEncoder so non-Latin names survive base64
+    const bytes = new TextEncoder().encode(json);
+    let binary = "";
+    bytes.forEach(b => { binary += String.fromCharCode(b); });
+    const b64 = btoa(binary);
+    // Make it URL-safe and prefix for recognition
+    return "LB1-" + b64.replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  } catch {
+    return "";
+  }
+}
+
+function decodeFamilyCode(code) {
+  try {
+    const s = code.trim().replace(/^LB1-/i,"");
+    const b64 = s.replace(/-/g,"+").replace(/_/g,"/");
+    // re-pad
+    const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+    const json = new TextDecoder().decode(bytes);
+    const data = JSON.parse(json);
+    if (!data || data.v !== 1 || !Array.isArray(data.kids)) throw new Error("Invalid payload");
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Apply an imported family: MERGE kids by id (new ones added, existing replaced),
+// and MERGE history taking the MAX count per (date, category:language) key.
+function applyFamilyPayload(payload) {
+  const existing = loadChildren();
+  const byId = {};
+  existing.forEach(c => { byId[c.id] = c; });
+  payload.kids.forEach(c => { byId[c.id] = c; });
+  const merged = Object.values(byId);
+  saveChildren(merged);
+
+  // Merge history per child (taking max of each date+key to avoid double-counting
+  // if both caregivers logged the same session)
+  Object.entries(payload.histories || {}).forEach(([childId, remoteHist]) => {
+    try {
+      const key = `lb-history-${childId}`;
+      const localHist = JSON.parse(localStorage.getItem(key) || "{}");
+      const allDates = new Set([...Object.keys(localHist), ...Object.keys(remoteHist)]);
+      const out = {};
+      allDates.forEach(d => {
+        const a = localHist[d] || {};
+        const b = remoteHist[d] || {};
+        const day = {};
+        const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+        allKeys.forEach(k => { day[k] = Math.max(a[k]||0, b[k]||0); });
+        out[d] = day;
+      });
+      localStorage.setItem(key, JSON.stringify(out));
+    } catch {}
+  });
+
+  return merged;
+}
+
 // ── SESSION TRACKING (per-child, per-language) ───────────────────────────────
 // Doman protocol: 3 sessions per day per (child, category, language),
 // with at least 5 minutes between sessions.
@@ -334,26 +418,26 @@ function PhotoDisplay({ emoji, style }) {
 // Core baby vocabulary translated into 30+ major languages.
 
 const CORE_TRANSLATIONS = {
-  "mama":      { Spanish:"mamá", French:"maman", German:"mama", Italian:"mamma", Portuguese:"mamãe", Russian:"мама", "Chinese (Mandarin)":"妈妈", "Chinese (Cantonese)":"媽媽", Japanese:"ママ", Korean:"엄마", Hebrew:"אמא", Arabic:"ماما", Hindi:"माँ", Vietnamese:"mẹ", Thai:"แม่", Turkish:"anne", Greek:"μαμά", Polish:"mama", Dutch:"mama", Swedish:"mamma", Afrikaans:"mamma", Filipino:"nanay", Indonesian:"ibu", Swahili:"mama", Persian:"مامان", Bengali:"মা", Urdu:"امی", Romanian:"mama", Ukrainian:"мама", Czech:"máma" },
-  "dada":      { Spanish:"papá", French:"papa", German:"papa", Italian:"papà", Portuguese:"papai", Russian:"папа", "Chinese (Mandarin)":"爸爸", "Chinese (Cantonese)":"爸爸", Japanese:"パパ", Korean:"아빠", Hebrew:"אבא", Arabic:"بابا", Hindi:"पापा", Vietnamese:"bố", Thai:"พ่อ", Turkish:"baba", Greek:"μπαμπά", Polish:"tata", Dutch:"papa", Swedish:"pappa", Afrikaans:"pappa", Filipino:"tatay", Indonesian:"ayah", Swahili:"baba", Persian:"بابا", Bengali:"বাবা", Urdu:"ابو", Romanian:"tata", Ukrainian:"тато", Czech:"táta" },
-  "baby":      { Spanish:"bebé", French:"bébé", German:"baby", Italian:"bambino", Portuguese:"bebê", Russian:"малыш", "Chinese (Mandarin)":"宝宝", "Chinese (Cantonese)":"寶寶", Japanese:"赤ちゃん", Korean:"아기", Hebrew:"תינוק", Arabic:"طفل", Hindi:"बच्चा", Vietnamese:"em bé", Thai:"ทารก", Turkish:"bebek", Greek:"μωρό", Polish:"dziecko", Dutch:"baby", Swedish:"bebis", Afrikaans:"baba", Filipino:"sanggol", Indonesian:"bayi", Swahili:"mtoto", Persian:"نوزاد", Bengali:"শিশু", Urdu:"بچہ", Romanian:"bebeluș", Ukrainian:"малюк", Czech:"miminko" },
-  "ball":      { Spanish:"pelota", French:"balle", German:"ball", Italian:"palla", Portuguese:"bola", Russian:"мяч", "Chinese (Mandarin)":"球", "Chinese (Cantonese)":"波", Japanese:"ボール", Korean:"공", Hebrew:"כדור", Arabic:"كرة", Hindi:"गेंद", Vietnamese:"bóng", Thai:"ลูกบอล", Turkish:"top", Greek:"μπάλα", Polish:"piłka", Dutch:"bal", Swedish:"boll", Afrikaans:"bal", Filipino:"bola", Indonesian:"bola", Swahili:"mpira", Persian:"توپ", Bengali:"বল", Urdu:"گیند", Romanian:"minge", Ukrainian:"м'яч", Czech:"míč" },
-  "cat":       { Spanish:"gato", French:"chat", German:"katze", Italian:"gatto", Portuguese:"gato", Russian:"кот", "Chinese (Mandarin)":"猫", "Chinese (Cantonese)":"貓", Japanese:"ねこ", Korean:"고양이", Hebrew:"חתול", Arabic:"قطة", Hindi:"बिल्ली", Vietnamese:"mèo", Thai:"แมว", Turkish:"kedi", Greek:"γάτα", Polish:"kot", Dutch:"kat", Swedish:"katt", Afrikaans:"kat", Filipino:"pusa", Indonesian:"kucing", Swahili:"paka", Persian:"گربه", Bengali:"বিড়াল", Urdu:"بلی", Romanian:"pisică", Ukrainian:"кіт", Czech:"kočka" },
-  "dog":       { Spanish:"perro", French:"chien", German:"hund", Italian:"cane", Portuguese:"cão", Russian:"собака", "Chinese (Mandarin)":"狗", "Chinese (Cantonese)":"狗", Japanese:"いぬ", Korean:"개", Hebrew:"כלב", Arabic:"كلب", Hindi:"कुत्ता", Vietnamese:"chó", Thai:"หมา", Turkish:"köpek", Greek:"σκύλος", Polish:"pies", Dutch:"hond", Swedish:"hund", Afrikaans:"hond", Filipino:"aso", Indonesian:"anjing", Swahili:"mbwa", Persian:"سگ", Bengali:"কুকুর", Urdu:"کتا", Romanian:"câine", Ukrainian:"собака", Czech:"pes" },
-  "sun":       { Spanish:"sol", French:"soleil", German:"sonne", Italian:"sole", Portuguese:"sol", Russian:"солнце", "Chinese (Mandarin)":"太阳", "Chinese (Cantonese)":"太陽", Japanese:"たいよう", Korean:"해", Hebrew:"שמש", Arabic:"شمس", Hindi:"सूरज", Vietnamese:"mặt trời", Thai:"ดวงอาทิตย์", Turkish:"güneş", Greek:"ήλιος", Polish:"słońce", Dutch:"zon", Swedish:"sol", Afrikaans:"son", Filipino:"araw", Indonesian:"matahari", Swahili:"jua", Persian:"خورشید", Bengali:"সূর্য", Urdu:"سورج", Romanian:"soare", Ukrainian:"сонце", Czech:"slunce" },
-  "moon":      { Spanish:"luna", French:"lune", German:"mond", Italian:"luna", Portuguese:"lua", Russian:"луна", "Chinese (Mandarin)":"月亮", "Chinese (Cantonese)":"月亮", Japanese:"つき", Korean:"달", Hebrew:"ירח", Arabic:"قمر", Hindi:"चाँद", Vietnamese:"mặt trăng", Thai:"ดวงจันทร์", Turkish:"ay", Greek:"φεγγάρι", Polish:"księżyc", Dutch:"maan", Swedish:"måne", Afrikaans:"maan", Filipino:"buwan", Indonesian:"bulan", Swahili:"mwezi", Persian:"ماه", Bengali:"চাঁদ", Urdu:"چاند", Romanian:"lună", Ukrainian:"місяць", Czech:"měsíc" },
-  "tree":      { Spanish:"árbol", French:"arbre", German:"baum", Italian:"albero", Portuguese:"árvore", Russian:"дерево", "Chinese (Mandarin)":"树", "Chinese (Cantonese)":"樹", Japanese:"き", Korean:"나무", Hebrew:"עץ", Arabic:"شجرة", Hindi:"पेड़", Vietnamese:"cây", Thai:"ต้นไม้", Turkish:"ağaç", Greek:"δέντρο", Polish:"drzewo", Dutch:"boom", Swedish:"träd", Afrikaans:"boom", Filipino:"puno", Indonesian:"pohon", Swahili:"mti", Persian:"درخت", Bengali:"গাছ", Urdu:"درخت", Romanian:"copac", Ukrainian:"дерево", Czech:"strom" },
-  "fish":      { Spanish:"pez", French:"poisson", German:"fisch", Italian:"pesce", Portuguese:"peixe", Russian:"рыба", "Chinese (Mandarin)":"鱼", "Chinese (Cantonese)":"魚", Japanese:"さかな", Korean:"물고기", Hebrew:"דג", Arabic:"سمكة", Hindi:"मछली", Vietnamese:"cá", Thai:"ปลา", Turkish:"balık", Greek:"ψάρι", Polish:"ryba", Dutch:"vis", Swedish:"fisk", Afrikaans:"vis", Filipino:"isda", Indonesian:"ikan", Swahili:"samaki", Persian:"ماهی", Bengali:"মাছ", Urdu:"مچھلی", Romanian:"pește", Ukrainian:"риба", Czech:"ryba" },
-  "bird":      { Spanish:"pájaro", French:"oiseau", German:"vogel", Italian:"uccello", Portuguese:"pássaro", Russian:"птица", "Chinese (Mandarin)":"鸟", "Chinese (Cantonese)":"雀", Japanese:"とり", Korean:"새", Hebrew:"ציפור", Arabic:"طائر", Hindi:"चिड़िया", Vietnamese:"chim", Thai:"นก", Turkish:"kuş", Greek:"πουλί", Polish:"ptak", Dutch:"vogel", Swedish:"fågel", Afrikaans:"voël", Filipino:"ibon", Indonesian:"burung", Swahili:"ndege", Persian:"پرنده", Bengali:"পাখি", Urdu:"پرندہ", Romanian:"pasăre", Ukrainian:"птах", Czech:"pták" },
-  "apple":     { Spanish:"manzana", French:"pomme", German:"apfel", Italian:"mela", Portuguese:"maçã", Russian:"яблоко", "Chinese (Mandarin)":"苹果", "Chinese (Cantonese)":"蘋果", Japanese:"りんご", Korean:"사과", Hebrew:"תפוח", Arabic:"تفاحة", Hindi:"सेब", Vietnamese:"táo", Thai:"แอปเปิล", Turkish:"elma", Greek:"μήλο", Polish:"jabłko", Dutch:"appel", Swedish:"äpple", Afrikaans:"appel", Filipino:"mansanas", Indonesian:"apel", Swahili:"tufaha", Persian:"سیب", Bengali:"আপেল", Urdu:"سیب", Romanian:"măr", Ukrainian:"яблуко", Czech:"jablko" },
-  "flower":    { Spanish:"flor", French:"fleur", German:"blume", Italian:"fiore", Portuguese:"flor", Russian:"цветок", "Chinese (Mandarin)":"花", "Chinese (Cantonese)":"花", Japanese:"はな", Korean:"꽃", Hebrew:"פרח", Arabic:"زهرة", Hindi:"फूल", Vietnamese:"hoa", Thai:"ดอกไม้", Turkish:"çiçek", Greek:"λουλούδι", Polish:"kwiat", Dutch:"bloem", Swedish:"blomma", Afrikaans:"blom", Filipino:"bulaklak", Indonesian:"bunga", Swahili:"ua", Persian:"گل", Bengali:"ফুল", Urdu:"پھول", Romanian:"floare", Ukrainian:"квітка", Czech:"květina" },
-  "water":     { Spanish:"agua", French:"eau", German:"wasser", Italian:"acqua", Portuguese:"água", Russian:"вода", "Chinese (Mandarin)":"水", "Chinese (Cantonese)":"水", Japanese:"みず", Korean:"물", Hebrew:"מים", Arabic:"ماء", Hindi:"पानी", Vietnamese:"nước", Thai:"น้ำ", Turkish:"su", Greek:"νερό", Polish:"woda", Dutch:"water", Swedish:"vatten", Afrikaans:"water", Filipino:"tubig", Indonesian:"air", Swahili:"maji", Persian:"آب", Bengali:"জল", Urdu:"پانی", Romanian:"apă", Ukrainian:"вода", Czech:"voda" },
-  "milk":      { Spanish:"leche", French:"lait", German:"milch", Italian:"latte", Portuguese:"leite", Russian:"молоко", "Chinese (Mandarin)":"牛奶", "Chinese (Cantonese)":"牛奶", Japanese:"ミルク", Korean:"우유", Hebrew:"חלב", Arabic:"حليب", Hindi:"दूध", Vietnamese:"sữa", Thai:"นม", Turkish:"süt", Greek:"γάλα", Polish:"mleko", Dutch:"melk", Swedish:"mjölk", Afrikaans:"melk", Filipino:"gatas", Indonesian:"susu", Swahili:"maziwa", Persian:"شیر", Bengali:"দুধ", Urdu:"دودھ", Romanian:"lapte", Ukrainian:"молоко", Czech:"mléko" },
-  "book":      { Spanish:"libro", French:"livre", German:"buch", Italian:"libro", Portuguese:"livro", Russian:"книга", "Chinese (Mandarin)":"书", "Chinese (Cantonese)":"書", Japanese:"ほん", Korean:"책", Hebrew:"ספר", Arabic:"كتاب", Hindi:"किताब", Vietnamese:"sách", Thai:"หนังสือ", Turkish:"kitap", Greek:"βιβλίο", Polish:"książka", Dutch:"boek", Swedish:"bok", Afrikaans:"boek", Filipino:"libro", Indonesian:"buku", Swahili:"kitabu", Persian:"کتاب", Bengali:"বই", Urdu:"کتاب", Romanian:"carte", Ukrainian:"книга", Czech:"kniha" },
-  "banana":    { Spanish:"plátano", French:"banane", German:"banane", Italian:"banana", Portuguese:"banana", Russian:"банан", "Chinese (Mandarin)":"香蕉", "Chinese (Cantonese)":"香蕉", Japanese:"バナナ", Korean:"바나나", Hebrew:"בננה", Arabic:"موز", Hindi:"केला", Vietnamese:"chuối", Thai:"กล้วย", Turkish:"muz", Greek:"μπανάνα", Polish:"banan", Dutch:"banaan", Swedish:"banan", Afrikaans:"piesang" },
-  "car":       { Spanish:"coche", French:"voiture", German:"auto", Italian:"macchina", Portuguese:"carro", Russian:"машина", "Chinese (Mandarin)":"汽车", "Chinese (Cantonese)":"車", Japanese:"くるま", Korean:"차", Hebrew:"מכונית", Arabic:"سيارة", Hindi:"कार", Vietnamese:"xe", Thai:"รถ", Turkish:"araba", Greek:"αυτοκίνητο", Polish:"samochód", Dutch:"auto", Swedish:"bil", Afrikaans:"motor" },
-  "house":     { Spanish:"casa", French:"maison", German:"haus", Italian:"casa", Portuguese:"casa", Russian:"дом", "Chinese (Mandarin)":"房子", "Chinese (Cantonese)":"屋", Japanese:"いえ", Korean:"집", Hebrew:"בית", Arabic:"بيت", Hindi:"घर", Vietnamese:"nhà", Thai:"บ้าน", Turkish:"ev", Greek:"σπίτι", Polish:"dom", Dutch:"huis", Swedish:"hus", Afrikaans:"huis" },
-  "star":      { Spanish:"estrella", French:"étoile", German:"stern", Italian:"stella", Portuguese:"estrela", Russian:"звезда", "Chinese (Mandarin)":"星星", "Chinese (Cantonese)":"星", Japanese:"ほし", Korean:"별", Hebrew:"כוכב", Arabic:"نجمة", Hindi:"तारा", Vietnamese:"sao", Thai:"ดาว", Turkish:"yıldız", Greek:"αστέρι", Polish:"gwiazda", Dutch:"ster", Swedish:"stjärna", Afrikaans:"ster" },
+  "mama":      { Spanish:"mamá", French:"maman", German:"mama", Italian:"mamma", Portuguese:"mamãe", "Portuguese (Brazil)":"mamãe", Russian:"мама", "Chinese (Mandarin)":"妈妈", "Chinese (Cantonese)":"媽媽", Japanese:"ママ", Korean:"엄마", Hebrew:"אמא", Arabic:"ماما", Hindi:"माँ", Vietnamese:"mẹ", Thai:"แม่", Turkish:"anne", Greek:"μαμά", Polish:"mama", Dutch:"mama", Swedish:"mamma", Afrikaans:"mamma", Filipino:"nanay", Indonesian:"ibu", Swahili:"mama", Persian:"مامان", Bengali:"মা", Urdu:"امی", Romanian:"mama", Ukrainian:"мама", Czech:"máma" },
+  "dada":      { Spanish:"papá", French:"papa", German:"papa", Italian:"papà", Portuguese:"papai", "Portuguese (Brazil)":"papai", Russian:"папа", "Chinese (Mandarin)":"爸爸", "Chinese (Cantonese)":"爸爸", Japanese:"パパ", Korean:"아빠", Hebrew:"אבא", Arabic:"بابا", Hindi:"पापा", Vietnamese:"bố", Thai:"พ่อ", Turkish:"baba", Greek:"μπαμπά", Polish:"tata", Dutch:"papa", Swedish:"pappa", Afrikaans:"pappa", Filipino:"tatay", Indonesian:"ayah", Swahili:"baba", Persian:"بابا", Bengali:"বাবা", Urdu:"ابو", Romanian:"tata", Ukrainian:"тато", Czech:"táta" },
+  "baby":      { Spanish:"bebé", French:"bébé", German:"baby", Italian:"bambino", Portuguese:"bebê", "Portuguese (Brazil)":"bebê", Russian:"малыш", "Chinese (Mandarin)":"宝宝", "Chinese (Cantonese)":"寶寶", Japanese:"赤ちゃん", Korean:"아기", Hebrew:"תינוק", Arabic:"طفل", Hindi:"बच्चा", Vietnamese:"em bé", Thai:"ทารก", Turkish:"bebek", Greek:"μωρό", Polish:"dziecko", Dutch:"baby", Swedish:"bebis", Afrikaans:"baba", Filipino:"sanggol", Indonesian:"bayi", Swahili:"mtoto", Persian:"نوزاد", Bengali:"শিশু", Urdu:"بچہ", Romanian:"bebeluș", Ukrainian:"малюк", Czech:"miminko" },
+  "ball":      { Spanish:"pelota", French:"balle", German:"ball", Italian:"palla", Portuguese:"bola", "Portuguese (Brazil)":"bola", Russian:"мяч", "Chinese (Mandarin)":"球", "Chinese (Cantonese)":"波", Japanese:"ボール", Korean:"공", Hebrew:"כדור", Arabic:"كرة", Hindi:"गेंद", Vietnamese:"bóng", Thai:"ลูกบอล", Turkish:"top", Greek:"μπάλα", Polish:"piłka", Dutch:"bal", Swedish:"boll", Afrikaans:"bal", Filipino:"bola", Indonesian:"bola", Swahili:"mpira", Persian:"توپ", Bengali:"বল", Urdu:"گیند", Romanian:"minge", Ukrainian:"м'яч", Czech:"míč" },
+  "cat":       { Spanish:"gato", French:"chat", German:"katze", Italian:"gatto", Portuguese:"gato", "Portuguese (Brazil)":"gato", Russian:"кот", "Chinese (Mandarin)":"猫", "Chinese (Cantonese)":"貓", Japanese:"ねこ", Korean:"고양이", Hebrew:"חתול", Arabic:"قطة", Hindi:"बिल्ली", Vietnamese:"mèo", Thai:"แมว", Turkish:"kedi", Greek:"γάτα", Polish:"kot", Dutch:"kat", Swedish:"katt", Afrikaans:"kat", Filipino:"pusa", Indonesian:"kucing", Swahili:"paka", Persian:"گربه", Bengali:"বিড়াল", Urdu:"بلی", Romanian:"pisică", Ukrainian:"кіт", Czech:"kočka" },
+  "dog":       { Spanish:"perro", French:"chien", German:"hund", Italian:"cane", Portuguese:"cão", "Portuguese (Brazil)":"cachorro", Russian:"собака", "Chinese (Mandarin)":"狗", "Chinese (Cantonese)":"狗", Japanese:"いぬ", Korean:"개", Hebrew:"כלב", Arabic:"كلب", Hindi:"कुत्ता", Vietnamese:"chó", Thai:"หมา", Turkish:"köpek", Greek:"σκύλος", Polish:"pies", Dutch:"hond", Swedish:"hund", Afrikaans:"hond", Filipino:"aso", Indonesian:"anjing", Swahili:"mbwa", Persian:"سگ", Bengali:"কুকুর", Urdu:"کتا", Romanian:"câine", Ukrainian:"собака", Czech:"pes" },
+  "sun":       { Spanish:"sol", French:"soleil", German:"sonne", Italian:"sole", Portuguese:"sol", "Portuguese (Brazil)":"sol", Russian:"солнце", "Chinese (Mandarin)":"太阳", "Chinese (Cantonese)":"太陽", Japanese:"たいよう", Korean:"해", Hebrew:"שמש", Arabic:"شمس", Hindi:"सूरज", Vietnamese:"mặt trời", Thai:"ดวงอาทิตย์", Turkish:"güneş", Greek:"ήλιος", Polish:"słońce", Dutch:"zon", Swedish:"sol", Afrikaans:"son", Filipino:"araw", Indonesian:"matahari", Swahili:"jua", Persian:"خورشید", Bengali:"সূর্য", Urdu:"سورج", Romanian:"soare", Ukrainian:"сонце", Czech:"slunce" },
+  "moon":      { Spanish:"luna", French:"lune", German:"mond", Italian:"luna", Portuguese:"lua", "Portuguese (Brazil)":"lua", Russian:"луна", "Chinese (Mandarin)":"月亮", "Chinese (Cantonese)":"月亮", Japanese:"つき", Korean:"달", Hebrew:"ירח", Arabic:"قمر", Hindi:"चाँद", Vietnamese:"mặt trăng", Thai:"ดวงจันทร์", Turkish:"ay", Greek:"φεγγάρι", Polish:"księżyc", Dutch:"maan", Swedish:"måne", Afrikaans:"maan", Filipino:"buwan", Indonesian:"bulan", Swahili:"mwezi", Persian:"ماه", Bengali:"চাঁদ", Urdu:"چاند", Romanian:"lună", Ukrainian:"місяць", Czech:"měsíc" },
+  "tree":      { Spanish:"árbol", French:"arbre", German:"baum", Italian:"albero", Portuguese:"árvore", "Portuguese (Brazil)":"árvore", Russian:"дерево", "Chinese (Mandarin)":"树", "Chinese (Cantonese)":"樹", Japanese:"き", Korean:"나무", Hebrew:"עץ", Arabic:"شجرة", Hindi:"पेड़", Vietnamese:"cây", Thai:"ต้นไม้", Turkish:"ağaç", Greek:"δέντρο", Polish:"drzewo", Dutch:"boom", Swedish:"träd", Afrikaans:"boom", Filipino:"puno", Indonesian:"pohon", Swahili:"mti", Persian:"درخت", Bengali:"গাছ", Urdu:"درخت", Romanian:"copac", Ukrainian:"дерево", Czech:"strom" },
+  "fish":      { Spanish:"pez", French:"poisson", German:"fisch", Italian:"pesce", Portuguese:"peixe", "Portuguese (Brazil)":"peixe", Russian:"рыба", "Chinese (Mandarin)":"鱼", "Chinese (Cantonese)":"魚", Japanese:"さかな", Korean:"물고기", Hebrew:"דג", Arabic:"سمكة", Hindi:"मछली", Vietnamese:"cá", Thai:"ปลา", Turkish:"balık", Greek:"ψάρι", Polish:"ryba", Dutch:"vis", Swedish:"fisk", Afrikaans:"vis", Filipino:"isda", Indonesian:"ikan", Swahili:"samaki", Persian:"ماهی", Bengali:"মাছ", Urdu:"مچھلی", Romanian:"pește", Ukrainian:"риба", Czech:"ryba" },
+  "bird":      { Spanish:"pájaro", French:"oiseau", German:"vogel", Italian:"uccello", Portuguese:"pássaro", "Portuguese (Brazil)":"pássaro", Russian:"птица", "Chinese (Mandarin)":"鸟", "Chinese (Cantonese)":"雀", Japanese:"とり", Korean:"새", Hebrew:"ציפור", Arabic:"طائر", Hindi:"चिड़िया", Vietnamese:"chim", Thai:"นก", Turkish:"kuş", Greek:"πουλί", Polish:"ptak", Dutch:"vogel", Swedish:"fågel", Afrikaans:"voël", Filipino:"ibon", Indonesian:"burung", Swahili:"ndege", Persian:"پرنده", Bengali:"পাখি", Urdu:"پرندہ", Romanian:"pasăre", Ukrainian:"птах", Czech:"pták" },
+  "apple":     { Spanish:"manzana", French:"pomme", German:"apfel", Italian:"mela", Portuguese:"maçã", "Portuguese (Brazil)":"maçã", Russian:"яблоко", "Chinese (Mandarin)":"苹果", "Chinese (Cantonese)":"蘋果", Japanese:"りんご", Korean:"사과", Hebrew:"תפוח", Arabic:"تفاحة", Hindi:"सेब", Vietnamese:"táo", Thai:"แอปเปิล", Turkish:"elma", Greek:"μήλο", Polish:"jabłko", Dutch:"appel", Swedish:"äpple", Afrikaans:"appel", Filipino:"mansanas", Indonesian:"apel", Swahili:"tufaha", Persian:"سیب", Bengali:"আপেল", Urdu:"سیب", Romanian:"măr", Ukrainian:"яблуко", Czech:"jablko" },
+  "flower":    { Spanish:"flor", French:"fleur", German:"blume", Italian:"fiore", Portuguese:"flor", "Portuguese (Brazil)":"flor", Russian:"цветок", "Chinese (Mandarin)":"花", "Chinese (Cantonese)":"花", Japanese:"はな", Korean:"꽃", Hebrew:"פרח", Arabic:"زهرة", Hindi:"फूल", Vietnamese:"hoa", Thai:"ดอกไม้", Turkish:"çiçek", Greek:"λουλούδι", Polish:"kwiat", Dutch:"bloem", Swedish:"blomma", Afrikaans:"blom", Filipino:"bulaklak", Indonesian:"bunga", Swahili:"ua", Persian:"گل", Bengali:"ফুল", Urdu:"پھول", Romanian:"floare", Ukrainian:"квітка", Czech:"květina" },
+  "water":     { Spanish:"agua", French:"eau", German:"wasser", Italian:"acqua", Portuguese:"água", "Portuguese (Brazil)":"água", Russian:"вода", "Chinese (Mandarin)":"水", "Chinese (Cantonese)":"水", Japanese:"みず", Korean:"물", Hebrew:"מים", Arabic:"ماء", Hindi:"पानी", Vietnamese:"nước", Thai:"น้ำ", Turkish:"su", Greek:"νερό", Polish:"woda", Dutch:"water", Swedish:"vatten", Afrikaans:"water", Filipino:"tubig", Indonesian:"air", Swahili:"maji", Persian:"آب", Bengali:"জল", Urdu:"پانی", Romanian:"apă", Ukrainian:"вода", Czech:"voda" },
+  "milk":      { Spanish:"leche", French:"lait", German:"milch", Italian:"latte", Portuguese:"leite", "Portuguese (Brazil)":"leite", Russian:"молоко", "Chinese (Mandarin)":"牛奶", "Chinese (Cantonese)":"牛奶", Japanese:"ミルク", Korean:"우유", Hebrew:"חלב", Arabic:"حليب", Hindi:"दूध", Vietnamese:"sữa", Thai:"นม", Turkish:"süt", Greek:"γάλα", Polish:"mleko", Dutch:"melk", Swedish:"mjölk", Afrikaans:"melk", Filipino:"gatas", Indonesian:"susu", Swahili:"maziwa", Persian:"شیر", Bengali:"দুধ", Urdu:"دودھ", Romanian:"lapte", Ukrainian:"молоко", Czech:"mléko" },
+  "book":      { Spanish:"libro", French:"livre", German:"buch", Italian:"libro", Portuguese:"livro", "Portuguese (Brazil)":"livro", Russian:"книга", "Chinese (Mandarin)":"书", "Chinese (Cantonese)":"書", Japanese:"ほん", Korean:"책", Hebrew:"ספר", Arabic:"كتاب", Hindi:"किताब", Vietnamese:"sách", Thai:"หนังสือ", Turkish:"kitap", Greek:"βιβλίο", Polish:"książka", Dutch:"boek", Swedish:"bok", Afrikaans:"boek", Filipino:"libro", Indonesian:"buku", Swahili:"kitabu", Persian:"کتاب", Bengali:"বই", Urdu:"کتاب", Romanian:"carte", Ukrainian:"книга", Czech:"kniha" },
+  "banana":    { Spanish:"plátano", French:"banane", German:"banane", Italian:"banana", Portuguese:"banana", "Portuguese (Brazil)":"banana", Russian:"банан", "Chinese (Mandarin)":"香蕉", "Chinese (Cantonese)":"香蕉", Japanese:"バナナ", Korean:"바나나", Hebrew:"בננה", Arabic:"موز", Hindi:"केला", Vietnamese:"chuối", Thai:"กล้วย", Turkish:"muz", Greek:"μπανάνα", Polish:"banan", Dutch:"banaan", Swedish:"banan", Afrikaans:"piesang" },
+  "car":       { Spanish:"coche", French:"voiture", German:"auto", Italian:"macchina", Portuguese:"carro", "Portuguese (Brazil)":"carro", Russian:"машина", "Chinese (Mandarin)":"汽车", "Chinese (Cantonese)":"車", Japanese:"くるま", Korean:"차", Hebrew:"מכונית", Arabic:"سيارة", Hindi:"कार", Vietnamese:"xe", Thai:"รถ", Turkish:"araba", Greek:"αυτοκίνητο", Polish:"samochód", Dutch:"auto", Swedish:"bil", Afrikaans:"motor" },
+  "house":     { Spanish:"casa", French:"maison", German:"haus", Italian:"casa", Portuguese:"casa", "Portuguese (Brazil)":"casa", Russian:"дом", "Chinese (Mandarin)":"房子", "Chinese (Cantonese)":"屋", Japanese:"いえ", Korean:"집", Hebrew:"בית", Arabic:"بيت", Hindi:"घर", Vietnamese:"nhà", Thai:"บ้าน", Turkish:"ev", Greek:"σπίτι", Polish:"dom", Dutch:"huis", Swedish:"hus", Afrikaans:"huis" },
+  "star":      { Spanish:"estrella", French:"étoile", German:"stern", Italian:"stella", Portuguese:"estrela", "Portuguese (Brazil)":"estrela", Russian:"звезда", "Chinese (Mandarin)":"星星", "Chinese (Cantonese)":"星", Japanese:"ほし", Korean:"별", Hebrew:"כוכב", Arabic:"نجمة", Hindi:"तारा", Vietnamese:"sao", Thai:"ดาว", Turkish:"yıldız", Greek:"αστέρι", Polish:"gwiazda", Dutch:"ster", Swedish:"stjärna", Afrikaans:"ster" },
 };
 
 async function translateWords(words, lang) {
@@ -426,6 +510,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"elefant",fact:"Das größte Landtier der Erde"},
     Italian:{title:"elefante",fact:"Il più grande animale terrestre"},
     Portuguese:{title:"elefante",fact:"O maior animal terrestre da Terra"},
+    "Portuguese (Brazil)":{title:"elefante",fact:"O maior animal terrestre da Terra"},
     Russian:{title:"слон",fact:"Самое большое наземное животное"},
     "Chinese (Mandarin)":{title:"大象",fact:"地球上最大的陆地动物"},
     "Chinese (Cantonese)":{title:"大象",fact:"地球上最大嘅陸地動物"},
@@ -443,6 +528,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"schmetterling",fact:"Beginnt als Raupe"},
     Italian:{title:"farfalla",fact:"Nasce come bruco"},
     Portuguese:{title:"borboleta",fact:"Começa a vida como lagarta"},
+    "Portuguese (Brazil)":{title:"borboleta",fact:"Começa a vida como lagarta"},
     Russian:{title:"бабочка",fact:"Начинает жизнь гусеницей"},
     "Chinese (Mandarin)":{title:"蝴蝶",fact:"从毛毛虫开始生命"},
     "Chinese (Cantonese)":{title:"蝴蝶",fact:"由毛毛蟲開始生命"},
@@ -460,6 +546,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"ozean",fact:"Bedeckt 71% unseres Planeten"},
     Italian:{title:"oceano",fact:"Copre il 71% del pianeta"},
     Portuguese:{title:"oceano",fact:"Cobre 71% do nosso planeta"},
+    "Portuguese (Brazil)":{title:"oceano",fact:"Cobre 71% do nosso planeta"},
     Russian:{title:"океан",fact:"Покрывает 71% планеты"},
     "Chinese (Mandarin)":{title:"海洋",fact:"覆盖地球百分之七十一"},
     "Chinese (Cantonese)":{title:"海洋",fact:"覆蓋地球百分之七十一"},
@@ -477,6 +564,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"vulkan",fact:"Ein Berg, der Lava spuckt"},
     Italian:{title:"vulcano",fact:"Una montagna che erutta lava"},
     Portuguese:{title:"vulcão",fact:"Uma montanha que expele lava"},
+    "Portuguese (Brazil)":{title:"vulcão",fact:"Uma montanha que expele lava"},
     Russian:{title:"вулкан",fact:"Гора, извергающая лаву"},
     "Chinese (Mandarin)":{title:"火山",fact:"喷发熔岩的山"},
     "Chinese (Cantonese)":{title:"火山",fact:"噴發熔岩嘅山"},
@@ -494,6 +582,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"regenwald",fact:"Heimat der halben Tierwelt"},
     Italian:{title:"foresta pluviale",fact:"Casa di metà delle specie"},
     Portuguese:{title:"floresta tropical",fact:"Lar de metade das espécies"},
+    "Portuguese (Brazil)":{title:"floresta tropical",fact:"Lar de metade das espécies"},
     Russian:{title:"джунгли",fact:"Дом половины видов Земли"},
     "Chinese (Mandarin)":{title:"雨林",fact:"地球一半物种的家园"},
     "Chinese (Cantonese)":{title:"雨林",fact:"地球一半物種嘅家"},
@@ -511,6 +600,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"dinosaurier",fact:"Lebte vor 65 Millionen Jahren"},
     Italian:{title:"dinosauro",fact:"Visse 65 milioni di anni fa"},
     Portuguese:{title:"dinossauro",fact:"Viveu há 65 milhões de anos"},
+    "Portuguese (Brazil)":{title:"dinossauro",fact:"Viveu há 65 milhões de anos"},
     Russian:{title:"динозавр",fact:"Жил 65 миллионов лет назад"},
     "Chinese (Mandarin)":{title:"恐龙",fact:"六千五百万年前生活在地球"},
     "Chinese (Cantonese)":{title:"恐龍",fact:"六千五百萬年前喺地球生活"},
@@ -528,6 +618,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"sterne",fact:"Riesige heiße Gaskugeln"},
     Italian:{title:"stelle",fact:"Grandi palle di gas ardente"},
     Portuguese:{title:"estrelas",fact:"Bolas gigantes de gás quente"},
+    "Portuguese (Brazil)":{title:"estrelas",fact:"Bolas gigantes de gás quente"},
     Russian:{title:"звёзды",fact:"Огромные шары горящего газа"},
     "Chinese (Mandarin)":{title:"星星",fact:"巨大的燃烧气体球"},
     "Chinese (Cantonese)":{title:"星星",fact:"巨大嘅燃燒氣體球"},
@@ -545,6 +636,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"pinguin",fact:"Ein Vogel, der schwimmt aber nicht fliegt"},
     Italian:{title:"pinguino",fact:"Un uccello che nuota ma non vola"},
     Portuguese:{title:"pinguim",fact:"Uma ave que nada mas não voa"},
+    "Portuguese (Brazil)":{title:"pinguim",fact:"Uma ave que nada mas não voa"},
     Russian:{title:"пингвин",fact:"Птица, которая плавает, но не летает"},
     "Chinese (Mandarin)":{title:"企鹅",fact:"会游泳但不会飞的鸟"},
     "Chinese (Cantonese)":{title:"企鵝",fact:"識游水但唔識飛嘅雀"},
@@ -579,6 +671,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"herz",fact:"Schlägt 100.000 Mal am Tag"},
     Italian:{title:"cuore",fact:"Batte 100.000 volte al giorno"},
     Portuguese:{title:"coração",fact:"Bate 100.000 vezes por dia"},
+    "Portuguese (Brazil)":{title:"coração",fact:"Bate 100.000 vezes por dia"},
     Russian:{title:"сердце",fact:"Бьётся 100 000 раз в день"},
     "Chinese (Mandarin)":{title:"心脏",fact:"每天跳动十万次"},
     "Chinese (Cantonese)":{title:"心臟",fact:"每日跳動十萬次"},
@@ -596,6 +689,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"mond",fact:"Der einzige Satellit der Erde"},
     Italian:{title:"luna",fact:"L'unico satellite naturale della Terra"},
     Portuguese:{title:"lua",fact:"O único satélite natural da Terra"},
+    "Portuguese (Brazil)":{title:"lua",fact:"O único satélite natural da Terra"},
     Russian:{title:"луна",fact:"Единственный спутник Земли"},
     "Chinese (Mandarin)":{title:"月亮",fact:"地球唯一的天然卫星"},
     "Chinese (Cantonese)":{title:"月亮",fact:"地球唯一嘅天然衛星"},
@@ -613,6 +707,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"skelett",fact:"Dein Körper hat 206 Knochen"},
     Italian:{title:"scheletro",fact:"Il tuo corpo ha 206 ossa"},
     Portuguese:{title:"esqueleto",fact:"Seu corpo tem 206 ossos"},
+    "Portuguese (Brazil)":{title:"esqueleto",fact:"Seu corpo tem 206 ossos"},
     Russian:{title:"скелет",fact:"В теле человека 206 костей"},
     "Chinese (Mandarin)":{title:"骨骼",fact:"人体共有206块骨头"},
     "Chinese (Cantonese)":{title:"骨骼",fact:"人體有206塊骨頭"},
@@ -630,6 +725,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"wal",fact:"Der Blauwal ist das größte Tier"},
     Italian:{title:"balena",fact:"La balenottera azzurra è la più grande"},
     Portuguese:{title:"baleia",fact:"A baleia azul é o maior animal"},
+    "Portuguese (Brazil)":{title:"baleia",fact:"A baleia-azul é o maior animal"},
     Russian:{title:"кит",fact:"Синий кит — самое большое животное"},
     "Chinese (Mandarin)":{title:"鲸鱼",fact:"蓝鲸是地球上最大的动物"},
     "Chinese (Cantonese)":{title:"鯨魚",fact:"藍鯨係地球上最大嘅動物"},
@@ -647,6 +743,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"giraffe",fact:"Das höchste Tier mit lila Zunge"},
     Italian:{title:"giraffa",fact:"L'animale più alto con lingua viola"},
     Portuguese:{title:"girafa",fact:"O animal mais alto com língua roxa"},
+    "Portuguese (Brazil)":{title:"girafa",fact:"O animal mais alto com língua roxa"},
     Russian:{title:"жираф",fact:"Самое высокое животное с фиолетовым языком"},
     "Chinese (Mandarin)":{title:"长颈鹿",fact:"最高的动物有紫色舌头"},
     "Chinese (Cantonese)":{title:"長頸鹿",fact:"最高嘅動物有紫色脷"},
@@ -664,6 +761,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"sonne",fact:"Ein Stern 150 Millionen km entfernt"},
     Italian:{title:"sole",fact:"Una stella a 150 milioni di km"},
     Portuguese:{title:"sol",fact:"Uma estrela a 150 milhões de km"},
+    "Portuguese (Brazil)":{title:"sol",fact:"Uma estrela a 150 milhões de km"},
     Russian:{title:"солнце",fact:"Звезда в 150 миллионах км"},
     "Chinese (Mandarin)":{title:"太阳",fact:"离地球一亿五千万公里的星"},
     "Chinese (Cantonese)":{title:"太陽",fact:"離地球一億五千萬公里嘅星"},
@@ -681,6 +779,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"regenbogen",fact:"Besteht aus sieben schönen Farben"},
     Italian:{title:"arcobaleno",fact:"Fatto di sette bellissimi colori"},
     Portuguese:{title:"arco-íris",fact:"Feito de sete belas cores"},
+    "Portuguese (Brazil)":{title:"arco-íris",fact:"Feito de sete belas cores"},
     Russian:{title:"радуга",fact:"Состоит из семи красивых цветов"},
     "Chinese (Mandarin)":{title:"彩虹",fact:"由七种美丽颜色组成"},
     "Chinese (Cantonese)":{title:"彩虹",fact:"由七種靚顏色組成"},
@@ -698,6 +797,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"krake",fact:"Hat drei Herzen und acht Arme"},
     Italian:{title:"polpo",fact:"Ha tre cuori e otto braccia"},
     Portuguese:{title:"polvo",fact:"Tem três corações e oito braços"},
+    "Portuguese (Brazil)":{title:"polvo",fact:"Tem três corações e oito braços"},
     Russian:{title:"осьминог",fact:"У него три сердца и восемь рук"},
     "Chinese (Mandarin)":{title:"章鱼",fact:"有三个心脏和八只手"},
     "Chinese (Cantonese)":{title:"八爪魚",fact:"有三個心臟同八隻手"},
@@ -715,6 +815,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"tiger",fact:"Jeder Tiger hat einzigartige Streifen"},
     Italian:{title:"tigre",fact:"Ogni tigre ha strisce uniche"},
     Portuguese:{title:"tigre",fact:"Cada tigre tem listras únicas"},
+    "Portuguese (Brazil)":{title:"tigre",fact:"Cada tigre tem listras únicas"},
     Russian:{title:"тигр",fact:"У каждого тигра свои полоски"},
     "Chinese (Mandarin)":{title:"老虎",fact:"每只老虎条纹都不同"},
     "Chinese (Cantonese)":{title:"老虎",fact:"每隻老虎條紋都唔同"},
@@ -732,6 +833,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"eule",fact:"Kann den Kopf fast ganz drehen"},
     Italian:{title:"gufo",fact:"Può girare la testa quasi del tutto"},
     Portuguese:{title:"coruja",fact:"Pode girar a cabeça quase inteira"},
+    "Portuguese (Brazil)":{title:"coruja",fact:"Pode girar a cabeça quase inteira"},
     Russian:{title:"сова",fact:"Может поворачивать голову почти полностью"},
     "Chinese (Mandarin)":{title:"猫头鹰",fact:"头几乎能转一圈"},
     "Chinese (Cantonese)":{title:"貓頭鷹",fact:"個頭幾乎可以轉一圈"},
@@ -749,6 +851,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"erde",fact:"Der einzige Planet mit Leben"},
     Italian:{title:"terra",fact:"L'unico pianeta con vita"},
     Portuguese:{title:"terra",fact:"O único planeta com vida"},
+    "Portuguese (Brazil)":{title:"terra",fact:"O único planeta com vida"},
     Russian:{title:"земля",fact:"Единственная планета с жизнью"},
     "Chinese (Mandarin)":{title:"地球",fact:"唯一有生命的行星"},
     "Chinese (Cantonese)":{title:"地球",fact:"唯一有生命嘅行星"},
@@ -766,6 +869,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"schildkröte",fact:"Kann über 100 Jahre alt werden"},
     Italian:{title:"tartaruga",fact:"Può vivere oltre 100 anni"},
     Portuguese:{title:"tartaruga",fact:"Pode viver mais de 100 anos"},
+    "Portuguese (Brazil)":{title:"tartaruga",fact:"Pode viver mais de 100 anos"},
     Russian:{title:"черепаха",fact:"Может жить больше 100 лет"},
     "Chinese (Mandarin)":{title:"乌龟",fact:"可以活超过一百岁"},
     "Chinese (Cantonese)":{title:"烏龜",fact:"可以活超過一百歲"},
@@ -783,6 +887,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"schnee",fact:"Jede Schneeflocke ist einzigartig"},
     Italian:{title:"neve",fact:"Ogni fiocco di neve è unico"},
     Portuguese:{title:"neve",fact:"Cada floco de neve é único"},
+    "Portuguese (Brazil)":{title:"neve",fact:"Cada floco de neve é único"},
     Russian:{title:"снег",fact:"Каждая снежинка уникальна"},
     "Chinese (Mandarin)":{title:"雪",fact:"每片雪花都独一无二"},
     "Chinese (Cantonese)":{title:"雪",fact:"每片雪花都獨一無二"},
@@ -800,6 +905,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"löwe",fact:"Der König des Dschungels brüllt"},
     Italian:{title:"leone",fact:"Il re della giungla ruggisce"},
     Portuguese:{title:"leão",fact:"O rei da selva ruge"},
+    "Portuguese (Brazil)":{title:"leão",fact:"O rei da selva ruge"},
     Russian:{title:"лев",fact:"Царь джунглей рычит"},
     "Chinese (Mandarin)":{title:"狮子",fact:"丛林之王会吼叫"},
     "Chinese (Cantonese)":{title:"獅子",fact:"叢林之王會吼叫"},
@@ -817,6 +923,7 @@ const KNOWLEDGE_TRANSLATIONS = {
     German:{title:"bär",fact:"Schläft den ganzen Winter"},
     Italian:{title:"orso",fact:"Dorme tutto l'inverno"},
     Portuguese:{title:"urso",fact:"Dorme o inverno inteiro"},
+    "Portuguese (Brazil)":{title:"urso",fact:"Dorme o inverno inteiro"},
     Russian:{title:"медведь",fact:"Спит всю зиму"},
     "Chinese (Mandarin)":{title:"熊",fact:"整个冬天都在睡觉"},
     "Chinese (Cantonese)":{title:"熊",fact:"成個冬天都瞓覺"},
@@ -1219,6 +1326,46 @@ function MathStagePicker({ selected, onSelect, onClose }) {
 
 const CHILD_EMOJIS = ["👶","🧒","👧","👦","🐣","🐥","🦊","🐻","🐨","🐼","🦁","🐰","🦄","🦋","🌸","⭐","🌟","🌈","🍎","🧚"];
 
+// ── ONBOARDING IMPORT (paste family code during setup) ───────────────────────
+
+function OnboardingImport({ onImported, onBack }) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState(null);
+  const doImport = () => {
+    const payload = decodeFamilyCode(text);
+    if (!payload) {
+      setError("Code is invalid. Make sure you copied the whole thing.");
+      return;
+    }
+    applyFamilyPayload(payload);
+    onImported();
+  };
+  return (
+    <div style={{width:"100%",maxWidth:360,marginTop:20}}>
+      <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#666",textAlign:"center",lineHeight:1.5,marginBottom:14}}>
+        Paste the family code shared with you. It starts with <strong>LB1-</strong>.
+      </p>
+      <textarea value={text} onChange={e=>{setText(e.target.value);setError(null);}} placeholder="LB1-eyJ2..."
+        style={{width:"100%",minHeight:120,padding:"12px 14px",borderRadius:14,border:`2px solid ${error?RED:"#eee"}`,fontSize:12,fontFamily:"ui-monospace,SFMono-Regular,monospace",outline:"none",boxSizing:"border-box",resize:"vertical"}}/>
+      {error && (
+        <div style={{marginTop:8,padding:"10px 12px",background:"#FFF0F1",borderRadius:10,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:RED}}>
+          {error}
+        </div>
+      )}
+      <div style={{display:"flex",gap:8,marginTop:14}}>
+        <button onClick={onBack}
+          style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px 18px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+          back
+        </button>
+        <button onClick={doImport} disabled={!text.trim()}
+          style={{flex:2,background:text.trim()?RED:"#ddd",border:"none",borderRadius:50,padding:"12px 18px",cursor:text.trim()?"pointer":"not-allowed",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+          import family
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── ONBOARDING (first-time setup) ────────────────────────────────────────────
 
 function Onboarding({ onDone }) {
@@ -1268,7 +1415,15 @@ function Onboarding({ onDone }) {
             style={{marginTop:36,background:RED,border:"none",borderRadius:50,padding:"14px 36px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:"#fff",boxShadow:"0 6px 20px rgba(232,25,44,.25)"}}>
             get started →
           </button>
+          <button onClick={()=>setStep("import")}
+            style={{marginTop:14,background:"none",border:"none",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#aaa",textDecoration:"underline"}}>
+            I have a family code
+          </button>
         </>
+      )}
+
+      {step === "import" && (
+        <OnboardingImport onImported={onDone} onBack={()=>setStep(0)}/>
       )}
 
       {step === 1 && (
@@ -1413,7 +1568,7 @@ function ChildSwitcher({ activeChild, onOpen }) {
 
 // ── CHILDREN MANAGEMENT SHEET ────────────────────────────────────────────────
 
-function ChildrenSheet({ children, activeId, onSelect, onAddNew, onEdit, onClose }) {
+function ChildrenSheet({ children, activeId, onSelect, onAddNew, onEdit, onShare, onClose }) {
   return (
     <Sheet onClose={onClose}>
       <div style={{padding:"22px 22px 14px",borderBottom:"1px solid #f0f0f0"}}>
@@ -1448,7 +1603,159 @@ function ChildrenSheet({ children, activeId, onSelect, onAddNew, onEdit, onClose
           style={{width:"100%",background:"#f5f5f5",border:"2px dashed #ccc",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#555"}}>
           + add another child
         </button>
+        <button onClick={onShare}
+          style={{width:"100%",marginTop:8,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:RED,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+          👨‍👩‍👧 Share with another caregiver
+        </button>
       </div>
+    </Sheet>
+  );
+}
+
+// ── FAMILY SHARING SHEET ─────────────────────────────────────────────────────
+// Export a family code (copy / share) so another caregiver can import it.
+
+function FamilySharingSheet({ onImported, onClose }) {
+  const [mode, setMode] = useState("menu"); // "menu" | "export" | "import"
+  const [copied, setCopied] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importError, setImportError] = useState(null);
+  const code = useMemo(()=>encodeFamilyCode(), [mode === "export"]);
+  const shortCode = code.slice(0, 80) + (code.length > 80 ? "…" : "");
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(()=>setCopied(false), 2000);
+    } catch {
+      // Fallback: select the text
+      const ta = document.createElement("textarea");
+      ta.value = code;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); setCopied(true); setTimeout(()=>setCopied(false), 2000); } catch {}
+      document.body.removeChild(ta);
+    }
+  };
+
+  const handleShare = async () => {
+    const text = `Join our Limitless Babies family:\n\n${code}\n\nPaste this code in the app under "Share with another caregiver" → "I have a code".`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ text, title: "Limitless Babies family code" });
+      } else {
+        handleCopy();
+      }
+    } catch {}
+  };
+
+  const handleImport = () => {
+    setImportError(null);
+    const payload = decodeFamilyCode(importText);
+    if (!payload) {
+      setImportError("Code is invalid or corrupted. Check that you pasted the whole thing, including 'LB1-' at the start.");
+      return;
+    }
+    applyFamilyPayload(payload);
+    onImported(payload.kids.length);
+  };
+
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{padding:"22px 22px 14px",borderBottom:"1px solid #f0f0f0"}}>
+        <h2 style={{fontFamily:"'Fredoka One',cursive",fontSize:24,color:"#111",margin:0}}>
+          {mode==="menu" ? "👨‍👩‍👧 Family Sharing" : mode==="export" ? "Your family code" : "Paste a family code"}
+        </h2>
+        {mode==="menu" && (
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa",marginTop:6,lineHeight:1.5}}>
+            Share profiles + progress with another caregiver (partner, au pair, grandparent).
+          </p>
+        )}
+      </div>
+
+      {mode === "menu" && (
+        <div style={{overflowY:"auto",flex:1,padding:"12px 20px 28px"}}>
+          <button onClick={()=>setMode("export")}
+            style={{width:"100%",background:"#fff",border:"2px solid #f0f0f0",borderRadius:18,padding:"18px 18px",marginBottom:10,display:"flex",alignItems:"center",gap:14,cursor:"pointer",textAlign:"left"}}>
+            <span style={{fontSize:28}}>📤</span>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:"'Fredoka One',cursive",fontSize:17,color:"#111"}}>Share my family</div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa",marginTop:2}}>Generate a code for another caregiver</div>
+            </div>
+            <span style={{fontSize:18,color:"#ddd"}}>›</span>
+          </button>
+          <button onClick={()=>setMode("import")}
+            style={{width:"100%",background:"#fff",border:"2px solid #f0f0f0",borderRadius:18,padding:"18px 18px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",textAlign:"left"}}>
+            <span style={{fontSize:28}}>📥</span>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:"'Fredoka One',cursive",fontSize:17,color:"#111"}}>I have a code</div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa",marginTop:2}}>Paste a code to load someone's family</div>
+            </div>
+            <span style={{fontSize:18,color:"#ddd"}}>›</span>
+          </button>
+
+          <div style={{marginTop:20,padding:"14px 16px",background:"#fafafa",borderRadius:14,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#888",lineHeight:1.5}}>
+            💡 Each caregiver's sessions sync when they import the latest code. For real-time sync across devices, a free account will be coming soon.
+          </div>
+        </div>
+      )}
+
+      {mode === "export" && (
+        <div style={{overflowY:"auto",flex:1,padding:"16px 20px 24px"}}>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#666",lineHeight:1.5,marginBottom:12}}>
+            Send this code to another caregiver. They'll open the app, tap "I have a code," and paste it in.
+          </p>
+
+          <div style={{background:"#fafafa",border:"2px solid #eee",borderRadius:14,padding:"12px 14px",marginBottom:12,wordBreak:"break-all",fontFamily:"ui-monospace,SFMono-Regular,monospace",fontSize:11,color:"#666",lineHeight:1.5,maxHeight:180,overflowY:"auto"}}>
+            {code || "(unable to generate — try again)"}
+          </div>
+
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={handleCopy} disabled={!code}
+              style={{flex:1,background:copied?"#2DC653":RED,border:"none",borderRadius:50,padding:"12px 18px",cursor:code?"pointer":"not-allowed",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",transition:"background .2s"}}>
+              {copied ? "✓ Copied!" : "📋 Copy"}
+            </button>
+            <button onClick={handleShare} disabled={!code}
+              style={{flex:1,background:"#f5f5f5",border:"2px solid #e8e8e8",borderRadius:50,padding:"12px 18px",cursor:code?"pointer":"not-allowed",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#555"}}>
+              📤 Share
+            </button>
+          </div>
+
+          <button onClick={()=>setMode("menu")}
+            style={{marginTop:14,width:"100%",background:"none",border:"none",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#aaa"}}>
+            ← back
+          </button>
+        </div>
+      )}
+
+      {mode === "import" && (
+        <div style={{overflowY:"auto",flex:1,padding:"16px 20px 24px"}}>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#666",lineHeight:1.5,marginBottom:12}}>
+            Paste the family code you received. It starts with <strong>LB1-</strong>.
+          </p>
+
+          <textarea value={importText} onChange={e=>{setImportText(e.target.value); setImportError(null);}}
+            placeholder="LB1-eyJ2..."
+            style={{width:"100%",minHeight:120,padding:"12px 14px",borderRadius:14,border:`2px solid ${importError?RED:"#eee"}`,fontSize:12,fontFamily:"ui-monospace,SFMono-Regular,monospace",outline:"none",boxSizing:"border-box",resize:"vertical",lineHeight:1.5}}/>
+
+          {importError && (
+            <div style={{marginTop:10,padding:"10px 12px",background:"#FFF0F1",borderRadius:10,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:RED,lineHeight:1.5}}>
+              {importError}
+            </div>
+          )}
+
+          <button onClick={handleImport} disabled={!importText.trim()}
+            style={{marginTop:14,width:"100%",background:importText.trim()?RED:"#ddd",border:"none",borderRadius:50,padding:"13px 22px",cursor:importText.trim()?"pointer":"not-allowed",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+            Import family
+          </button>
+
+          <button onClick={()=>setMode("menu")}
+            style={{marginTop:14,width:"100%",background:"none",border:"none",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#aaa"}}>
+            ← back
+          </button>
+        </div>
+      )}
     </Sheet>
   );
 }
@@ -1935,7 +2242,8 @@ export default function App() {
   const [showLang, setShowLang]       = useState(false);
   const [showMath, setShowMath]       = useState(false);
   const [showChildren, setShowChildren]   = useState(false);
-  const [editingChild, setEditingChild]   = useState(undefined); // undefined=closed, null=new, object=editing
+  const [showSharing, setShowSharing]     = useState(false);
+  const [editingChild, setEditingChild]   = useState(undefined);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dailyWords, setDailyWords]   = useState([]);
   const [dailyKnow, setDailyKnow]     = useState([]);
@@ -2134,7 +2442,25 @@ export default function App() {
           onSelect={handleSelectChild}
           onAddNew={()=>{ setShowChildren(false); setEditingChild(null); }}
           onEdit={(c)=>{ setShowChildren(false); setEditingChild(c); }}
+          onShare={()=>{ setShowChildren(false); setShowSharing(true); }}
           onClose={()=>setShowChildren(false)}
+        />
+      )}
+
+      {showSharing && (
+        <FamilySharingSheet
+          onImported={(count)=>{
+            const kids = loadChildren();
+            setChildren(kids);
+            if (kids.length && !activeChildId) {
+              setActive(kids[0].id);
+              setActiveChildId(kids[0].id);
+              if (kids[0].languages.length) setLanguage(kids[0].languages[0]);
+            }
+            setShowSharing(false);
+            alert(`✅ Imported ${count} ${count===1?"child":"children"}!`);
+          }}
+          onClose={()=>setShowSharing(false)}
         />
       )}
 
