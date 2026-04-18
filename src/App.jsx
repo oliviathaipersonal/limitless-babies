@@ -139,12 +139,14 @@ function getDomanWindow(dayNum) {
   return nums;
 }
 
-function getMathCards(stage, dayNum) {
+// One session = 11 cards.
+// Session 1 of the day: in order (0,1,2…10)
+// Sessions 2 & 3: shuffled
+function getMathCards(stage, dayNum, sessionNum) {
   if (stage==="dots"||stage==="numerals") {
-    const window = getDomanWindow(dayNum);
-    // Show the set 3 times (Doman protocol: 3 sessions per day)
-    const tripled = [...window, ...window, ...window];
-    return shuffle(tripled).map(n => ({ n }));
+    const w = getDomanWindow(dayNum);
+    const ordered = sessionNum === 1 ? w : shuffle(w);
+    return ordered.map(n => ({ n }));
   }
   return genEquations(stage);
 }
@@ -166,6 +168,52 @@ function getDayNumber() {
   } catch {
     return 1;
   }
+}
+
+// ── SESSION TRACKING ─────────────────────────────────────────────────────────
+// Doman protocol: exactly 3 sessions per day, per category,
+// with at least 5 minutes between sessions.
+
+const SESSION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_SESSIONS_PER_DAY = 3;
+
+// Returns { sessionNum, locked, secondsUntilReady }
+// sessionNum is 1, 2, or 3 (the next available session).
+// locked=true means all 3 sessions done OR cooldown active.
+function getSessionStatus(category) {
+  try {
+    const dk = todayKey();
+    const key = `lb-sess-${category}-${dk}`;
+    const raw = localStorage.getItem(key);
+    const data = raw ? JSON.parse(raw) : { count: 0, lastAt: 0 };
+
+    if (data.count >= MAX_SESSIONS_PER_DAY) {
+      return { sessionNum: MAX_SESSIONS_PER_DAY, locked: true, reason: "done", secondsUntilReady: 0 };
+    }
+
+    const now = Date.now();
+    const since = now - (data.lastAt || 0);
+    if (data.count > 0 && since < SESSION_COOLDOWN_MS) {
+      const secondsUntilReady = Math.ceil((SESSION_COOLDOWN_MS - since) / 1000);
+      return { sessionNum: data.count + 1, locked: true, reason: "cooldown", secondsUntilReady };
+    }
+
+    return { sessionNum: data.count + 1, locked: false, secondsUntilReady: 0 };
+  } catch {
+    return { sessionNum: 1, locked: false, secondsUntilReady: 0 };
+  }
+}
+
+function markSessionComplete(category) {
+  try {
+    const dk = todayKey();
+    const key = `lb-sess-${category}-${dk}`;
+    const raw = localStorage.getItem(key);
+    const data = raw ? JSON.parse(raw) : { count: 0, lastAt: 0 };
+    data.count = Math.min(MAX_SESSIONS_PER_DAY, data.count + 1);
+    data.lastAt = Date.now();
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {}
 }
 
 // ── PHOTO DISPLAY (large emoji in rose panel — reliable, always appropriate) ─
@@ -244,41 +292,465 @@ async function fetchDailyWords(dk) {
   // Deterministic daily rotation
   const seed = dk.split("-").reduce((a,s)=>a+parseInt(s),0);
   const rotated = [...pool.slice(seed % pool.length), ...pool.slice(0, seed % pool.length)];
-  return rotated.slice(0, 15);
+  return rotated.slice(0, 11);
 }
 
 const KNOWLEDGE_POOL = [
-  {title:"elephant",fact:"Largest land animal on Earth",emoji:"🐘"},
-  {title:"butterfly",fact:"Starts life as a caterpillar",emoji:"🦋"},
-  {title:"ocean",fact:"Covers 71% of our planet",emoji:"🌊"},
-  {title:"volcano",fact:"A mountain that erupts lava",emoji:"🌋"},
-  {title:"rainforest",fact:"Home to half of Earth's species",emoji:"🌿"},
-  {title:"dinosaur",fact:"Roamed Earth 65 million years ago",emoji:"🦕"},
-  {title:"stars",fact:"Giant balls of hot burning gas",emoji:"⭐"},
-  {title:"penguin",fact:"A bird that swims but cannot fly",emoji:"🐧"},
-  {title:"honey bee",fact:"Visits 5000 flowers per honey jar",emoji:"🐝"},
-  {title:"heart",fact:"Beats 100,000 times every day",emoji:"❤️"},
-  {title:"moon",fact:"Earth's only natural satellite",emoji:"🌕"},
-  {title:"skeleton",fact:"Your body has exactly 206 bones",emoji:"🦴"},
-  {title:"whale",fact:"The blue whale is Earth's largest animal",emoji:"🐋"},
-  {title:"giraffe",fact:"Tallest animal with a long purple tongue",emoji:"🦒"},
-  {title:"sun",fact:"A star 93 million miles from Earth",emoji:"☀️"},
-  {title:"rainbow",fact:"Made of seven beautiful colors",emoji:"🌈"},
-  {title:"octopus",fact:"Has three hearts and eight arms",emoji:"🐙"},
-  {title:"tiger",fact:"Each tiger has unique stripes",emoji:"🐅"},
-  {title:"owl",fact:"Can turn its head almost all the way around",emoji:"🦉"},
-  {title:"earth",fact:"The only planet with life",emoji:"🌍"},
-  {title:"turtle",fact:"Can live for over 100 years",emoji:"🐢"},
-  {title:"snow",fact:"Every snowflake is one of a kind",emoji:"❄️"},
-  {title:"lion",fact:"The king of the jungle roars",emoji:"🦁"},
-  {title:"bear",fact:"Sleeps all winter long",emoji:"🐻"},
+  {id:"elephant",title:"elephant",fact:"Largest land animal on Earth",emoji:"🐘"},
+  {id:"butterfly",title:"butterfly",fact:"Starts life as a caterpillar",emoji:"🦋"},
+  {id:"ocean",title:"ocean",fact:"Covers 71% of our planet",emoji:"🌊"},
+  {id:"volcano",title:"volcano",fact:"A mountain that erupts lava",emoji:"🌋"},
+  {id:"rainforest",title:"rainforest",fact:"Home to half of Earth's species",emoji:"🌿"},
+  {id:"dinosaur",title:"dinosaur",fact:"Roamed Earth 65 million years ago",emoji:"🦕"},
+  {id:"stars",title:"stars",fact:"Giant balls of hot burning gas",emoji:"⭐"},
+  {id:"penguin",title:"penguin",fact:"A bird that swims but cannot fly",emoji:"🐧"},
+  {id:"honey bee",title:"honey bee",fact:"Visits 5000 flowers per honey jar",emoji:"🐝"},
+  {id:"heart",title:"heart",fact:"Beats 100,000 times every day",emoji:"❤️"},
+  {id:"moon",title:"moon",fact:"Earth's only natural satellite",emoji:"🌕"},
+  {id:"skeleton",title:"skeleton",fact:"Your body has exactly 206 bones",emoji:"🦴"},
+  {id:"whale",title:"whale",fact:"The blue whale is Earth's largest animal",emoji:"🐋"},
+  {id:"giraffe",title:"giraffe",fact:"Tallest animal with a long purple tongue",emoji:"🦒"},
+  {id:"sun",title:"sun",fact:"A star 93 million miles from Earth",emoji:"☀️"},
+  {id:"rainbow",title:"rainbow",fact:"Made of seven beautiful colors",emoji:"🌈"},
+  {id:"octopus",title:"octopus",fact:"Has three hearts and eight arms",emoji:"🐙"},
+  {id:"tiger",title:"tiger",fact:"Each tiger has unique stripes",emoji:"🐅"},
+  {id:"owl",title:"owl",fact:"Can turn its head almost all the way around",emoji:"🦉"},
+  {id:"earth",title:"earth",fact:"The only planet with life",emoji:"🌍"},
+  {id:"turtle",title:"turtle",fact:"Can live for over 100 years",emoji:"🐢"},
+  {id:"snow",title:"snow",fact:"Every snowflake is one of a kind",emoji:"❄️"},
+  {id:"lion",title:"lion",fact:"The king of the jungle roars",emoji:"🦁"},
+  {id:"bear",title:"bear",fact:"Sleeps all winter long",emoji:"🐻"},
 ];
+
+// Knowledge translations keyed by card id → language → { title, fact }
+const KNOWLEDGE_TRANSLATIONS = {
+  elephant: {
+    Spanish:{title:"elefante",fact:"El animal terrestre más grande"},
+    French:{title:"éléphant",fact:"Le plus grand animal terrestre"},
+    German:{title:"elefant",fact:"Das größte Landtier der Erde"},
+    Italian:{title:"elefante",fact:"Il più grande animale terrestre"},
+    Portuguese:{title:"elefante",fact:"O maior animal terrestre da Terra"},
+    Russian:{title:"слон",fact:"Самое большое наземное животное"},
+    "Chinese (Mandarin)":{title:"大象",fact:"地球上最大的陆地动物"},
+    "Chinese (Cantonese)":{title:"大象",fact:"地球上最大嘅陸地動物"},
+    Japanese:{title:"ぞう",fact:"地球で一番大きな陸の動物"},
+    Korean:{title:"코끼리",fact:"지구에서 가장 큰 육지 동물"},
+    Hebrew:{title:"פיל",fact:"החיה היבשתית הגדולה ביותר"},
+    Arabic:{title:"فيل",fact:"أكبر حيوان بري على الأرض"},
+    Hindi:{title:"हाथी",fact:"धरती का सबसे बड़ा जानवर"},
+    Vietnamese:{title:"voi",fact:"Động vật trên cạn lớn nhất Trái Đất"},
+    Turkish:{title:"fil",fact:"Dünyanın en büyük kara hayvanı"},
+  },
+  butterfly: {
+    Spanish:{title:"mariposa",fact:"Comienza su vida como oruga"},
+    French:{title:"papillon",fact:"Commence sa vie comme chenille"},
+    German:{title:"schmetterling",fact:"Beginnt als Raupe"},
+    Italian:{title:"farfalla",fact:"Nasce come bruco"},
+    Portuguese:{title:"borboleta",fact:"Começa a vida como lagarta"},
+    Russian:{title:"бабочка",fact:"Начинает жизнь гусеницей"},
+    "Chinese (Mandarin)":{title:"蝴蝶",fact:"从毛毛虫开始生命"},
+    "Chinese (Cantonese)":{title:"蝴蝶",fact:"由毛毛蟲開始生命"},
+    Japanese:{title:"ちょうちょ",fact:"毛虫から人生が始まる"},
+    Korean:{title:"나비",fact:"애벌레로 삶을 시작해요"},
+    Hebrew:{title:"פרפר",fact:"מתחיל את חייו כזחל"},
+    Arabic:{title:"فراشة",fact:"تبدأ حياتها كيرقة"},
+    Hindi:{title:"तितली",fact:"जीवन की शुरुआत कैटरपिलर से"},
+    Vietnamese:{title:"bướm",fact:"Bắt đầu cuộc sống như sâu bướm"},
+    Turkish:{title:"kelebek",fact:"Hayata tırtıl olarak başlar"},
+  },
+  ocean: {
+    Spanish:{title:"océano",fact:"Cubre 71% de nuestro planeta"},
+    French:{title:"océan",fact:"Couvre 71% de notre planète"},
+    German:{title:"ozean",fact:"Bedeckt 71% unseres Planeten"},
+    Italian:{title:"oceano",fact:"Copre il 71% del pianeta"},
+    Portuguese:{title:"oceano",fact:"Cobre 71% do nosso planeta"},
+    Russian:{title:"океан",fact:"Покрывает 71% планеты"},
+    "Chinese (Mandarin)":{title:"海洋",fact:"覆盖地球百分之七十一"},
+    "Chinese (Cantonese)":{title:"海洋",fact:"覆蓋地球百分之七十一"},
+    Japanese:{title:"うみ",fact:"地球の71%を覆っている"},
+    Korean:{title:"바다",fact:"지구의 71%를 덮고 있어요"},
+    Hebrew:{title:"אוקיינוס",fact:"מכסה 71% מכדור הארץ"},
+    Arabic:{title:"محيط",fact:"يغطي 71٪ من كوكبنا"},
+    Hindi:{title:"समुद्र",fact:"धरती का 71% हिस्सा ढकता है"},
+    Vietnamese:{title:"đại dương",fact:"Bao phủ 71% hành tinh"},
+    Turkish:{title:"okyanus",fact:"Gezegenimizin %71'ini kaplar"},
+  },
+  volcano: {
+    Spanish:{title:"volcán",fact:"Una montaña que lanza lava"},
+    French:{title:"volcan",fact:"Une montagne qui crache de la lave"},
+    German:{title:"vulkan",fact:"Ein Berg, der Lava spuckt"},
+    Italian:{title:"vulcano",fact:"Una montagna che erutta lava"},
+    Portuguese:{title:"vulcão",fact:"Uma montanha que expele lava"},
+    Russian:{title:"вулкан",fact:"Гора, извергающая лаву"},
+    "Chinese (Mandarin)":{title:"火山",fact:"喷发熔岩的山"},
+    "Chinese (Cantonese)":{title:"火山",fact:"噴發熔岩嘅山"},
+    Japanese:{title:"かざん",fact:"溶岩を噴き出す山"},
+    Korean:{title:"화산",fact:"용암을 뿜는 산"},
+    Hebrew:{title:"הר געש",fact:"הר שמוציא לבה"},
+    Arabic:{title:"بركان",fact:"جبل يقذف الحمم"},
+    Hindi:{title:"ज्वालामुखी",fact:"लावा उगलने वाला पहाड़"},
+    Vietnamese:{title:"núi lửa",fact:"Ngọn núi phun dung nham"},
+    Turkish:{title:"yanardağ",fact:"Lav püskürten dağ"},
+  },
+  rainforest: {
+    Spanish:{title:"selva tropical",fact:"Hogar de la mitad de las especies"},
+    French:{title:"forêt tropicale",fact:"Abrite la moitié des espèces"},
+    German:{title:"regenwald",fact:"Heimat der halben Tierwelt"},
+    Italian:{title:"foresta pluviale",fact:"Casa di metà delle specie"},
+    Portuguese:{title:"floresta tropical",fact:"Lar de metade das espécies"},
+    Russian:{title:"джунгли",fact:"Дом половины видов Земли"},
+    "Chinese (Mandarin)":{title:"雨林",fact:"地球一半物种的家园"},
+    "Chinese (Cantonese)":{title:"雨林",fact:"地球一半物種嘅家"},
+    Japanese:{title:"ねったいりん",fact:"地球の半分の種の家"},
+    Korean:{title:"열대우림",fact:"지구 종의 절반이 사는 곳"},
+    Hebrew:{title:"יער גשם",fact:"בית לחצי מיני כדור הארץ"},
+    Arabic:{title:"غابة مطيرة",fact:"موطن نصف أنواع الأرض"},
+    Hindi:{title:"वर्षावन",fact:"धरती की आधी प्रजातियों का घर"},
+    Vietnamese:{title:"rừng mưa",fact:"Nhà của nửa loài trên Trái Đất"},
+    Turkish:{title:"yağmur ormanı",fact:"Türlerin yarısının evi"},
+  },
+  dinosaur: {
+    Spanish:{title:"dinosaurio",fact:"Vivió hace 65 millones de años"},
+    French:{title:"dinosaure",fact:"A vécu il y a 65 millions d'années"},
+    German:{title:"dinosaurier",fact:"Lebte vor 65 Millionen Jahren"},
+    Italian:{title:"dinosauro",fact:"Visse 65 milioni di anni fa"},
+    Portuguese:{title:"dinossauro",fact:"Viveu há 65 milhões de anos"},
+    Russian:{title:"динозавр",fact:"Жил 65 миллионов лет назад"},
+    "Chinese (Mandarin)":{title:"恐龙",fact:"六千五百万年前生活在地球"},
+    "Chinese (Cantonese)":{title:"恐龍",fact:"六千五百萬年前喺地球生活"},
+    Japanese:{title:"きょうりゅう",fact:"6500万年前に地球にいた"},
+    Korean:{title:"공룡",fact:"6500만년 전에 살았어요"},
+    Hebrew:{title:"דינוזאור",fact:"חי לפני 65 מיליון שנה"},
+    Arabic:{title:"ديناصور",fact:"عاش قبل 65 مليون سنة"},
+    Hindi:{title:"डायनासोर",fact:"6.5 करोड़ साल पहले रहते थे"},
+    Vietnamese:{title:"khủng long",fact:"Sống 65 triệu năm trước"},
+    Turkish:{title:"dinozor",fact:"65 milyon yıl önce yaşadı"},
+  },
+  stars: {
+    Spanish:{title:"estrellas",fact:"Grandes bolas de gas ardiente"},
+    French:{title:"étoiles",fact:"De grandes boules de gaz chaud"},
+    German:{title:"sterne",fact:"Riesige heiße Gaskugeln"},
+    Italian:{title:"stelle",fact:"Grandi palle di gas ardente"},
+    Portuguese:{title:"estrelas",fact:"Bolas gigantes de gás quente"},
+    Russian:{title:"звёзды",fact:"Огромные шары горящего газа"},
+    "Chinese (Mandarin)":{title:"星星",fact:"巨大的燃烧气体球"},
+    "Chinese (Cantonese)":{title:"星星",fact:"巨大嘅燃燒氣體球"},
+    Japanese:{title:"ほし",fact:"燃える大きなガスの玉"},
+    Korean:{title:"별",fact:"타오르는 거대한 가스 공"},
+    Hebrew:{title:"כוכבים",fact:"כדורי גז ענקיים ולוהטים"},
+    Arabic:{title:"نجوم",fact:"كرات ضخمة من الغاز المحترق"},
+    Hindi:{title:"तारे",fact:"जलती गैस के विशाल गोले"},
+    Vietnamese:{title:"ngôi sao",fact:"Quả cầu khí nóng khổng lồ"},
+    Turkish:{title:"yıldızlar",fact:"Dev yanan gaz topları"},
+  },
+  penguin: {
+    Spanish:{title:"pingüino",fact:"Un ave que nada pero no vuela"},
+    French:{title:"pingouin",fact:"Un oiseau qui nage mais ne vole pas"},
+    German:{title:"pinguin",fact:"Ein Vogel, der schwimmt aber nicht fliegt"},
+    Italian:{title:"pinguino",fact:"Un uccello che nuota ma non vola"},
+    Portuguese:{title:"pinguim",fact:"Uma ave que nada mas não voa"},
+    Russian:{title:"пингвин",fact:"Птица, которая плавает, но не летает"},
+    "Chinese (Mandarin)":{title:"企鹅",fact:"会游泳但不会飞的鸟"},
+    "Chinese (Cantonese)":{title:"企鵝",fact:"識游水但唔識飛嘅雀"},
+    Japanese:{title:"ペンギン",fact:"泳ぐけど飛ばない鳥"},
+    Korean:{title:"펭귄",fact:"헤엄치지만 날지 못하는 새"},
+    Hebrew:{title:"פינגווין",fact:"ציפור ששוחה אך לא עפה"},
+    Arabic:{title:"بطريق",fact:"طائر يسبح ولا يطير"},
+    Hindi:{title:"पेंगुइन",fact:"तैरता है पर उड़ नहीं सकता"},
+    Vietnamese:{title:"chim cánh cụt",fact:"Chim bơi được nhưng không bay"},
+    Turkish:{title:"penguen",fact:"Yüzen ama uçamayan kuş"},
+  },
+  "honey bee": {
+    Spanish:{title:"abeja",fact:"Visita 5000 flores por frasco"},
+    French:{title:"abeille",fact:"Visite 5000 fleurs par pot"},
+    German:{title:"honigbiene",fact:"Besucht 5000 Blumen pro Glas"},
+    Italian:{title:"ape",fact:"Visita 5000 fiori per barattolo"},
+    Portuguese:{title:"abelha",fact:"Visita 5000 flores por pote"},
+    Russian:{title:"пчела",fact:"Посещает 5000 цветов на банку"},
+    "Chinese (Mandarin)":{title:"蜜蜂",fact:"每罐蜂蜜要访五千朵花"},
+    "Chinese (Cantonese)":{title:"蜜蜂",fact:"每罐蜂蜜要訪五千朵花"},
+    Japanese:{title:"みつばち",fact:"蜜一瓶に5000の花を訪ねる"},
+    Korean:{title:"꿀벌",fact:"꿀 한 병에 꽃 5000송이"},
+    Hebrew:{title:"דבורה",fact:"מבקרת 5000 פרחים לצנצנת"},
+    Arabic:{title:"نحلة",fact:"تزور 5000 زهرة لكل جرة عسل"},
+    Hindi:{title:"मधुमक्खी",fact:"एक बोतल के लिए 5000 फूल"},
+    Vietnamese:{title:"ong mật",fact:"Ghé 5000 hoa cho một hũ mật"},
+    Turkish:{title:"arı",fact:"Bir kavanoz için 5000 çiçek"},
+  },
+  heart: {
+    Spanish:{title:"corazón",fact:"Late 100.000 veces al día"},
+    French:{title:"cœur",fact:"Bat 100 000 fois par jour"},
+    German:{title:"herz",fact:"Schlägt 100.000 Mal am Tag"},
+    Italian:{title:"cuore",fact:"Batte 100.000 volte al giorno"},
+    Portuguese:{title:"coração",fact:"Bate 100.000 vezes por dia"},
+    Russian:{title:"сердце",fact:"Бьётся 100 000 раз в день"},
+    "Chinese (Mandarin)":{title:"心脏",fact:"每天跳动十万次"},
+    "Chinese (Cantonese)":{title:"心臟",fact:"每日跳動十萬次"},
+    Japanese:{title:"しんぞう",fact:"1日に10万回打つ"},
+    Korean:{title:"심장",fact:"하루에 10만 번 뛰어요"},
+    Hebrew:{title:"לב",fact:"פועם 100,000 פעמים ביום"},
+    Arabic:{title:"قلب",fact:"ينبض 100 ألف مرة يومياً"},
+    Hindi:{title:"दिल",fact:"रोज एक लाख बार धड़कता है"},
+    Vietnamese:{title:"trái tim",fact:"Đập 100.000 lần mỗi ngày"},
+    Turkish:{title:"kalp",fact:"Günde 100.000 kez atar"},
+  },
+  moon: {
+    Spanish:{title:"luna",fact:"El único satélite natural de la Tierra"},
+    French:{title:"lune",fact:"Le seul satellite naturel de la Terre"},
+    German:{title:"mond",fact:"Der einzige Satellit der Erde"},
+    Italian:{title:"luna",fact:"L'unico satellite naturale della Terra"},
+    Portuguese:{title:"lua",fact:"O único satélite natural da Terra"},
+    Russian:{title:"луна",fact:"Единственный спутник Земли"},
+    "Chinese (Mandarin)":{title:"月亮",fact:"地球唯一的天然卫星"},
+    "Chinese (Cantonese)":{title:"月亮",fact:"地球唯一嘅天然衛星"},
+    Japanese:{title:"つき",fact:"地球の唯一の衛星"},
+    Korean:{title:"달",fact:"지구의 유일한 자연 위성"},
+    Hebrew:{title:"ירח",fact:"הלוויין הטבעי היחיד של כדור הארץ"},
+    Arabic:{title:"قمر",fact:"القمر الطبيعي الوحيد للأرض"},
+    Hindi:{title:"चाँद",fact:"धरती का एकमात्र प्राकृतिक उपग्रह"},
+    Vietnamese:{title:"mặt trăng",fact:"Vệ tinh tự nhiên duy nhất của Trái Đất"},
+    Turkish:{title:"ay",fact:"Dünya'nın tek doğal uydusu"},
+  },
+  skeleton: {
+    Spanish:{title:"esqueleto",fact:"Tu cuerpo tiene 206 huesos"},
+    French:{title:"squelette",fact:"Ton corps a 206 os"},
+    German:{title:"skelett",fact:"Dein Körper hat 206 Knochen"},
+    Italian:{title:"scheletro",fact:"Il tuo corpo ha 206 ossa"},
+    Portuguese:{title:"esqueleto",fact:"Seu corpo tem 206 ossos"},
+    Russian:{title:"скелет",fact:"В теле человека 206 костей"},
+    "Chinese (Mandarin)":{title:"骨骼",fact:"人体共有206块骨头"},
+    "Chinese (Cantonese)":{title:"骨骼",fact:"人體有206塊骨頭"},
+    Japanese:{title:"ほね",fact:"体には206個の骨がある"},
+    Korean:{title:"뼈",fact:"몸에는 206개의 뼈가 있어요"},
+    Hebrew:{title:"שלד",fact:"בגופך יש 206 עצמות"},
+    Arabic:{title:"هيكل عظمي",fact:"جسمك فيه 206 عظمة"},
+    Hindi:{title:"कंकाल",fact:"शरीर में 206 हड्डियाँ हैं"},
+    Vietnamese:{title:"bộ xương",fact:"Cơ thể có 206 xương"},
+    Turkish:{title:"iskelet",fact:"Vücudunda 206 kemik var"},
+  },
+  whale: {
+    Spanish:{title:"ballena",fact:"La ballena azul es el animal más grande"},
+    French:{title:"baleine",fact:"La baleine bleue est le plus grand animal"},
+    German:{title:"wal",fact:"Der Blauwal ist das größte Tier"},
+    Italian:{title:"balena",fact:"La balenottera azzurra è la più grande"},
+    Portuguese:{title:"baleia",fact:"A baleia azul é o maior animal"},
+    Russian:{title:"кит",fact:"Синий кит — самое большое животное"},
+    "Chinese (Mandarin)":{title:"鲸鱼",fact:"蓝鲸是地球上最大的动物"},
+    "Chinese (Cantonese)":{title:"鯨魚",fact:"藍鯨係地球上最大嘅動物"},
+    Japanese:{title:"くじら",fact:"シロナガスクジラは最大の動物"},
+    Korean:{title:"고래",fact:"대왕고래는 가장 큰 동물"},
+    Hebrew:{title:"לוויתן",fact:"לוויתן כחול הוא החיה הכי גדולה"},
+    Arabic:{title:"حوت",fact:"الحوت الأزرق أكبر حيوان"},
+    Hindi:{title:"व्हेल",fact:"नीली व्हेल धरती का सबसे बड़ा जीव"},
+    Vietnamese:{title:"cá voi",fact:"Cá voi xanh to nhất Trái Đất"},
+    Turkish:{title:"balina",fact:"Mavi balina en büyük hayvandır"},
+  },
+  giraffe: {
+    Spanish:{title:"jirafa",fact:"El animal más alto con lengua morada"},
+    French:{title:"girafe",fact:"L'animal le plus grand à langue violette"},
+    German:{title:"giraffe",fact:"Das höchste Tier mit lila Zunge"},
+    Italian:{title:"giraffa",fact:"L'animale più alto con lingua viola"},
+    Portuguese:{title:"girafa",fact:"O animal mais alto com língua roxa"},
+    Russian:{title:"жираф",fact:"Самое высокое животное с фиолетовым языком"},
+    "Chinese (Mandarin)":{title:"长颈鹿",fact:"最高的动物有紫色舌头"},
+    "Chinese (Cantonese)":{title:"長頸鹿",fact:"最高嘅動物有紫色脷"},
+    Japanese:{title:"きりん",fact:"紫の舌を持つ最も背の高い動物"},
+    Korean:{title:"기린",fact:"보라색 혀를 가진 가장 큰 동물"},
+    Hebrew:{title:"ג'ירפה",fact:"החיה הכי גבוהה עם לשון סגולה"},
+    Arabic:{title:"زرافة",fact:"أطول حيوان بلسان بنفسجي"},
+    Hindi:{title:"जिराफ",fact:"सबसे लंबा जानवर बैंगनी जीभ"},
+    Vietnamese:{title:"hươu cao cổ",fact:"Động vật cao nhất với lưỡi tím"},
+    Turkish:{title:"zürafa",fact:"Mor dilli en uzun hayvan"},
+  },
+  sun: {
+    Spanish:{title:"sol",fact:"Una estrella a 150 millones de km"},
+    French:{title:"soleil",fact:"Une étoile à 150 millions de km"},
+    German:{title:"sonne",fact:"Ein Stern 150 Millionen km entfernt"},
+    Italian:{title:"sole",fact:"Una stella a 150 milioni di km"},
+    Portuguese:{title:"sol",fact:"Uma estrela a 150 milhões de km"},
+    Russian:{title:"солнце",fact:"Звезда в 150 миллионах км"},
+    "Chinese (Mandarin)":{title:"太阳",fact:"离地球一亿五千万公里的星"},
+    "Chinese (Cantonese)":{title:"太陽",fact:"離地球一億五千萬公里嘅星"},
+    Japanese:{title:"たいよう",fact:"1億5千万km先の星"},
+    Korean:{title:"태양",fact:"1억5천만km 떨어진 별"},
+    Hebrew:{title:"שמש",fact:"כוכב 150 מיליון ק״מ משם"},
+    Arabic:{title:"شمس",fact:"نجم يبعد 150 مليون كم"},
+    Hindi:{title:"सूरज",fact:"15 करोड़ किमी दूर एक तारा"},
+    Vietnamese:{title:"mặt trời",fact:"Ngôi sao cách 150 triệu km"},
+    Turkish:{title:"güneş",fact:"150 milyon km uzakta bir yıldız"},
+  },
+  rainbow: {
+    Spanish:{title:"arcoíris",fact:"Hecho de siete hermosos colores"},
+    French:{title:"arc-en-ciel",fact:"Fait de sept belles couleurs"},
+    German:{title:"regenbogen",fact:"Besteht aus sieben schönen Farben"},
+    Italian:{title:"arcobaleno",fact:"Fatto di sette bellissimi colori"},
+    Portuguese:{title:"arco-íris",fact:"Feito de sete belas cores"},
+    Russian:{title:"радуга",fact:"Состоит из семи красивых цветов"},
+    "Chinese (Mandarin)":{title:"彩虹",fact:"由七种美丽颜色组成"},
+    "Chinese (Cantonese)":{title:"彩虹",fact:"由七種靚顏色組成"},
+    Japanese:{title:"にじ",fact:"七つの美しい色でできている"},
+    Korean:{title:"무지개",fact:"일곱 가지 아름다운 색"},
+    Hebrew:{title:"קשת",fact:"עשויה משבעה צבעים יפים"},
+    Arabic:{title:"قوس قزح",fact:"مكون من سبعة ألوان جميلة"},
+    Hindi:{title:"इंद्रधनुष",fact:"सात खूबसूरत रंगों का"},
+    Vietnamese:{title:"cầu vồng",fact:"Có bảy màu đẹp"},
+    Turkish:{title:"gökkuşağı",fact:"Yedi güzel renkten oluşur"},
+  },
+  octopus: {
+    Spanish:{title:"pulpo",fact:"Tiene tres corazones y ocho brazos"},
+    French:{title:"poulpe",fact:"Il a trois cœurs et huit bras"},
+    German:{title:"krake",fact:"Hat drei Herzen und acht Arme"},
+    Italian:{title:"polpo",fact:"Ha tre cuori e otto braccia"},
+    Portuguese:{title:"polvo",fact:"Tem três corações e oito braços"},
+    Russian:{title:"осьминог",fact:"У него три сердца и восемь рук"},
+    "Chinese (Mandarin)":{title:"章鱼",fact:"有三个心脏和八只手"},
+    "Chinese (Cantonese)":{title:"八爪魚",fact:"有三個心臟同八隻手"},
+    Japanese:{title:"たこ",fact:"心臓が3つ、腕が8本"},
+    Korean:{title:"문어",fact:"심장 3개와 팔 8개"},
+    Hebrew:{title:"תמנון",fact:"יש לו שלושה לבבות ושמונה זרועות"},
+    Arabic:{title:"أخطبوط",fact:"لديه ثلاثة قلوب وثمانية أذرع"},
+    Hindi:{title:"ऑक्टोपस",fact:"तीन दिल और आठ भुजाएँ"},
+    Vietnamese:{title:"bạch tuộc",fact:"Có ba tim và tám cánh tay"},
+    Turkish:{title:"ahtapot",fact:"Üç kalbi ve sekiz kolu var"},
+  },
+  tiger: {
+    Spanish:{title:"tigre",fact:"Cada tigre tiene rayas únicas"},
+    French:{title:"tigre",fact:"Chaque tigre a des rayures uniques"},
+    German:{title:"tiger",fact:"Jeder Tiger hat einzigartige Streifen"},
+    Italian:{title:"tigre",fact:"Ogni tigre ha strisce uniche"},
+    Portuguese:{title:"tigre",fact:"Cada tigre tem listras únicas"},
+    Russian:{title:"тигр",fact:"У каждого тигра свои полоски"},
+    "Chinese (Mandarin)":{title:"老虎",fact:"每只老虎条纹都不同"},
+    "Chinese (Cantonese)":{title:"老虎",fact:"每隻老虎條紋都唔同"},
+    Japanese:{title:"とら",fact:"虎はみんな違う模様"},
+    Korean:{title:"호랑이",fact:"호랑이마다 무늬가 달라요"},
+    Hebrew:{title:"טיגריס",fact:"לכל טיגריס פסים ייחודיים"},
+    Arabic:{title:"نمر",fact:"كل نمر له خطوط فريدة"},
+    Hindi:{title:"बाघ",fact:"हर बाघ की धारियाँ अनूठी"},
+    Vietnamese:{title:"hổ",fact:"Mỗi con hổ có sọc riêng"},
+    Turkish:{title:"kaplan",fact:"Her kaplanın çizgisi farklı"},
+  },
+  owl: {
+    Spanish:{title:"búho",fact:"Puede girar la cabeza casi completamente"},
+    French:{title:"hibou",fact:"Peut tourner la tête presque complètement"},
+    German:{title:"eule",fact:"Kann den Kopf fast ganz drehen"},
+    Italian:{title:"gufo",fact:"Può girare la testa quasi del tutto"},
+    Portuguese:{title:"coruja",fact:"Pode girar a cabeça quase inteira"},
+    Russian:{title:"сова",fact:"Может поворачивать голову почти полностью"},
+    "Chinese (Mandarin)":{title:"猫头鹰",fact:"头几乎能转一圈"},
+    "Chinese (Cantonese)":{title:"貓頭鷹",fact:"個頭幾乎可以轉一圈"},
+    Japanese:{title:"ふくろう",fact:"頭をほぼ一周回せる"},
+    Korean:{title:"올빼미",fact:"머리를 거의 한 바퀴 돌려요"},
+    Hebrew:{title:"ינשוף",fact:"יכול לסובב את הראש כמעט לגמרי"},
+    Arabic:{title:"بومة",fact:"تدير رأسها تقريباً دورة كاملة"},
+    Hindi:{title:"उल्लू",fact:"सिर लगभग पूरा घुमा सकता है"},
+    Vietnamese:{title:"cú mèo",fact:"Xoay đầu gần trọn một vòng"},
+    Turkish:{title:"baykuş",fact:"Kafasını neredeyse tam çevirir"},
+  },
+  earth: {
+    Spanish:{title:"tierra",fact:"El único planeta con vida"},
+    French:{title:"terre",fact:"La seule planète avec de la vie"},
+    German:{title:"erde",fact:"Der einzige Planet mit Leben"},
+    Italian:{title:"terra",fact:"L'unico pianeta con vita"},
+    Portuguese:{title:"terra",fact:"O único planeta com vida"},
+    Russian:{title:"земля",fact:"Единственная планета с жизнью"},
+    "Chinese (Mandarin)":{title:"地球",fact:"唯一有生命的行星"},
+    "Chinese (Cantonese)":{title:"地球",fact:"唯一有生命嘅行星"},
+    Japanese:{title:"ちきゅう",fact:"生命のある唯一の惑星"},
+    Korean:{title:"지구",fact:"생명이 있는 유일한 행성"},
+    Hebrew:{title:"כדור הארץ",fact:"הכוכב היחיד עם חיים"},
+    Arabic:{title:"أرض",fact:"الكوكب الوحيد الذي فيه حياة"},
+    Hindi:{title:"पृथ्वी",fact:"जीवन वाला एकमात्र ग्रह"},
+    Vietnamese:{title:"trái đất",fact:"Hành tinh duy nhất có sự sống"},
+    Turkish:{title:"dünya",fact:"Yaşamın olduğu tek gezegen"},
+  },
+  turtle: {
+    Spanish:{title:"tortuga",fact:"Puede vivir más de 100 años"},
+    French:{title:"tortue",fact:"Peut vivre plus de 100 ans"},
+    German:{title:"schildkröte",fact:"Kann über 100 Jahre alt werden"},
+    Italian:{title:"tartaruga",fact:"Può vivere oltre 100 anni"},
+    Portuguese:{title:"tartaruga",fact:"Pode viver mais de 100 anos"},
+    Russian:{title:"черепаха",fact:"Может жить больше 100 лет"},
+    "Chinese (Mandarin)":{title:"乌龟",fact:"可以活超过一百岁"},
+    "Chinese (Cantonese)":{title:"烏龜",fact:"可以活超過一百歲"},
+    Japanese:{title:"かめ",fact:"100年以上生きられる"},
+    Korean:{title:"거북이",fact:"100년 넘게 살 수 있어요"},
+    Hebrew:{title:"צב",fact:"יכול לחיות יותר מ-100 שנה"},
+    Arabic:{title:"سلحفاة",fact:"تعيش أكثر من 100 سنة"},
+    Hindi:{title:"कछुआ",fact:"100 साल से ज्यादा जीता है"},
+    Vietnamese:{title:"rùa",fact:"Sống được hơn 100 năm"},
+    Turkish:{title:"kaplumbağa",fact:"100 yıldan fazla yaşayabilir"},
+  },
+  snow: {
+    Spanish:{title:"nieve",fact:"Cada copo de nieve es único"},
+    French:{title:"neige",fact:"Chaque flocon de neige est unique"},
+    German:{title:"schnee",fact:"Jede Schneeflocke ist einzigartig"},
+    Italian:{title:"neve",fact:"Ogni fiocco di neve è unico"},
+    Portuguese:{title:"neve",fact:"Cada floco de neve é único"},
+    Russian:{title:"снег",fact:"Каждая снежинка уникальна"},
+    "Chinese (Mandarin)":{title:"雪",fact:"每片雪花都独一无二"},
+    "Chinese (Cantonese)":{title:"雪",fact:"每片雪花都獨一無二"},
+    Japanese:{title:"ゆき",fact:"雪の結晶はひとつひとつ違う"},
+    Korean:{title:"눈",fact:"눈송이는 모두 달라요"},
+    Hebrew:{title:"שלג",fact:"כל פתית שלג ייחודי"},
+    Arabic:{title:"ثلج",fact:"كل ندفة ثلج مميزة"},
+    Hindi:{title:"बर्फ",fact:"हर बर्फ का फाहा अनोखा"},
+    Vietnamese:{title:"tuyết",fact:"Mỗi bông tuyết là duy nhất"},
+    Turkish:{title:"kar",fact:"Her kar tanesi benzersizdir"},
+  },
+  lion: {
+    Spanish:{title:"león",fact:"El rey de la jungla ruge"},
+    French:{title:"lion",fact:"Le roi de la jungle rugit"},
+    German:{title:"löwe",fact:"Der König des Dschungels brüllt"},
+    Italian:{title:"leone",fact:"Il re della giungla ruggisce"},
+    Portuguese:{title:"leão",fact:"O rei da selva ruge"},
+    Russian:{title:"лев",fact:"Царь джунглей рычит"},
+    "Chinese (Mandarin)":{title:"狮子",fact:"丛林之王会吼叫"},
+    "Chinese (Cantonese)":{title:"獅子",fact:"叢林之王會吼叫"},
+    Japanese:{title:"ライオン",fact:"ジャングルの王様が吠える"},
+    Korean:{title:"사자",fact:"정글의 왕이 포효해요"},
+    Hebrew:{title:"אריה",fact:"מלך היער שואג"},
+    Arabic:{title:"أسد",fact:"ملك الغابة يزأر"},
+    Hindi:{title:"शेर",fact:"जंगल का राजा दहाड़ता है"},
+    Vietnamese:{title:"sư tử",fact:"Vua rừng xanh gầm vang"},
+    Turkish:{title:"aslan",fact:"Ormanlar kralı kükrer"},
+  },
+  bear: {
+    Spanish:{title:"oso",fact:"Duerme todo el invierno"},
+    French:{title:"ours",fact:"Dort tout l'hiver"},
+    German:{title:"bär",fact:"Schläft den ganzen Winter"},
+    Italian:{title:"orso",fact:"Dorme tutto l'inverno"},
+    Portuguese:{title:"urso",fact:"Dorme o inverno inteiro"},
+    Russian:{title:"медведь",fact:"Спит всю зиму"},
+    "Chinese (Mandarin)":{title:"熊",fact:"整个冬天都在睡觉"},
+    "Chinese (Cantonese)":{title:"熊",fact:"成個冬天都瞓覺"},
+    Japanese:{title:"くま",fact:"冬のあいだずっと寝る"},
+    Korean:{title:"곰",fact:"겨울 내내 잠을 자요"},
+    Hebrew:{title:"דוב",fact:"ישן כל החורף"},
+    Arabic:{title:"دب",fact:"ينام طوال الشتاء"},
+    Hindi:{title:"भालू",fact:"पूरी सर्दी सोता है"},
+    Vietnamese:{title:"gấu",fact:"Ngủ suốt mùa đông"},
+    Turkish:{title:"ayı",fact:"Bütün kışı uyuyarak geçirir"},
+  },
+};
+
+function translateKnowledgeCard(card, lang) {
+  if (lang === "English") return { ...card, original: null };
+  const tr = KNOWLEDGE_TRANSLATIONS[card.id]?.[lang];
+  if (!tr) return { ...card, original: null };
+  return {
+    ...card,
+    title: tr.title,
+    fact: tr.fact,
+    original: { title: card.title, fact: card.fact },
+  };
+}
 
 async function fetchDailyKnowledge(dk) {
   // Rotate through the pool based on date — fresh every day, no network needed
   const seed = dk.split("-").reduce((a,s)=>a+parseInt(s),0);
   const rotated = [...KNOWLEDGE_POOL.slice(seed % KNOWLEDGE_POOL.length), ...KNOWLEDGE_POOL.slice(0, seed % KNOWLEDGE_POOL.length)];
-  return rotated.slice(0, 12);
+  return rotated.slice(0, 11);
 }
 
 // ── FALLBACK DATA ─────────────────────────────────────────────────────────────
@@ -317,6 +789,79 @@ function LoadingScreen({ message }) {
       <img src={LOGO_SRC} alt="Limitless Babies" style={{width:120,height:120,objectFit:"contain",display:"block",margin:"0 auto"}}/>
       <p style={{fontFamily:"'Fredoka One',cursive",fontSize:24,color:RED,textAlign:"center"}}>{message}</p>
       <Spinner/>
+    </div>
+  );
+}
+
+function formatMMSS(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2,"0")}`;
+}
+
+function CooldownScreen({ reason, secondsUntilReady, sessionNum, category, onBack }) {
+  const [remaining, setRemaining] = useState(secondsUntilReady);
+
+  useEffect(()=>{
+    if (reason !== "cooldown") return;
+    const t = setInterval(()=>setRemaining(r => Math.max(0, r - 1)), 1000);
+    return ()=>clearInterval(t);
+  }, [reason]);
+
+  useEffect(()=>{
+    if (reason === "cooldown" && remaining === 0) {
+      // cooldown cleared — kick back to home so they can re-enter
+      onBack();
+    }
+  }, [remaining, reason, onBack]);
+
+  const done = reason === "done";
+  const title = done
+    ? `All 3 ${category} sessions complete today! 🎉`
+    : `Session ${sessionNum} ready in…`;
+  const subtitle = done
+    ? "Wonderful work! Come back tomorrow for a fresh set."
+    : "Doman's method: 5-minute break between sessions.";
+
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18,textAlign:"center",padding:32}}>
+      <img src={LOGO_SRC} alt="Limitless Babies" style={{width:110,height:110,objectFit:"contain"}}/>
+      <div style={{fontSize:48}}>{done ? "🌟" : "⏳"}</div>
+      <p style={{fontFamily:"'Fredoka One',cursive",fontSize:22,color:RED,maxWidth:320,lineHeight:1.2}}>{title}</p>
+      {!done && (
+        <div style={{fontFamily:"'Fredoka One',cursive",fontSize:54,color:"#111",lineHeight:1}}>
+          {formatMMSS(remaining)}
+        </div>
+      )}
+      <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,color:"#aaa",fontSize:13,maxWidth:300,lineHeight:1.4}}>{subtitle}</p>
+      <button onClick={onBack}
+        style={{marginTop:8,background:"#f5f5f5",border:"none",borderRadius:50,padding:"10px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#555"}}>
+        ← back to home
+      </button>
+    </div>
+  );
+}
+
+function CompleteScreen({ category, sessionNum, onBack }) {
+  const isLast = sessionNum >= 3;
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18,textAlign:"center",padding:32}}>
+      <img src={LOGO_SRC} alt="Limitless Babies" style={{width:110,height:110,objectFit:"contain"}}/>
+      <div style={{fontSize:56}}>{isLast ? "🏆" : "✨"}</div>
+      <p style={{fontFamily:"'Fredoka One',cursive",fontSize:22,color:RED,maxWidth:320,lineHeight:1.2}}>
+        {isLast
+          ? `You finished all 3 ${category} sessions today!`
+          : `Session ${sessionNum} of 3 complete!`}
+      </p>
+      <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,color:"#aaa",fontSize:13,maxWidth:300,lineHeight:1.4}}>
+        {isLast
+          ? "Amazing consistency. See you tomorrow!"
+          : "Take a 5-minute break, then come back for session " + (sessionNum+1) + "."}
+      </p>
+      <button onClick={onBack}
+        style={{marginTop:8,background:RED,border:"none",borderRadius:50,padding:"11px 26px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+        back to home →
+      </button>
     </div>
   );
 }
@@ -409,9 +954,9 @@ function HomeScreen({ onSelect, language, mathStage, speechOn, onLang, onMath, o
 
       <div style={{display:"flex",flexDirection:"column",gap:11,width:"100%",maxWidth:370}}>
         {[
-          {id:"reading",      label:"Reading",   emoji:"📖", desc:"15 words · daily · read aloud"},
-          {id:"math",         label:"Math",      emoji:"🔢", desc:"Doman rolling window · day by day"},
-          {id:"encyclopedia", label:"Knowledge", emoji:"🌍", desc:"12 facts · daily"},
+          {id:"reading",      label:"Reading",   emoji:"📖", desc:"11 words · 3 sessions a day"},
+          {id:"math",         label:"Math",      emoji:"🔢", desc:"Doman rolling window · 3 sessions"},
+          {id:"encyclopedia", label:"Knowledge", emoji:"🌍", desc:"11 facts · 3 sessions a day"},
         ].map(c=>(
           <button key={c.id} onClick={()=>onSelect(c.id)}
             style={{background:"#fff",border:"2px solid #f0f0f0",borderRadius:20,padding:"17px 22px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,.04)",transition:"all .15s"}}
@@ -432,12 +977,14 @@ function HomeScreen({ onSelect, language, mathStage, speechOn, onLang, onMath, o
 
 // ── SESSION HEADER ────────────────────────────────────────────────────────────
 
-function SessionHeader({ onBack, index, total, streak, autoPlay, onAutoPlay, extraDots }) {
+function SessionHeader({ onBack, index, total, sessionNum, autoPlay, onAutoPlay, extraDots }) {
   return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
       <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
-        <span style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#ccc"}}>{index+1}/{total} · 🔥{streak}</span>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#ccc"}}>
+          {index+1}/{total}{sessionNum ? ` · session ${sessionNum}/3` : ""}
+        </span>
         {extraDots}
       </div>
       {onAutoPlay
@@ -460,34 +1007,35 @@ function ProgressBar({ index, total }) {
 
 // ── READING SESSION (3-frame Doman: word → photo → word → next) ───────────────
 
-function ReadingSession({ words, language, speechOn, onBack }) {
+function ReadingSession({ words, language, speechOn, sessionNum, onBack, onComplete }) {
   const [cards, setCards]     = useState([]);
   const [translating, setTranslating] = useState(false);
   const [transError, setTransError]   = useState(null);
   const [idx, setIdx]         = useState(0);
-  const [frame, setFrame]     = useState(0); // 0=word, 1=photo, 2=word-again
+  const [frame, setFrame]     = useState(0); // 0=word, 1=emoji, 2=word-again
   const [visible, setVisible] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
-  const [streak, setStreak]   = useState(0);
+  const [finished, setFinished] = useState(false);
 
   useEffect(()=>{
-    setIdx(0); setFrame(0); setStreak(0); setTransError(null);
-    if (language==="English") { setCards(shuffle(words)); return; }
+    setIdx(0); setFrame(0); setFinished(false); setTransError(null);
+    const buildCards = (raw) => sessionNum === 1 ? raw : shuffle(raw);
+
+    if (language==="English") { setCards(buildCards(words)); return; }
     const run = async ()=>{
       setTranslating(true);
       try {
         const t = await translateWords(words, language);
-        setCards(shuffle(t));
+        setCards(buildCards(t));
       } catch(e) {
         setTransError(`${language}: ${e.message}`);
-        setCards(shuffle(words));
+        setCards(buildCards(words));
       }
       setTranslating(false);
     };
     run();
-  },[language, words]);
+  },[language, words, sessionNum]);
 
-  // Speak the word whenever we land on a word frame (0 or 2)
   useEffect(()=>{
     if (!speechOn || !visible || translating) return;
     const card = cards[idx];
@@ -500,26 +1048,32 @@ function ReadingSession({ words, language, speechOn, onBack }) {
     setTimeout(()=>{
       if (frame < 2) {
         setFrame(f => f + 1);
+        setVisible(true);
       } else {
-        setFrame(0);
-        setIdx(i => (i + 1) % Math.max(cards.length, 1));
-        setStreak(s => s + 1);
+        // Word complete — move to next card or finish session
+        if (idx >= cards.length - 1) {
+          setFinished(true);
+          onComplete?.();
+        } else {
+          setFrame(0);
+          setIdx(i => i + 1);
+          setVisible(true);
+        }
       }
-      setVisible(true);
     }, 230);
-  },[frame, cards.length]);
+  },[frame, idx, cards.length, onComplete]);
 
   useEffect(()=>{
-    if (!autoPlay||translating) return;
-    const dur = frame === 1 ? 2600 : 1300; // photo held longer than words
+    if (!autoPlay||translating||finished) return;
+    const dur = frame === 1 ? 2600 : 1300;
     const t = setTimeout(advance, dur);
     return ()=>clearTimeout(t);
-  },[autoPlay,frame,idx,advance,translating]);
+  },[autoPlay,frame,idx,advance,translating,finished]);
 
   if (translating) return <LoadingScreen message={`Translating to ${language}…`}/>;
+  if (finished) return <CompleteScreen category="reading" sessionNum={sessionNum} onBack={onBack}/>;
 
   const card    = cards[idx]||{};
-  const engWord = card.original||card.word||"";
   const wordLen = card.word?.length||0;
   const wordSize = wordLen>10?50:wordLen>7?64:82;
 
@@ -544,7 +1098,7 @@ function ReadingSession({ words, language, speechOn, onBack }) {
 
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      <SessionHeader onBack={onBack} index={idx} total={cards.length} streak={streak} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} extraDots={frameDots}/>
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} extraDots={frameDots}/>
       {transError && <div style={{background:"#FFF0F1",padding:"6px 14px",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:RED,textAlign:"center",wordBreak:"break-word"}}>{transError}</div>}
 
       <div onClick={advance}
@@ -555,13 +1109,10 @@ function ReadingSession({ words, language, speechOn, onBack }) {
         {frame===1 && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:18,width:"100%",maxWidth:340}}>
             <PhotoDisplay
-              word={engWord}
               emoji={card.emoji}
-              seed={idx}
               style={{
                 width:"min(300px,82vw)",
                 height:"min(300px,82vw)",
-                objectFit:"cover",
                 borderRadius:22,
                 boxShadow:"0 8px 32px rgba(0,0,0,.14)"
               }}
@@ -570,7 +1121,7 @@ function ReadingSession({ words, language, speechOn, onBack }) {
         )}
 
         <p style={{marginTop:30,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
-          {frame===0 ? "tap to see photo →" : frame===1 ? "tap to see word again →" : "tap for next word →"}
+          {frame===0 ? "tap to see picture →" : frame===1 ? "tap to see word again →" : "tap for next word →"}
         </p>
       </div>
       <ProgressBar index={idx} total={cards.length}/>
@@ -580,19 +1131,18 @@ function ReadingSession({ words, language, speechOn, onBack }) {
 
 // ── MATH SESSION ──────────────────────────────────────────────────────────────
 
-function MathSession({ mathStage, language, speechOn, onBack }) {
+function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComplete }) {
   const dayNum = useMemo(()=>getDayNumber(), []);
-  const [cards]   = useState(()=>getMathCards(mathStage, dayNum));
+  const cards = useMemo(()=>getMathCards(mathStage, dayNum, sessionNum), [mathStage, dayNum, sessionNum]);
   const [idx, setIdx]     = useState(0);
   const [visible, setVisible] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
-  const [streak, setStreak]   = useState(0);
   const [revealed, setRevealed] = useState(false);
+  const [finished, setFinished] = useState(false);
   const isEq = mathStage.startsWith("eq");
 
   useEffect(()=>setRevealed(false),[idx]);
 
-  // Speak the number when a new dot/numeral card becomes visible
   useEffect(()=>{
     if (!speechOn || !visible || isEq) return;
     const card = cards[idx];
@@ -601,13 +1151,23 @@ function MathSession({ mathStage, language, speechOn, onBack }) {
 
   const advance = useCallback(()=>{
     setVisible(false);
-    setTimeout(()=>{ setIdx(i=>(i+1)%cards.length); setStreak(s=>s+1); setVisible(true); }, 250);
-  },[cards.length]);
+    setTimeout(()=>{
+      if (idx >= cards.length - 1) {
+        setFinished(true);
+        onComplete?.();
+      } else {
+        setIdx(i => i + 1);
+        setVisible(true);
+      }
+    }, 250);
+  },[idx, cards.length, onComplete]);
 
   useEffect(()=>{
-    if (!autoPlay||isEq) return;
+    if (!autoPlay||isEq||finished) return;
     const t=setTimeout(advance,1800); return ()=>clearTimeout(t);
-  },[autoPlay,idx,advance,isEq]);
+  },[autoPlay,idx,advance,isEq,finished]);
+
+  if (finished) return <CompleteScreen category="math" sessionNum={sessionNum} onBack={onBack}/>;
 
   const card=cards[idx]||{};
   const showDots=mathStage==="eq-dots"||mathStage==="eq-both";
@@ -622,18 +1182,17 @@ function MathSession({ mathStage, language, speechOn, onBack }) {
     </div>
   );
 
-  // Calculate the current window range for the header indicator
   const winLo = Math.max(0, (dayNum - 1) * 2);
   const winHi = winLo + 10;
 
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      <SessionHeader onBack={onBack} index={idx} total={cards.length} streak={streak}
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={isEq ? null : sessionNum}
         autoPlay={autoPlay} onAutoPlay={isEq?null:()=>setAutoPlay(a=>!a)}/>
 
       {!isEq && (
         <div style={{textAlign:"center",padding:"4px 0 0",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#bbb",letterSpacing:.5}}>
-          day {dayNum} · range {winLo}–{winHi}
+          day {dayNum} · range {winLo}–{winHi} {sessionNum === 1 ? "· in order" : "· shuffled"}
         </div>
       )}
 
@@ -681,34 +1240,63 @@ function MathSession({ mathStage, language, speechOn, onBack }) {
 
 // ── ENCYCLOPEDIA SESSION ──────────────────────────────────────────────────────
 
-function EncyclopediaSession({ knowledge, onBack }) {
-  const cards = useMemo(()=>shuffle(knowledge),[knowledge]);
+function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack, onComplete }) {
+  const cards = useMemo(()=>{
+    const translated = knowledge.map(c => translateKnowledgeCard(c, language));
+    return sessionNum === 1 ? translated : shuffle(translated);
+  },[knowledge, language, sessionNum]);
+
   const [idx, setIdx]     = useState(0);
   const [visible, setVisible] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
-  const [streak, setStreak]   = useState(0);
+  const [finished, setFinished] = useState(false);
+
+  // Speak the title when a card appears
+  useEffect(()=>{
+    if (!speechOn || !visible) return;
+    const card = cards[idx];
+    if (card?.title) speak(card.title, language);
+  }, [idx, visible, speechOn, language, cards]);
 
   const advance = useCallback(()=>{
     setVisible(false);
-    setTimeout(()=>{ setIdx(i=>(i+1)%cards.length); setStreak(s=>s+1); setVisible(true); }, 250);
-  },[cards.length]);
+    setTimeout(()=>{
+      if (idx >= cards.length - 1) {
+        setFinished(true);
+        onComplete?.();
+      } else {
+        setIdx(i => i + 1);
+        setVisible(true);
+      }
+    }, 250);
+  },[idx, cards.length, onComplete]);
 
   useEffect(()=>{
-    if (!autoPlay) return;
+    if (!autoPlay || finished) return;
     const t=setTimeout(advance,3500); return ()=>clearTimeout(t);
-  },[autoPlay,idx,advance]);
+  },[autoPlay,idx,advance,finished]);
+
+  if (finished) return <CompleteScreen category="knowledge" sessionNum={sessionNum} onBack={onBack}/>;
 
   const card=cards[idx]||{};
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      <SessionHeader onBack={onBack} index={idx} total={cards.length} streak={streak} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
 
       <div onClick={advance}
         style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
         <div style={{fontSize:68,marginBottom:12}}>{card.emoji}</div>
-        <div style={{fontSize:32,fontFamily:"'Fredoka One',cursive",color:RED,textAlign:"center",marginBottom:16}}>{card.title}</div>
-        <div style={{background:"#FFF0F1",borderRadius:18,padding:"14px 24px",maxWidth:300,textAlign:"center",color:"#555",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,lineHeight:1.5}}>{card.fact}</div>
-        <p style={{marginTop:32,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>tap to advance →</p>
+        <div style={{fontSize:32,fontFamily:"'Fredoka One',cursive",color:RED,textAlign:"center",marginBottom:10}}>{card.title}</div>
+        <div style={{background:"#FFF0F1",borderRadius:18,padding:"14px 24px",maxWidth:320,textAlign:"center",color:"#555",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,lineHeight:1.5}}>{card.fact}</div>
+
+        {card.original && (
+          <div style={{marginTop:14,maxWidth:320,textAlign:"center",fontFamily:"Nunito,sans-serif",fontWeight:700,color:"#ccc",fontSize:12,lineHeight:1.45}}>
+            <div style={{fontFamily:"'Fredoka One',cursive",fontSize:14,color:"#d0d0d0",letterSpacing:.3}}>{card.original.title}</div>
+            <div style={{marginTop:2}}>{card.original.fact}</div>
+          </div>
+        )}
+
+        <p style={{marginTop:28,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>tap to advance →</p>
       </div>
       <ProgressBar index={idx} total={cards.length}/>
     </div>
@@ -719,6 +1307,7 @@ function EncyclopediaSession({ knowledge, onBack }) {
 
 export default function App() {
   const [mode, setMode]               = useState(null);
+  const [sessionStatus, setSessionStatus] = useState(null); // { sessionNum, locked, reason, secondsUntilReady }
   const [language, setLanguage]       = useState("English");
   const [mathStage, setMathStage]     = useState("dots");
   const [speechOn, setSpeechOn]       = useState(true);
@@ -750,13 +1339,48 @@ export default function App() {
     setSpeechOn(v=>{
       const nv=!v;
       try { localStorage.setItem("lb-speech", nv?"1":"0"); } catch {}
-      // Stop any speech in progress when turning off
       if (!nv && window.speechSynthesis) window.speechSynthesis.cancel();
       return nv;
     });
   };
 
+  // When a category is selected, check session availability
+  const handleSelect = (category) => {
+    const status = getSessionStatus(category);
+    setSessionStatus(status);
+    setMode(category);
+  };
+
+  const handleBackToHome = () => {
+    setMode(null);
+    setSessionStatus(null);
+  };
+
+  const handleSessionComplete = (category) => {
+    markSessionComplete(category);
+  };
+
   if (initializing) return <LoadingScreen message="Preparing today's lessons…"/>;
+
+  // If a category is selected but locked, show cooldown / all-done screen
+  if (mode && sessionStatus?.locked) {
+    return (
+      <>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;800;900&display=swap');
+          *{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#fff;}
+          button:focus{outline:none;}@keyframes spin{to{transform:rotate(360deg)}}
+        `}</style>
+        <CooldownScreen
+          reason={sessionStatus.reason}
+          secondsUntilReady={sessionStatus.secondsUntilReady}
+          sessionNum={sessionStatus.sessionNum}
+          category={mode}
+          onBack={handleBackToHome}
+        />
+      </>
+    );
+  }
 
   return (
     <>
@@ -765,10 +1389,10 @@ export default function App() {
         *{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#fff;}
         button:focus{outline:none;}@keyframes spin{to{transform:rotate(360deg)}}
       `}</style>
-      {mode===null       && <HomeScreen onSelect={setMode} language={language} mathStage={mathStage} speechOn={speechOn} onLang={()=>setShowLang(true)} onMath={()=>setShowMath(true)} onToggleSpeech={handleToggleSpeech}/>}
-      {mode==="reading"  && <ReadingSession words={dailyWords} language={language} speechOn={speechOn} onBack={()=>setMode(null)}/>}
-      {mode==="math"     && <MathSession mathStage={mathStage} language={language} speechOn={speechOn} onBack={()=>setMode(null)}/>}
-      {mode==="encyclopedia" && <EncyclopediaSession knowledge={dailyKnow} onBack={()=>setMode(null)}/>}
+      {mode===null       && <HomeScreen onSelect={handleSelect} language={language} mathStage={mathStage} speechOn={speechOn} onLang={()=>setShowLang(true)} onMath={()=>setShowMath(true)} onToggleSpeech={handleToggleSpeech}/>}
+      {mode==="reading"  && sessionStatus && <ReadingSession words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("reading")}/>}
+      {mode==="math"     && sessionStatus && <MathSession mathStage={mathStage} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("math")}/>}
+      {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
       {showLang && <LanguagePicker selected={language} onSelect={handleLang} onClose={()=>setShowLang(false)}/>}
       {showMath && <MathStagePicker selected={mathStage} onSelect={handleMath} onClose={()=>setShowMath(false)}/>}
     </>
