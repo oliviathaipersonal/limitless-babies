@@ -104,30 +104,45 @@ function getMathCards(stage) {
   return genEquations(stage);
 }
 
+// ── CURATED BABY-SAFE PHOTOS ─────────────────────────────────────────────────
+// Hand-picked Unsplash photos (direct CDN URLs, no tag-search quirks).
+// Each URL points to a specific verified photo that accurately depicts the word.
+
+const CURATED_PHOTOS = {
+  mama:   "https://images.unsplash.com/photo-1581952976147-5a2d15560349?w=500&q=80",
+  dada:   "https://images.unsplash.com/photo-1560252829-804f1aedf1be?w=500&q=80",
+  baby:   "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=500&q=80",
+  ball:   "https://images.unsplash.com/photo-1510172951991-856a654063f9?w=500&q=80",
+  cat:    "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&q=80",
+  dog:    "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=500&q=80",
+  sun:    "https://images.unsplash.com/photo-1548266652-99cf27701ced?w=500&q=80",
+  moon:   "https://images.unsplash.com/photo-1532693322450-2cb5c511067d?w=500&q=80",
+  tree:   "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=500&q=80",
+  fish:   "https://images.unsplash.com/photo-1524704654690-b56c05c78a00?w=500&q=80",
+  bird:   "https://images.unsplash.com/photo-1444464666168-49d633b86797?w=500&q=80",
+  apple:  "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?w=500&q=80",
+  flower: "https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=500&q=80",
+  water:  "https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=500&q=80",
+  milk:   "https://images.unsplash.com/photo-1563636619-e9143da7973b?w=500&q=80",
+  book:   "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=500&q=80",
+  banana: "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=500&q=80",
+  car:    "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=500&q=80",
+  house:  "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=500&q=80",
+  star:   "https://images.unsplash.com/photo-1464802686167-b939a6910659?w=500&q=80",
+};
+
 // ── PHOTO DISPLAY ────────────────────────────────────────────────────────────
-// Attempts external image sources with a timeout. If they don't load in time
-// (e.g., blocked by sandbox), falls back to a large emoji "photo" treatment.
 
 function PhotoDisplay({ word, emoji, seed, style }) {
-  const [srcIdx, setSrcIdx] = useState(0);
+  const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [giveUp, setGiveUp] = useState(false);
 
-  useEffect(()=>{
-    setSrcIdx(0); setLoaded(false); setGiveUp(false);
-    const timer = setTimeout(() => { if (!loaded) setGiveUp(true); }, 3500);
-    return () => clearTimeout(timer);
-  }, [word, seed]); // eslint-disable-line
+  useEffect(()=>{ setFailed(false); setLoaded(false); }, [word, seed]);
 
-  const w = encodeURIComponent(word||"");
-  const sources = [
-    `https://loremflickr.com/400/400/${w}?lock=${seed||1}`,
-    `https://source.unsplash.com/400x400/?${w}`,
-    `https://picsum.photos/seed/${w}${seed||0}/400/400`,
-  ];
+  const url = CURATED_PHOTOS[word?.toLowerCase()];
 
-  // All sources failed or timed out → large emoji treatment
-  if (giveUp || srcIdx >= sources.length) {
+  // No curated photo OR it failed to load → large emoji treatment
+  if (!url || failed) {
     return (
       <div style={{
         ...style,
@@ -151,11 +166,10 @@ function PhotoDisplay({ word, emoji, seed, style }) {
         </div>
       )}
       <img
-        key={`${word}-${srcIdx}`}
-        src={sources[srcIdx]}
+        src={url}
         alt={word}
         onLoad={()=>setLoaded(true)}
-        onError={()=>{ setLoaded(false); setSrcIdx(i=>i+1); }}
+        onError={()=>setFailed(true)}
         style={{...style, display: loaded ? "block" : "none"}}
       />
     </>
