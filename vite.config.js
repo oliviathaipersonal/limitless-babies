@@ -32,7 +32,7 @@ export default defineConfig({
             options: { cacheName: "google-fonts" }
           },
           {
-            urlPattern: /^https:\/\/(?:loremflickr|source\.unsplash|picsum\.photos)\..+/i,
+            urlPattern: /^https:\/\/images\.unsplash\.com\/.+/i,
             handler: "CacheFirst",
             options: { cacheName: "baby-photos", expiration: { maxEntries: 200 } }
           }
