@@ -1499,7 +1499,7 @@ function Onboarding({ onDone }) {
       {step === 0 && (
         <>
           <p style={{color:"#666",fontFamily:"Nunito,sans-serif",fontSize:15,marginTop:16,fontWeight:700,textAlign:"center",maxWidth:320,lineHeight:1.5}}>
-            Welcome! Let's set up profiles for your little learners. You can add as many children as you'd like.
+            Welcome! Let's set up profiles for your little learners. You can add as many children and languages as you'd like.
           </p>
           <button onClick={()=>setStep(1)}
             style={{marginTop:36,background:RED,border:"none",borderRadius:50,padding:"14px 36px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:"#fff",boxShadow:"0 6px 20px rgba(232,25,44,.25)"}}>
