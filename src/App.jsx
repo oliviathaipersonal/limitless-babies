@@ -52,12 +52,32 @@ function speak(text, language) {
   if (!text || !window.speechSynthesis) return;
   try {
     window.speechSynthesis.cancel();
+    const targetLang = SPEECH_LANG[language] || "en-US";
     const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = SPEECH_LANG[language] || "en-US";
+    utter.lang = targetLang;
     utter.rate = 0.85;
     utter.pitch = 1.05;
+
+    // Pick the best matching voice for the target language
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      const primary = targetLang.split("-")[0];
+      // Exact match first, then language-prefix match
+      let match = voices.find(v => v.lang === targetLang);
+      if (!match) match = voices.find(v => v.lang.startsWith(primary + "-"));
+      if (!match) match = voices.find(v => v.lang.toLowerCase().startsWith(primary));
+      if (match) utter.voice = match;
+      // If no matching voice is available, skip speaking rather than mispronounce
+      else if (language !== "English") return;
+    }
+
     window.speechSynthesis.speak(utter);
   } catch {}
+}
+
+// Warm up voices list on some browsers (Chrome/Safari load async)
+if (typeof window !== "undefined" && window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 }
 
 // ── DOTS ─────────────────────────────────────────────────────────────────────
@@ -213,7 +233,23 @@ function markSessionComplete(category) {
     data.count = Math.min(MAX_SESSIONS_PER_DAY, data.count + 1);
     data.lastAt = Date.now();
     localStorage.setItem(key, JSON.stringify(data));
+
+    // Also log in history for the progress report
+    const histKey = "lb-history";
+    const hist = JSON.parse(localStorage.getItem(histKey) || "{}");
+    if (!hist[dk]) hist[dk] = { reading: 0, math: 0, encyclopedia: 0 };
+    hist[dk][category] = (hist[dk][category] || 0) + 1;
+    localStorage.setItem(histKey, JSON.stringify(hist));
   } catch {}
+}
+
+// Read history for the progress report
+function getHistory() {
+  try {
+    return JSON.parse(localStorage.getItem("lb-history") || "{}");
+  } catch {
+    return {};
+  }
 }
 
 // ── PHOTO DISPLAY (large emoji in rose panel — reliable, always appropriate) ─
@@ -736,7 +772,9 @@ const KNOWLEDGE_TRANSLATIONS = {
 
 function translateKnowledgeCard(card, lang) {
   if (lang === "English") return { ...card, original: null };
-  const tr = KNOWLEDGE_TRANSLATIONS[card.id]?.[lang];
+  // Look up by id, or fall back to title (for cached cards from earlier versions)
+  const key = card.id || card.title;
+  const tr = KNOWLEDGE_TRANSLATIONS[key]?.[lang];
   if (!tr) return { ...card, original: null };
   return {
     ...card,
@@ -821,7 +859,7 @@ function CooldownScreen({ reason, secondsUntilReady, sessionNum, category, onBac
     : `Session ${sessionNum} ready in…`;
   const subtitle = done
     ? "Wonderful work! Come back tomorrow for a fresh set."
-    : "Doman's method: 5-minute break between sessions.";
+    : "5-minute break between sessions helps learning stick.";
 
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18,textAlign:"center",padding:32}}>
@@ -862,6 +900,139 @@ function CompleteScreen({ category, sessionNum, onBack }) {
         style={{marginTop:8,background:RED,border:"none",borderRadius:50,padding:"11px 26px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
         back to home →
       </button>
+    </div>
+  );
+}
+
+function ProgressScreen({ onBack }) {
+  const hist = useMemo(()=>getHistory(), []);
+  const dayNum = useMemo(()=>getDayNumber(), []);
+  const dates = Object.keys(hist).sort().reverse(); // newest first
+
+  // Aggregate totals
+  const totals = { reading: 0, math: 0, encyclopedia: 0 };
+  dates.forEach(d => {
+    totals.reading += hist[d].reading || 0;
+    totals.math += hist[d].math || 0;
+    totals.encyclopedia += hist[d].encyclopedia || 0;
+  });
+  const grandTotal = totals.reading + totals.math + totals.encyclopedia;
+
+  // Current streak = consecutive days from today going back with at least 1 session
+  const today = todayKey();
+  let streak = 0;
+  const oneDay = 1000 * 60 * 60 * 24;
+  let cursor = new Date(today + "T00:00:00");
+  for (;;) {
+    const key = cursor.toISOString().split("T")[0];
+    const day = hist[key];
+    if (day && (day.reading || day.math || day.encyclopedia)) {
+      streak++;
+      cursor = new Date(cursor.getTime() - oneDay);
+    } else break;
+  }
+
+  // Today's progress
+  const todayData = hist[today] || { reading: 0, math: 0, encyclopedia: 0 };
+
+  const StatCard = ({ label, value, emoji, big }) => (
+    <div style={{flex:1,background:"#fff",border:"2px solid #f0f0f0",borderRadius:18,padding:"16px 14px",textAlign:"center",minWidth:0}}>
+      <div style={{fontSize:big?32:24,marginBottom:4}}>{emoji}</div>
+      <div style={{fontFamily:"'Fredoka One',cursive",fontSize:big?34:22,color:RED,lineHeight:1}}>{value}</div>
+      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#aaa",marginTop:4,textTransform:"uppercase",letterSpacing:.5}}>{label}</div>
+    </div>
+  );
+
+  const dayLabel = (d) => {
+    const dt = new Date(d + "T00:00:00");
+    if (d === today) return "today";
+    const diff = Math.round((new Date(today+"T00:00:00") - dt) / oneDay);
+    if (diff === 1) return "yesterday";
+    if (diff < 7) return dt.toLocaleDateString(undefined, { weekday:"long" }).toLowerCase();
+    return dt.toLocaleDateString(undefined, { month:"short", day:"numeric" }).toLowerCase();
+  };
+
+  const TodayRow = ({ label, emoji, done }) => (
+    <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:"#fafafa",borderRadius:14}}>
+      <span style={{fontSize:22}}>{emoji}</span>
+      <span style={{flex:1,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#333"}}>{label}</span>
+      <div style={{display:"flex",gap:5}}>
+        {[1,2,3].map(i => (
+          <div key={i} style={{width:10,height:10,borderRadius:"50%",background:i<=done?RED:"#e0e0e0"}}/>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
+        <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <h2 style={{fontFamily:"'Fredoka One',cursive",fontSize:20,color:"#111",margin:0}}>Progress</h2>
+        <div style={{width:38}}/>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"18px 18px 32px"}}>
+        {grandTotal === 0 ? (
+          <div style={{textAlign:"center",padding:"60px 24px"}}>
+            <div style={{fontSize:56,marginBottom:12}}>🌱</div>
+            <p style={{fontFamily:"'Fredoka One',cursive",fontSize:22,color:"#111",marginBottom:8}}>No sessions yet</p>
+            <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:14,color:"#aaa",maxWidth:280,margin:"0 auto",lineHeight:1.4}}>
+              Tap Reading, Math, or Knowledge to get started!
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Top stats row */}
+            <div style={{display:"flex",gap:10,marginBottom:18}}>
+              <StatCard label="day" value={dayNum} emoji="🗓️" big/>
+              <StatCard label="streak" value={streak} emoji="🔥" big/>
+              <StatCard label="sessions" value={grandTotal} emoji="⭐" big/>
+            </div>
+
+            {/* Today's progress */}
+            <div style={{marginBottom:22}}>
+              <h3 style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>today</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <TodayRow label="Reading" emoji="📖" done={todayData.reading||0}/>
+                <TodayRow label="Math" emoji="🔢" done={todayData.math||0}/>
+                <TodayRow label="Knowledge" emoji="🌍" done={todayData.encyclopedia||0}/>
+              </div>
+            </div>
+
+            {/* By-category totals */}
+            <div style={{marginBottom:22}}>
+              <h3 style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>all-time</h3>
+              <div style={{display:"flex",gap:10}}>
+                <StatCard label="reading" value={totals.reading} emoji="📖"/>
+                <StatCard label="math" value={totals.math} emoji="🔢"/>
+                <StatCard label="knowledge" value={totals.encyclopedia} emoji="🌍"/>
+              </div>
+            </div>
+
+            {/* Day-by-day log */}
+            <div>
+              <h3 style={{fontFamily:"'Fredoka One',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>recent days</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {dates.slice(0,14).map(d => {
+                  const day = hist[d];
+                  const total = (day.reading||0)+(day.math||0)+(day.encyclopedia||0);
+                  return (
+                    <div key={d} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:"#fafafa",borderRadius:12}}>
+                      <span style={{flex:1,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#555",textTransform:"capitalize"}}>{dayLabel(d)}</span>
+                      <span style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa"}}>
+                        📖 {day.reading||0} · 🔢 {day.math||0} · 🌍 {day.encyclopedia||0}
+                      </span>
+                      <span style={{fontFamily:"'Fredoka One',cursive",fontSize:14,color:total>=9?RED:"#bbb",minWidth:22,textAlign:"right"}}>{total}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -926,7 +1097,7 @@ function MathStagePicker({ selected, onSelect, onClose }) {
 
 // ── HOME ──────────────────────────────────────────────────────────────────────
 
-function HomeScreen({ onSelect, language, mathStage, speechOn, onLang, onMath, onToggleSpeech }) {
+function HomeScreen({ onSelect, language, mathStage, speechOn, onLang, onMath, onToggleSpeech, onProgress }) {
   const stageName = MATH_STAGES.find(s=>s.id===mathStage)?.label||"Dots Only";
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
@@ -950,12 +1121,16 @@ function HomeScreen({ onSelect, language, mathStage, speechOn, onLang, onMath, o
           style={{display:"flex",alignItems:"center",gap:6,background:speechOn?RED:"#f5f5f5",border:`2px solid ${speechOn?RED:"#e8e8e8"}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:speechOn?"#fff":"#555",transition:"all .2s"}}>
           {speechOn ? "🔊" : "🔇"} {speechOn ? "Speech on" : "Speech off"}
         </button>
+        <button onClick={onProgress}
+          style={{display:"flex",alignItems:"center",gap:6,background:"#f5f5f5",border:"2px solid #e8e8e8",borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#555"}}>
+          📊 Progress
+        </button>
       </div>
 
       <div style={{display:"flex",flexDirection:"column",gap:11,width:"100%",maxWidth:370}}>
         {[
           {id:"reading",      label:"Reading",   emoji:"📖", desc:"11 words · 3 sessions a day"},
-          {id:"math",         label:"Math",      emoji:"🔢", desc:"Doman rolling window · 3 sessions"},
+          {id:"math",         label:"Math",      emoji:"🔢", desc:"Rolling number window · 3 sessions"},
           {id:"encyclopedia", label:"Knowledge", emoji:"🌍", desc:"11 facts · 3 sessions a day"},
         ].map(c=>(
           <button key={c.id} onClick={()=>onSelect(c.id)}
@@ -1321,10 +1496,10 @@ export default function App() {
     const run = async ()=>{
       const dk = todayKey();
       let words=null, know=null;
-      try { const r=localStorage.getItem(`lb-w-${dk}`); words=r?JSON.parse(r):null; } catch {}
-      try { const r=localStorage.getItem(`lb-k-${dk}`); know =r?JSON.parse(r):null; } catch {}
-      if (!words) { try { words=await fetchDailyWords(dk); localStorage.setItem(`lb-w-${dk}`,JSON.stringify(words)); } catch { words=FALLBACK_WORDS; } }
-      if (!know)  { try { know=await fetchDailyKnowledge(dk); localStorage.setItem(`lb-k-${dk}`,JSON.stringify(know)); } catch { know=FALLBACK_KNOW; } }
+      try { const r=localStorage.getItem(`lb-w2-${dk}`); words=r?JSON.parse(r):null; } catch {}
+      try { const r=localStorage.getItem(`lb-k2-${dk}`); know =r?JSON.parse(r):null; } catch {}
+      if (!words) { try { words=await fetchDailyWords(dk); localStorage.setItem(`lb-w2-${dk}`,JSON.stringify(words)); } catch { words=FALLBACK_WORDS; } }
+      if (!know)  { try { know=await fetchDailyKnowledge(dk); localStorage.setItem(`lb-k2-${dk}`,JSON.stringify(know)); } catch { know=FALLBACK_KNOW; } }
       setDailyWords(words); setDailyKnow(know); setInit(false);
     };
     run();
@@ -1389,7 +1564,8 @@ export default function App() {
         *{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#fff;}
         button:focus{outline:none;}@keyframes spin{to{transform:rotate(360deg)}}
       `}</style>
-      {mode===null       && <HomeScreen onSelect={handleSelect} language={language} mathStage={mathStage} speechOn={speechOn} onLang={()=>setShowLang(true)} onMath={()=>setShowMath(true)} onToggleSpeech={handleToggleSpeech}/>}
+      {mode===null       && <HomeScreen onSelect={handleSelect} language={language} mathStage={mathStage} speechOn={speechOn} onLang={()=>setShowLang(true)} onMath={()=>setShowMath(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")}/>}
+      {mode==="progress" && <ProgressScreen onBack={handleBackToHome}/>}
       {mode==="reading"  && sessionStatus && <ReadingSession words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("reading")}/>}
       {mode==="math"     && sessionStatus && <MathSession mathStage={mathStage} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("math")}/>}
       {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackToHome} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
