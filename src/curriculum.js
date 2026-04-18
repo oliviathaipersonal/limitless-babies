@@ -242,7 +242,7 @@ export const EXTRA_TRANSLATIONS = {
   "grandpa": { Spanish:"abuelo", French:"papi", German:"opa", Italian:"nonno", Portuguese:"avô", "Portuguese (Brazil)":"vovô", Russian:"дедушка", "Chinese (Mandarin)":"爷爷", "Chinese (Cantonese)":"爺爺", Japanese:"おじいちゃん", Korean:"할아버지", Hebrew:"סבא", Arabic:"جد", Hindi:"दादा", Vietnamese:"ông", Turkish:"dede", Lao:"ພໍ່ຕູ້" },
   "aunt": { Spanish:"tía", French:"tante", German:"tante", Italian:"zia", Portuguese:"tia", "Portuguese (Brazil)":"tia", Russian:"тётя", "Chinese (Mandarin)":"阿姨", "Chinese (Cantonese)":"阿姨", Japanese:"おば", Korean:"이모", Hebrew:"דודה", Arabic:"عمة", Hindi:"चाची", Vietnamese:"cô", Turkish:"teyze", Lao:"ປ້າ" },
   "uncle": { Spanish:"tío", French:"oncle", German:"onkel", Italian:"zio", Portuguese:"tio", "Portuguese (Brazil)":"tio", Russian:"дядя", "Chinese (Mandarin)":"叔叔", "Chinese (Cantonese)":"叔叔", Japanese:"おじ", Korean:"삼촌", Hebrew:"דוד", Arabic:"عم", Hindi:"चाचा", Vietnamese:"chú", Turkish:"amca", Lao:"ລຸງ" },
-  "cousin": { Spanish:"primo", French:"cousin", German:"cousin", Italian:"cugino", Portuguese:"primo", "Portuguese (Brazil)":"primo", Russian:"кузен", Japanese:"いとこ", Korean:"사촌", Hebrew:"בן דוד", Arabic:"ابن عم", Hindi:"चचेरा भाई", Vietnamese:"anh họ", Turkish:"kuzen", Lao:"ຫຼານ" },
+  "cousin": { Spanish:"primo", French:"cousin", German:"cousin", Italian:"cugino", Portuguese:"primo", "Portuguese (Brazil)":"primo", Russian:"кузен", "Chinese (Mandarin)":"表哥", "Chinese (Cantonese)":"表哥", Japanese:"いとこ", Korean:"사촌", Hebrew:"בן דוד", Arabic:"ابن عم", Hindi:"चचेरा भाई", Vietnamese:"anh họ", Turkish:"kuzen", Lao:"ຫຼານ" },
 
   // Farm animals
   "cow":     { Spanish:"vaca", French:"vache", German:"kuh", Italian:"mucca", Portuguese:"vaca", "Portuguese (Brazil)":"vaca", Russian:"корова", "Chinese (Mandarin)":"牛", "Chinese (Cantonese)":"牛", Japanese:"うし", Korean:"소", Hebrew:"פרה", Arabic:"بقرة", Hindi:"गाय", Vietnamese:"bò", Turkish:"inek", Lao:"ງົວ" },
@@ -637,17 +637,23 @@ export const SAMPLE_BOOK = {
 };
 
 // ── CEFR MAPPING ─────────────────────────────────────────────────────────────
-// Rough vocabulary-count → CEFR-adjacent milestones. This is an approximation
-// for parent motivation, not a formal CEFR assessment.
+// Vocabulary thresholds follow commonly-cited CEFR vocabulary research
+// (Milton 2009, Vocabulary Size Test norms, and Cambridge English estimates):
+//   A1 ≈ 500 words        A2 ≈ 1,000 words
+//   B1 ≈ 2,000 words      B2 ≈ 4,000 words
+//   C1 ≈ 8,000 words      C2 ≈ 16,000+ words
+// These are the actual adult CEFR standards, not age-adjusted. A child who
+// has been exposed to more words is showing vocabulary typical of that level.
 
 export const CEFR_MILESTONES = [
-  { max: 30,   level: "Pre-A1", description: "Building first words" },
-  { max: 100,  level: "Approaching A1", description: "Early beginner vocabulary" },
-  { max: 250,  level: "Approaching A2", description: "Elementary vocabulary" },
-  { max: 500,  level: "Approaching B1", description: "Intermediate vocabulary" },
-  { max: 1000, level: "Approaching B2", description: "Upper-intermediate vocabulary" },
-  { max: 2500, level: "Approaching C1", description: "Advanced vocabulary" },
-  { max: Infinity, level: "Approaching C2 / Graduate", description: "Near-native vocabulary" },
+  { max: 50,    level: "Pre-A1",              description: "Building first words" },
+  { max: 500,   level: "A1 — Beginner",        description: "Survival vocabulary (basic nouns, pronouns, common verbs)" },
+  { max: 1000,  level: "A2 — Elementary",     description: "Everyday vocabulary (family, home, shopping, work)" },
+  { max: 2000,  level: "B1 — Intermediate",   description: "Familiar topics (travel, interests, opinions)" },
+  { max: 4000,  level: "B2 — Upper Intermediate", description: "Complex topics (current events, abstract ideas)" },
+  { max: 8000,  level: "C1 — Advanced",       description: "Fluent expression, nuanced meaning" },
+  { max: 16000, level: "C2 — Proficient",     description: "Near-native vocabulary and understanding" },
+  { max: Infinity, level: "Beyond C2 — Graduate", description: "Expert-level vocabulary" },
 ];
 
 export function cefrForVocabCount(count) {

@@ -22,7 +22,7 @@ const LANGUAGES = [
   "Norwegian","Pashto","Persian","Polish","Portuguese","Portuguese (Brazil)","Punjabi","Romanian",
   "Russian","Samoan","Scottish Gaelic","Serbian","Sesotho","Shona","Sinhala",
   "Slovak","Slovenian","Somali","Spanish","Swahili","Swedish","Tajik","Tamil",
-  "Telugu","Thai","Turkish","Ukrainian","Urdu","Uzbek","Vietnamese","Welsh",
+  "Telugu","Thai","Turkish","Ukrainian","Urdu","Uzbek","Vietnamese","Vietnamese (Northern)","Vietnamese (Southern)","Chinese (Shanghainese)","Chinese (Toisanese)","Chinese (Teochew)","Welsh",
   "Xhosa","Yiddish","Yoruba","Zulu"
 ];
 
@@ -72,7 +72,15 @@ function getTodayMathStage(dayNum) {
 const RED   = "#E8192C";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
-const todayKey = () => new Date().toISOString().split("T")[0];
+// Use local time, not UTC — otherwise late-evening sessions in negative-offset
+// timezones (like Pacific) get filed to tomorrow's date and break streak.
+const todayKey = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 // ── SPEECH ───────────────────────────────────────────────────────────────────
 // Browser-native Web Speech API — free, no API key, works offline on most devices.
@@ -89,6 +97,16 @@ const SPEECH_LANG = {
   Bengali:"bn-IN", Urdu:"ur-PK", Tamil:"ta-IN", Telugu:"te-IN", Marathi:"mr-IN",
   Catalan:"ca-ES", Slovak:"sk-SK", Bulgarian:"bg-BG", Croatian:"hr-HR",
   Lao:"lo-LA",
+  // Vietnamese regional — browsers only ship vi-VN so both fall back to it.
+  // We still pick based on accent hints in the voice name.
+  "Vietnamese (Northern)":"vi-VN",
+  "Vietnamese (Southern)":"vi-VN",
+  // Chinese dialects — most browsers lack dedicated voices for these,
+  // so speech will typically fall back to Mandarin pronunciation. We mark
+  // them with their BCP-47 codes anyway in case a device has a matching voice.
+  "Chinese (Shanghainese)":"wuu-CN",
+  "Chinese (Toisanese)":"zh-TW",
+  "Chinese (Teochew)":"nan-TW",
 };
 
 // Hint words that commonly identify female vs male voices across platforms.
@@ -115,31 +133,48 @@ const MALE_VOICE_HINTS = [
 // "Child-ish" / younger-sounding voice keywords (varies a lot per platform)
 const YOUNG_VOICE_HINTS = ["junior","kid","child","young","girl","boy"];
 
-function voiceScore(voice, targetLang) {
-  // Higher score = better match for a warm, young, female voice in the target language
+// Voice quality tiers — we strongly prefer higher-quality voices to make
+// Claude's speech output sound more like a real person. These keywords appear
+// in voice names across Apple/Google/Microsoft platforms.
+const PREMIUM_VOICE_HINTS = [
+  "premium","enhanced","neural","natural","siri","online","wavenet","studio",
+];
+const AVOID_VOICE_HINTS = [
+  "compact","espeak","festival",  // low-quality legacy voices
+];
+
+function voiceScore(voice, targetLang, preferredAccent) {
+  // Higher score = better match. We optimize for (1) correct language,
+  // (2) high quality voice engine, (3) young female voice, (4) regional accent match
   let score = 0;
   const name = (voice.name || "").toLowerCase();
+  const vlang = (voice.lang || "").toLowerCase();
+  const tlang = targetLang.toLowerCase();
 
   // Language match is most important
-  if (voice.lang === targetLang) score += 100;
-  else if (voice.lang.toLowerCase().startsWith(targetLang.split("-")[0])) score += 60;
+  if (vlang === tlang) score += 100;
+  else if (vlang.startsWith(tlang.split("-")[0])) score += 60;
   else return -1; // wrong language — disqualify
+
+  // Quality tier — this has the biggest impact on "sounds like a real person"
+  if (PREMIUM_VOICE_HINTS.some(h => name.includes(h))) score += 40;
+  if (AVOID_VOICE_HINTS.some(h => name.includes(h)))   score -= 50;
 
   // Gender preference: female strongly preferred
   const isFemale = FEMALE_VOICE_HINTS.some(h => name.includes(h));
   const isMale   = MALE_VOICE_HINTS.some(h => name.includes(h));
   if (isFemale) score += 50;
   else if (isMale) score -= 20;
-  // Ambiguous names get a small bonus because many default voices are female
 
   // Young-sounding bonus
   if (YOUNG_VOICE_HINTS.some(h => name.includes(h))) score += 15;
 
-  // Premium / enhanced voices sound more natural
-  if (name.includes("premium") || name.includes("enhanced") || name.includes("neural")) score += 10;
-
-  // Apple's "Siri" voices are typically high-quality but Siri 1 on iOS is often female
-  if (name.includes("siri") && !name.includes("male")) score += 8;
+  // Regional accent hints (for Vietnamese North/South, Chinese dialects)
+  if (preferredAccent) {
+    for (const hint of preferredAccent) {
+      if (name.includes(hint.toLowerCase())) score += 30;
+    }
+  }
 
   // Prefer locally-installed over server voices (more reliable)
   if (voice.localService) score += 5;
@@ -147,12 +182,22 @@ function voiceScore(voice, targetLang) {
   return score;
 }
 
-function pickBestVoice(voices, targetLang) {
+// Regional accent preferences for picking the best matching voice
+const ACCENT_HINTS = {
+  "Vietnamese (Northern)": ["hanoi","north","bắc","northern"],
+  "Vietnamese (Southern)": ["saigon","ho chi minh","south","nam","southern"],
+  "Chinese (Shanghainese)": ["shanghai","wu","shanghainese"],
+  "Chinese (Toisanese)":    ["toisan","taishan","toishan"],
+  "Chinese (Teochew)":      ["teochew","chaoshan","chaozhou","chao-chou"],
+};
+
+function pickBestVoice(voices, targetLang, language) {
   if (!voices || !voices.length) return null;
+  const accentHints = ACCENT_HINTS[language] || null;
   let best = null;
   let bestScore = -1;
   for (const v of voices) {
-    const s = voiceScore(v, targetLang);
+    const s = voiceScore(v, targetLang, accentHints);
     if (s > bestScore) { best = v; bestScore = s; }
   }
   return bestScore >= 0 ? best : null;
@@ -174,7 +219,7 @@ function speak(text, language) {
 
     const voices = window.speechSynthesis.getVoices();
     if (voices.length > 0) {
-      const match = pickBestVoice(voices, targetLang);
+      const match = pickBestVoice(voices, targetLang, language);
       if (match) utter.voice = match;
       else if (language !== "English") return; // skip rather than mispronounce
     }
@@ -514,34 +559,36 @@ function getHistory(childId) {
 
 // Compute streak (consecutive days with at least one session of any kind)
 function computeStreak(hist) {
-  const today = todayKey();
-  const oneDay = 1000 * 60 * 60 * 24;
-  let streak = 0;
-  let cursor = new Date(today + "T00:00:00");
-  for (;;) {
-    const key = cursor.toISOString().split("T")[0];
+  if (!hist) return 0;
+  // Local-date arithmetic: build keys by stepping day-by-day using local time,
+  // not UTC. Start from today; if today has activity, count it and walk back.
+  // If today has no activity but yesterday does, start from yesterday.
+  const dateToKey = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+  const dayHasActivity = (key) => {
     const day = hist[key];
-    const hasAny = day && Object.values(day).some(v => v > 0);
-    if (hasAny) {
-      streak++;
-      cursor = new Date(cursor.getTime() - oneDay);
-    } else break;
+    return !!(day && Object.values(day).some(v => v > 0));
+  };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Find the most recent day with activity (today or yesterday)
+  let cursor = new Date(today);
+  if (!dayHasActivity(dateToKey(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!dayHasActivity(dateToKey(cursor))) return 0;
   }
-  // If no session today yet but yesterday had one, streak is still "alive" showing yesterday's count
-  if (streak === 0) {
-    const yest = new Date(new Date(today+"T00:00:00").getTime() - oneDay).toISOString().split("T")[0];
-    const day = hist[yest];
-    const hasAny = day && Object.values(day).some(v => v > 0);
-    if (hasAny) {
-      // Calculate from yesterday backward
-      let c = new Date(yest + "T00:00:00");
-      for (;;) {
-        const key = c.toISOString().split("T")[0];
-        const d = hist[key];
-        const has = d && Object.values(d).some(v => v > 0);
-        if (has) { streak++; c = new Date(c.getTime() - oneDay); } else break;
-      }
-    }
+
+  // Walk backward from cursor, counting consecutive active days
+  let streak = 0;
+  while (dayHasActivity(dateToKey(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
   }
   return streak;
 }
@@ -1356,7 +1403,7 @@ function ProgressScreen({ child, onBack }) {
                     </div>
                   </div>
                   <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#999",lineHeight:1.4,marginTop:8,fontStyle:"italic"}}>
-                    Approximate vocabulary exposure, loosely mapped to CEFR levels. Not a formal language assessment.
+                    Vocabulary exposure mapped to CEFR vocabulary-size thresholds. Not a formal assessment.
                   </div>
                 </div>
               );
@@ -1365,12 +1412,19 @@ function ProgressScreen({ child, onBack }) {
             <div style={{marginBottom:22}}>
               <h3 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>today</h3>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <TodayRow label="Reading" emoji="📖" done={todayData.reading}/>
-                <TodayRow label="Couplets" emoji="📝" done={todayData.couplets||0}/>
-                <TodayRow label="Sentences" emoji="✍️" done={todayData.sentences||0}/>
-                <TodayRow label="Book" emoji="📚" done={todayData.book||0}/>
-                <TodayRow label="Math" emoji="🔢" done={todayData.math}/>
-                <TodayRow label="Knowledge" emoji="🌍" done={todayData.encyclopedia}/>
+                {(() => {
+                  const dayNum = getDayNumber();
+                  return (
+                    <>
+                      <TodayRow label="Reading" emoji="📖" done={todayData.reading}/>
+                      {dayNum >= 31 && <TodayRow label="Couplets" emoji="📝" done={todayData.couplets||0}/>}
+                      {dayNum >= 61 && <TodayRow label="Sentences" emoji="✍️" done={todayData.sentences||0}/>}
+                      {dayNum >= 91 && <TodayRow label="Book" emoji="📚" done={todayData.book||0}/>}
+                      <TodayRow label="Math" emoji="🔢" done={todayData.math}/>
+                      <TodayRow label="Knowledge" emoji="🌍" done={todayData.encyclopedia}/>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
@@ -2246,7 +2300,26 @@ function ReadingSession({ words, language, speechOn, sessionNum, onBack, onCompl
 
   useEffect(()=>{
     setIdx(0); setFrame(0); setFinished(false); setTransError(null);
-    const buildCards = (raw) => shuffle(raw);
+    // Session 1: all in order.
+    // Session 2 & 3: shuffled WITHIN each themed set, but sets stay grouped
+    // (family stays with family, animals with animals, fruits with fruits).
+    const buildCards = (raw) => {
+      if (sessionNum === 1) return raw;
+      // Group by setId, shuffle each group independently, then concatenate
+      const groups = {};
+      const order = [];
+      for (const c of raw) {
+        const key = c.setId || "_";
+        if (!groups[key]) { groups[key] = []; order.push(key); }
+        groups[key].push(c);
+      }
+      const out = [];
+      for (const key of order) {
+        const g = shuffle(groups[key]);
+        for (const c of g) out.push(c);
+      }
+      return out;
+    };
 
     if (language==="English") { setCards(buildCards(words)); return; }
     const run = async ()=>{
@@ -2483,7 +2556,21 @@ function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComp
 function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack, onComplete }) {
   const cards = useMemo(()=>{
     const translated = knowledge.map(c => translateKnowledgeCard(c, language));
-    return shuffle(translated);
+    if (sessionNum === 1) return translated;
+    // Shuffle within each themed set but keep sets grouped
+    const groups = {};
+    const order = [];
+    for (const c of translated) {
+      const key = c.setId || "_";
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(c);
+    }
+    const out = [];
+    for (const key of order) {
+      const g = shuffle(groups[key]);
+      for (const c of g) out.push(c);
+    }
+    return out;
   },[knowledge, language, sessionNum]);
 
   const [idx, setIdx]     = useState(0);
@@ -2491,14 +2578,19 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
   const [autoPlay, setAutoPlay] = useState(false);
   const [finished, setFinished] = useState(false);
 
-  // Speak the title when a card appears
+  // Speak the title and then the fact when a card appears
   useEffect(()=>{
     if (!speechOn || !visible) return;
     const card = cards[idx];
-    if (card?.title) {
-      // If card wasn't actually translated, speak the English title with English voice
-      const speechLang = card.original ? language : "English";
-      speak(card.title, speechLang);
+    if (!card?.title) return;
+    // If card wasn't actually translated, speak the English with English voice
+    const speechLang = card.original ? language : "English";
+    speak(card.title, speechLang);
+    // Read the fact after a short pause so the title has time to finish
+    if (card.fact) {
+      const delay = Math.min(2500, 600 + card.title.length * 80);
+      const t = setTimeout(() => speak(card.fact, speechLang), delay);
+      return () => clearTimeout(t);
     }
   }, [idx, visible, speechOn, language, cards]);
 
