@@ -1334,6 +1334,84 @@ function translateKnowledgeCard(card, lang) {
   };
 }
 
+// Display titles for knowledge cards. Most ids convert cleanly from snake_case
+// to Title Case, but a few need overrides (acronyms, proper names, flag labels).
+const KNOWLEDGE_TITLES = {
+  // People — full names
+  mlk: "Martin Luther King Jr.",
+  mother_teresa: "Mother Teresa",
+  joan_of_arc: "Joan of Arc",
+  queen_victoria: "Queen Victoria",
+  amelia_earhart: "Amelia Earhart",
+  marie_curie: "Marie Curie",
+  gandhi: "Mahatma Gandhi",
+  mandela: "Nelson Mandela",
+  einstein: "Albert Einstein",
+  // Landmarks
+  eiffel_tower: "Eiffel Tower",
+  great_wall: "Great Wall of China",
+  statue_liberty: "Statue of Liberty",
+  taj_mahal: "Taj Mahal",
+  mt_rushmore: "Mount Rushmore",
+  white_house: "White House",
+  liberty_bell: "Liberty Bell",
+  // US symbols
+  bald_eagle: "Bald Eagle",
+  american_flag: "American Flag",
+  // Cars
+  suv: "SUV",
+  sportscar: "Sports Car",
+  pickup: "Pickup Truck",
+  // Balls
+  soccer_ball: "Soccer Ball",
+  tennis_ball: "Tennis Ball",
+  // Flags — "Flag of X" format reads naturally
+  italy_flag: "Flag of Italy",
+  france_flag: "Flag of France",
+  germany_flag: "Flag of Germany",
+  spain_flag: "Flag of Spain",
+  uk_flag: "Flag of the United Kingdom",
+  japan_flag: "Flag of Japan",
+  china_flag: "Flag of China",
+  korea_flag: "Flag of South Korea",
+  india_flag: "Flag of India",
+  vietnam_flag: "Flag of Vietnam",
+  usa_flag: "Flag of the USA",
+  canada_flag: "Flag of Canada",
+  mexico_flag: "Flag of Mexico",
+  brazil_flag: "Flag of Brazil",
+  argentina_flag: "Flag of Argentina",
+  // Month 3 map cards
+  france_map: "Map of France",
+  germany_map: "Map of Germany",
+  italy_map: "Map of Italy",
+  spain_map: "Map of Spain",
+  uk_map: "Map of the United Kingdom",
+  // Misc overrides
+  trex: "T. rex",
+  shiba_inu: "Shiba Inu",
+  poison_dart: "Poison Dart Frog",
+  tree_frog: "Tree Frog",
+  glass_frog: "Glass Frog",
+  wood_frog: "Wood Frog",
+  southafrica: "South Africa",
+  dragonfruit: "Dragonfruit",
+  cpu: "CPU",
+  ferrari: "Ferrari",
+  tesla: "Tesla",
+  mustang: "Mustang",
+  jeep: "Jeep",
+};
+
+function titleForKnowledge(cardId) {
+  if (KNOWLEDGE_TITLES[cardId]) return KNOWLEDGE_TITLES[cardId];
+  // Auto: snake_case → Title Case
+  return cardId
+    .split("_")
+    .map(w => w.length ? w.charAt(0).toUpperCase() + w.slice(1) : w)
+    .join(" ");
+}
+
 async function fetchDailyKnowledge(child) {
   const pos = getChildPosition(child, "knowledge");
   if (!pos) return [];
@@ -1344,13 +1422,13 @@ async function fetchDailyKnowledge(child) {
     for (const item of s.items) {
       out.push({
         id: item.id,
+        title: titleForKnowledge(item.id),
         // Photo URL using picsum.photos as placeholder — seeded by id so same
         // card always shows same photo. TODO: replace with curated photo URLs.
         photoUrl: `https://picsum.photos/seed/${encodeURIComponent(item.id)}/800/600`,
         setName: s.name,
         setId: s.id,
         // Three facts per card, shown in sessions 1/2/3 respectively.
-        // Stubbed (null) until curated content is supplied.
         facts: item.facts || [null, null, null],
       });
     }
@@ -3284,15 +3362,19 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
   const [finished, setFinished] = useState(false);
   const [imgError, setImgError] = useState(false);
 
-  // Speak the current card's fact aloud when it appears.
+  // Speak the title, then the fact, when a card appears.
   useEffect(() => {
     if (!speechOn || !visible) return;
     const card = cards[idx];
-    const fact = card?.facts?.[factIndex];
+    if (!card) return;
+    // Speak title first
+    if (card.title) speak(card.title, "English");
+    const fact = card.facts?.[factIndex];
     if (!fact) return;
-    // Knowledge facts aren't translated for most languages yet — speak in
-    // English if we don't have a translated string for this language.
-    speak(fact, "English");
+    // Slight delay so title has time to finish before fact starts
+    const delay = card.title ? Math.min(2000, 500 + card.title.length * 80) : 0;
+    const t = setTimeout(() => speak(fact, "English"), delay);
+    return () => clearTimeout(t);
   }, [idx, visible, speechOn, cards, factIndex]);
 
   const advance = useCallback(() => {
@@ -3337,13 +3419,20 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
           )}
         </div>
 
+        {/* Title — small gray label so the parent knows what the card is about */}
+        {card.title && (
+          <div style={{marginTop:18,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.3,textTransform:"uppercase"}}>
+            {card.title}
+          </div>
+        )}
+
         {/* Fact — shown as a prompt for the parent to read aloud */}
         {factForSession ? (
-          <div style={{marginTop:20,maxWidth:380,textAlign:"center",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:"#555",lineHeight:1.45}}>
+          <div style={{marginTop:8,maxWidth:380,textAlign:"center",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:"#555",lineHeight:1.45}}>
             {factForSession}
           </div>
         ) : (
-          <div style={{marginTop:20,maxWidth:380,textAlign:"center",fontFamily:"Nunito,sans-serif",fontStyle:"italic",fontSize:12,color:"#bbb"}}>
+          <div style={{marginTop:8,maxWidth:380,textAlign:"center",fontFamily:"Nunito,sans-serif",fontStyle:"italic",fontSize:12,color:"#bbb"}}>
             Parent: read fact #{factIndex+1} aloud for this card
           </div>
         )}
