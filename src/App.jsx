@@ -444,27 +444,50 @@ function newChildId() {
 
 // ── LEARNING POSITION ────────────────────────────────────────────────────────
 // Parent-controlled: each child has a "position" indicating where they are in
-// the curriculum for each category. Position is {month, setIdx}. The app shows
-// `setIdx`, `setIdx+1`, `setIdx+2` (3 consecutive sets) per session.
+// the curriculum PER LANGUAGE. Data shape:
+//   child.position = {
+//     English: { words:{month,setIdx}, couplets:null|{...}, sentences:null|{...}, knowledge:{...}, math:"dots" },
+//     Korean:  { ... },
+//     ...
+//   }
+// Children learn at different paces in different languages, so each language
+// has its own level.
 //
-// Defaults: everyone starts at month 1, set 0 for words+knowledge. Couplets
-// and sentences are null until parent advances (they aren't available until
-// month 2 and 3 respectively).
-function getChildPosition(child, category) {
-  const pos = child?.position?.[category];
-  if (pos) return pos;
-  // Defaults — words/knowledge start at month 1 set 0. Couplets/sentences null
-  // (parent must set before they can start).
+// Migration: older builds stored positions flat (no language key). On read we
+// detect and wrap old data under "English" for backwards compat.
+
+function migratePosition(raw) {
+  // Returns the position object already keyed by language. Handles the old
+  // flat format gracefully.
+  if (!raw) return {};
+  // Old format: has top-level "words" or "knowledge" or "math"
+  const looksOld = raw.words !== undefined || raw.knowledge !== undefined ||
+                   raw.couplets !== undefined || raw.sentences !== undefined ||
+                   raw.math !== undefined;
+  if (looksOld) return { English: raw };
+  return raw;
+}
+
+function getChildPosition(child, category, language) {
+  const lang = language || "English";
+  const allPos = migratePosition(child?.position);
+  const pos = allPos[lang]?.[category];
+  if (pos !== undefined) return pos;
+  // Defaults when language has no position set: words/knowledge start at
+  // month 1 set 0; couplets/sentences null; math "dots"
   if (category === "words" || category === "knowledge") return { month: 1, setIdx: 0 };
+  if (category === "math") return "dots";
   return null;
 }
 
-function setChildPosition(childId, category, position) {
+function setChildPosition(childId, category, position, language) {
+  const lang = language || "English";
   const kids = loadChildren();
   const idx = kids.findIndex(c => c.id === childId);
   if (idx < 0) return;
-  kids[idx].position = kids[idx].position || {};
-  kids[idx].position[category] = position;
+  kids[idx].position = migratePosition(kids[idx].position);
+  kids[idx].position[lang] = kids[idx].position[lang] || {};
+  kids[idx].position[lang][category] = position;
   saveChildren(kids);
 }
 
@@ -792,7 +815,17 @@ async function translateWords(words, lang) {
     }
 
     // Regular translation path
-    const hit = CORE_TRANSLATIONS[key]?.[lang] || EXTRA_TRANSLATIONS[key]?.[lang];
+    // Try the word as-is, then try a singular form (drop trailing "s" or "es")
+    // so "grapes" finds the "grape" entry, "berries" finds "berry", etc.
+    const lookups = [key];
+    if (key?.endsWith("ies") && key.length > 3) lookups.push(key.slice(0, -3) + "y");
+    else if (key?.endsWith("es") && key.length > 3) lookups.push(key.slice(0, -2));
+    else if (key?.endsWith("s") && key.length > 2) lookups.push(key.slice(0, -1));
+    let hit = null;
+    for (const lk of lookups) {
+      hit = CORE_TRANSLATIONS[lk]?.[lang] || EXTRA_TRANSLATIONS[lk]?.[lang];
+      if (hit) break;
+    }
     if (hit) {
       result.push({ ...w, word: hit, original: w.word });
     } else {
@@ -806,8 +839,8 @@ async function translateWords(words, lang) {
 // Position-based fetching: parent picks current month+setIdx per child.
 // Returns a flat deck of items from 3 consecutive sets (5+5+5 = 15 cards).
 // Each item is annotated with `setName` and `setId` for session labeling.
-async function fetchDailyWords(child) {
-  const pos = getChildPosition(child, "words");
+async function fetchDailyWords(child, language) {
+  const pos = getChildPosition(child, "words", language);
   if (!pos) return [];
   const sets = getSetsForPosition(WORDS_BY_MONTH, pos, pos.month);
   if (!sets || sets.length === 0) return [];
@@ -1412,8 +1445,8 @@ function titleForKnowledge(cardId) {
     .join(" ");
 }
 
-async function fetchDailyKnowledge(child) {
-  const pos = getChildPosition(child, "knowledge");
+async function fetchDailyKnowledge(child, language) {
+  const pos = getChildPosition(child, "knowledge", language);
   if (!pos) return [];
   const sets = getSetsForPosition(KNOWLEDGE_BY_MONTH, pos, pos.month);
   if (!sets || sets.length === 0) return [];
@@ -1436,8 +1469,8 @@ async function fetchDailyKnowledge(child) {
   return out;
 }
 
-async function fetchDailyCouplets(child) {
-  const pos = getChildPosition(child, "couplets");
+async function fetchDailyCouplets(child, language) {
+  const pos = getChildPosition(child, "couplets", language);
   if (!pos) return [];
   const sets = getSetsForPosition(COUPLETS_BY_MONTH, pos, pos.month);
   if (!sets || sets.length === 0) return [];
@@ -1455,8 +1488,8 @@ async function fetchDailyCouplets(child) {
   return out;
 }
 
-async function fetchDailySentences(child) {
-  const pos = getChildPosition(child, "sentences");
+async function fetchDailySentences(child, language) {
+  const pos = getChildPosition(child, "sentences", language);
   if (!pos) return [];
   const sets = getSetsForPosition(SENTENCES_BY_MONTH, pos, pos.month);
   if (!sets || sets.length === 0) return [];
@@ -2361,14 +2394,6 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
   const [emoji, setEmoji] = useState(child?.emoji || CHILD_EMOJIS[0]);
   const [langs, setLangs] = useState(child?.languages || ["English"]);
   const [showLangPicker, setShowLangPicker] = useState(false);
-  const [position, setPosition] = useState(child?.position || {
-    words:     { month: 1, setIdx: 0 },
-    couplets:  null,
-    sentences: null,
-    knowledge: { month: 1, setIdx: 0 },
-    math:      "dots",
-  });
-  const [editingCat, setEditingCat] = useState(null);  // null | "words" | "couplets" | "sentences" | "knowledge"
   const [familyPhotos, setFamilyPhotosState] = useState(() => child?.id ? getFamilyPhotos(child.id) : {});
   const [photoError, setPhotoError] = useState("");
   const isNew = !child;
@@ -2429,46 +2454,14 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
           + add language
         </button>
 
-        {/* Curriculum position editor */}
-        <div style={{marginTop:24,padding:"14px 14px 10px",background:"#FAFAFA",borderRadius:16,border:"1px solid #f0f0f0"}}>
-          <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:4,letterSpacing:.5,textTransform:"uppercase"}}>Current Learning Position</label>
-          <p style={{fontFamily:"Nunito,sans-serif",fontSize:11,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:12,lineHeight:1.4}}>
-            Tap a category to choose your child's current level. Setting a level automatically unlocks that category. Tap "not started" in the picker to deselect.
-          </p>
-
-          {[
-            { key:"words",     type:"sets", label:"Single Words",  data:WORDS_BY_MONTH,     startsMonth:1, endsMonth:3 },
-            { key:"couplets",  type:"sets", label:"Couplets",      data:COUPLETS_BY_MONTH,  startsMonth:2, endsMonth:2 },
-            { key:"sentences", type:"sets", label:"Sentences",     data:SENTENCES_BY_MONTH, startsMonth:3, endsMonth:3 },
-            { key:"knowledge", type:"sets", label:"Knowledge",     data:KNOWLEDGE_BY_MONTH, startsMonth:1, endsMonth:3 },
-            { key:"math",      type:"math", label:"Math",          stages:MATH_STAGES },
-          ].map(cat => {
-            const pos = position[cat.key];
-            let summary;
-            if (cat.type === "sets") {
-              summary = pos
-                ? `Month ${pos.month}, Set ${pos.setIdx + 1}${
-                    cat.data[pos.month]?.[pos.setIdx]?.name
-                      ? ` — ${cat.data[pos.month][pos.setIdx].name}`
-                      : ""
-                  }`
-                : "not started";
-            } else {
-              // math: pos is a stageId string
-              const stage = cat.stages.find(s => s.id === pos);
-              summary = stage ? stage.label : "not started";
-            }
-            return (
-              <button key={cat.key} onClick={()=>setEditingCat(cat)}
-                style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid #eee",borderRadius:12,padding:"10px 12px",cursor:"pointer",marginBottom:6,textAlign:"left"}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111"}}>{cat.label}</div>
-                  <div style={{fontFamily:"Nunito,sans-serif",fontSize:11,fontWeight:700,color:"#888",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{summary}</div>
-                </div>
-                <span style={{fontSize:16,color:"#ccc"}}>›</span>
-              </button>
-            );
-          })}
+        {/* Note: learning position is now per-language, set from the home
+            screen's language-specific settings button. */}
+        <div style={{marginTop:20,padding:"12px 14px",background:"#F6F8FC",borderRadius:12,border:"1px solid #e8edf5"}}>
+          <div style={{fontFamily:"Nunito,sans-serif",fontSize:11,fontWeight:800,color:"#888",lineHeight:1.5}}>
+            💡 Your child's learning level is set <em>per language</em> now.
+            Switch to a language on the home screen, then tap the small
+            "adjust level" button to set where they are in that language.
+          </div>
         </div>
 
         {/* Family photos — replace emoji with real photo for family-member words */}
@@ -2528,7 +2521,9 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
             onSave({
               id: child?.id || newChildId(),
               name: name.trim(), emoji, languages: langs.length ? langs : ["English"],
-              position,
+              // Preserve whatever position data already exists — position is
+              // now edited from the home screen per-language, not here.
+              position: child?.position,
               createdAt: child?.createdAt || Date.now(),
             });
           }} disabled={!name.trim()}
@@ -2539,21 +2534,6 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
 
       {showLangPicker && (
         <LanguageMultiPicker selected={langs} onToggle={toggleLang} onClose={()=>setShowLangPicker(false)}/>
-      )}
-      {editingCat && (
-        <PositionPicker
-          category={editingCat}
-          current={position[editingCat.key]}
-          onSelect={(newPos)=>{
-            setPosition(p=>({...p, [editingCat.key]: newPos}));
-            setEditingCat(null);
-          }}
-          onClear={()=>{
-            setPosition(p=>({...p, [editingCat.key]: null}));
-            setEditingCat(null);
-          }}
-          onClose={()=>setEditingCat(null)}
-        />
       )}
     </Sheet>
   );
@@ -2667,7 +2647,103 @@ function PositionPicker({ category, current, onSelect, onClear, onClose }) {
   );
 }
 
-function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, language, speechOn, onLang, onToggleSpeech, onProgress, onOpenChildren }) {
+// Sheet that shows all category positions for a SINGLE language. Tapping a
+// category opens the PositionPicker scoped to that language/category. Used
+// from the home screen so parents can tune per-language levels without going
+// into child profile edit.
+function LanguageLevelSheet({ child, language, onSave, onClose }) {
+  // Local copy of positions for this language only. Save writes back to child.
+  const initial = migratePosition(child?.position)[language] || {};
+  const [position, setPosition] = useState({
+    words:     initial.words     !== undefined ? initial.words     : { month: 1, setIdx: 0 },
+    couplets:  initial.couplets  !== undefined ? initial.couplets  : null,
+    sentences: initial.sentences !== undefined ? initial.sentences : null,
+    knowledge: initial.knowledge !== undefined ? initial.knowledge : { month: 1, setIdx: 0 },
+    math:      initial.math      !== undefined ? initial.math      : "dots",
+  });
+  const [editingCat, setEditingCat] = useState(null);
+
+  const categories = [
+    { key:"words",     type:"sets", label:"Single Words",  data:WORDS_BY_MONTH,     startsMonth:1, endsMonth:3 },
+    { key:"couplets",  type:"sets", label:"Couplets",      data:COUPLETS_BY_MONTH,  startsMonth:2, endsMonth:2 },
+    { key:"sentences", type:"sets", label:"Sentences",     data:SENTENCES_BY_MONTH, startsMonth:3, endsMonth:3 },
+    { key:"knowledge", type:"sets", label:"Knowledge",     data:KNOWLEDGE_BY_MONTH, startsMonth:1, endsMonth:3 },
+    { key:"math",      type:"math", label:"Math",          stages:MATH_STAGES },
+  ];
+
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{padding:"22px 22px 14px",borderBottom:"1px solid #f0f0f0"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:22,lineHeight:1}}>{flagFor(language)}</span>
+          <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",margin:0}}>{language} level</h2>
+        </div>
+        <p style={{fontFamily:"Nunito,sans-serif",fontSize:12,color:"#888",fontWeight:700,marginTop:6,marginBottom:0,lineHeight:1.4}}>
+          Tap a category to set where your child is in {language}. Each
+          language can progress at its own pace.
+        </p>
+      </div>
+
+      <div style={{overflowY:"auto",flex:1,padding:"14px 18px"}}>
+        {categories.map(cat => {
+          const pos = position[cat.key];
+          let summary;
+          if (cat.type === "sets") {
+            summary = pos
+              ? `Month ${pos.month}, Set ${pos.setIdx + 1}${
+                  cat.data[pos.month]?.[pos.setIdx]?.name
+                    ? ` — ${cat.data[pos.month][pos.setIdx].name}`
+                    : ""
+                }`
+              : "not started";
+          } else {
+            const stage = cat.stages.find(s => s.id === pos);
+            summary = stage ? stage.label : "not started";
+          }
+          return (
+            <button key={cat.key} onClick={()=>setEditingCat(cat)}
+              style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid #eee",borderRadius:12,padding:"12px 14px",cursor:"pointer",marginBottom:8,textAlign:"left"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111"}}>{cat.label}</div>
+                <div style={{fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:700,color:"#888",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{summary}</div>
+              </div>
+              <span style={{fontSize:16,color:"#ccc"}}>›</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{padding:"12px 22px 22px",borderTop:"1px solid #f0f0f0",display:"flex",gap:10}}>
+        <button onClick={onClose}
+          style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+          cancel
+        </button>
+        <button onClick={()=>onSave(position)}
+          style={{flex:2,background:RED,border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+          save
+        </button>
+      </div>
+
+      {editingCat && (
+        <PositionPicker
+          category={editingCat}
+          current={position[editingCat.key]}
+          onSelect={(newPos)=>{
+            setPosition(p=>({...p, [editingCat.key]: newPos}));
+            setEditingCat(null);
+          }}
+          onClear={()=>{
+            setPosition(p=>({...p, [editingCat.key]: null}));
+            setEditingCat(null);
+          }}
+          onClose={()=>setEditingCat(null)}
+        />
+      )}
+    </Sheet>
+  );
+}
+
+function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, language, speechOn, onLang, onToggleSpeech, onProgress, onOpenChildren, onAdjustLevel }) {
   const dayNum = getDayNumber();
 
   // Determine which categories are available right now.
@@ -2817,6 +2893,15 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
               );
             })}
           </div>
+
+          {/* Per-language settings button — scoped to whichever language is
+              currently active. Tapping opens the LanguageLevelSheet. */}
+          {onAdjustLevel && (
+            <button onClick={onAdjustLevel}
+              style={{marginTop:18,display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%",background:"transparent",border:"1px dashed #ddd",borderRadius:50,padding:"9px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#888"}}>
+              ⚙ adjust {language} level
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -2827,8 +2912,9 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
 // Shown after tapping a home-screen category. Displays today's lesson plan +
 // the full roadmap of unlocked/upcoming stages.
 
-function CategoryMenu({ category, activeChild, words, couplets, sentences, knowledge, onSelect, onBack }) {
+function CategoryMenu({ category, activeChild, language, words, couplets, sentences, knowledge, onSelect, onBack }) {
   const dayNum = getDayNumber();
+  const lang = language || "English";
 
   // Each category has stages. A stage is "unlocked" if EITHER the day-number
   // passes its unlock threshold OR the parent has explicitly set the child's
@@ -2849,7 +2935,9 @@ function CategoryMenu({ category, activeChild, words, couplets, sentences, knowl
   const sentencesDesc    = descForCards(sentences) || "three-word sentences · 3 a day";
   const knowledgeDesc    = descForCards(knowledge) || "knowledge categories · 3 sessions a day";
 
-  const hasPos = (key) => activeChild?.position?.[key] != null;
+  // Position is now nested per-language: child.position[lang][category]
+  const langPos = migratePosition(activeChild?.position)[lang] || {};
+  const hasPos = (key) => langPos[key] != null;
 
   if (category === "reading") {
     categoryIcon = "📖";
@@ -2890,7 +2978,7 @@ function CategoryMenu({ category, activeChild, words, couplets, sentences, knowl
     // For math: the "math" posKey holds the current stageId — unlock only that
     // specific stage and earlier (lower unlockDay) ones.
     if (s.posKey === "math") {
-      const mathStageId = activeChild?.position?.math;  // e.g. "add-dots" or null
+      const mathStageId = langPos.math;  // e.g. "add-dots" or null
       if (!mathStageId) return false;
       const setStage = MATH_STAGES.find(ms => ms.id === mathStageId);
       if (!setStage) return false;
@@ -3193,8 +3281,10 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, onBack
 
         {frame===1 && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:18,width:"100%",maxWidth:340}}>
-            {familyPhotos[card.word] ? (
-              <img src={familyPhotos[card.word]} alt=""
+            {/* Family photo lookup: use English canonical (card.original) so
+                photos work regardless of current display language. */}
+            {familyPhotos[card.original || card.word] ? (
+              <img src={familyPhotos[card.original || card.word]} alt=""
                 style={{width:"min(300px,82vw)",height:"min(300px,82vw)",borderRadius:22,boxShadow:"0 8px 32px rgba(0,0,0,.14)",objectFit:"cover"}}/>
             ) : (
               <PhotoDisplay
@@ -3362,20 +3452,13 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
   const [finished, setFinished] = useState(false);
   const [imgError, setImgError] = useState(false);
 
-  // Speak the title, then the fact, when a card appears.
+  // Speak the card title aloud when it appears. Per Doman: photo + word only
+  // in the first months. Facts come later in the program.
   useEffect(() => {
     if (!speechOn || !visible) return;
     const card = cards[idx];
-    if (!card) return;
-    // Speak title first
-    if (card.title) speak(card.title, "English");
-    const fact = card.facts?.[factIndex];
-    if (!fact) return;
-    // Slight delay so title has time to finish before fact starts
-    const delay = card.title ? Math.min(2000, 500 + card.title.length * 80) : 0;
-    const t = setTimeout(() => speak(fact, "English"), delay);
-    return () => clearTimeout(t);
-  }, [idx, visible, speechOn, cards, factIndex]);
+    if (card?.title) speak(card.title, "English");
+  }, [idx, visible, speechOn, cards]);
 
   const advance = useCallback(() => {
     setVisible(false);
@@ -3419,21 +3502,12 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
           )}
         </div>
 
-        {/* Title — small gray label so the parent knows what the card is about */}
+        {/* Per Doman program: for the first months, cards are just photo + word.
+            Facts are introduced later in the program. The title is shown large
+            below the photo and spoken by the app. */}
         {card.title && (
-          <div style={{marginTop:18,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.3,textTransform:"uppercase"}}>
+          <div style={{marginTop:22,fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:32,color:RED,textAlign:"center",lineHeight:1.1,letterSpacing:.3}}>
             {card.title}
-          </div>
-        )}
-
-        {/* Fact — shown as a prompt for the parent to read aloud */}
-        {factForSession ? (
-          <div style={{marginTop:8,maxWidth:380,textAlign:"center",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:"#555",lineHeight:1.45}}>
-            {factForSession}
-          </div>
-        ) : (
-          <div style={{marginTop:8,maxWidth:380,textAlign:"center",fontFamily:"Nunito,sans-serif",fontStyle:"italic",fontSize:12,color:"#bbb"}}>
-            Parent: read fact #{factIndex+1} aloud for this card
           </div>
         )}
 
@@ -3519,6 +3593,7 @@ export default function App() {
   const [showMath, setShowMath]       = useState(false);
   const [showChildren, setShowChildren]   = useState(false);
   const [showSharing, setShowSharing]     = useState(false);
+  const [showLangLevel, setShowLangLevel] = useState(false);
   const [editingChild, setEditingChild]   = useState(undefined);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dailyWords, setDailyWords]   = useState([]);
@@ -3554,14 +3629,15 @@ export default function App() {
         if (child?.languages?.length) setLanguage(child.languages[0]);
       }
 
-      // Load daily content based on active child's curriculum position
+      // Load daily content based on active child's curriculum position (per-lang)
       const child = kids.find(c => c.id === getActiveChildId()) || kids[0];
+      const activeLang = child?.languages?.[0] || "English";
       let words = FALLBACK_WORDS, know = FALLBACK_KNOW, couplets = [], sentences = [];
       if (child) {
-        try { words = await fetchDailyWords(child); } catch { words = FALLBACK_WORDS; }
-        try { know = await fetchDailyKnowledge(child); } catch { know = FALLBACK_KNOW; }
-        try { couplets = await fetchDailyCouplets(child); } catch {}
-        try { sentences = await fetchDailySentences(child); } catch {}
+        try { words = await fetchDailyWords(child, activeLang); } catch { words = FALLBACK_WORDS; }
+        try { know = await fetchDailyKnowledge(child, activeLang); } catch { know = FALLBACK_KNOW; }
+        try { couplets = await fetchDailyCouplets(child, activeLang); } catch {}
+        try { sentences = await fetchDailySentences(child, activeLang); } catch {}
       }
       setDailyWords(words); setDailyKnow(know);
       setDailyCouplets(couplets); setDailySentences(sentences);
@@ -3572,19 +3648,19 @@ export default function App() {
     try { const r=localStorage.getItem("lb-speech"); if(r!==null) setSpeechOn(r==="1"); } catch {}
   },[]);
 
-  // Reload daily content when the active child changes or their position updates.
-  // The `children` dep catches position edits (since setChildren is called after edit).
+  // Reload daily content when active child changes, their position updates, or
+  // language switches (since per-language position may differ).
   useEffect(() => {
     if (!activeChildId || initializing) return;
     const child = children.find(c => c.id === activeChildId);
     if (!child) return;
     (async () => {
-      try { setDailyWords(await fetchDailyWords(child)); } catch { setDailyWords(FALLBACK_WORDS); }
-      try { setDailyKnow(await fetchDailyKnowledge(child)); } catch { setDailyKnow(FALLBACK_KNOW); }
-      try { setDailyCouplets(await fetchDailyCouplets(child)); } catch { setDailyCouplets([]); }
-      try { setDailySentences(await fetchDailySentences(child)); } catch { setDailySentences([]); }
+      try { setDailyWords(await fetchDailyWords(child, language)); } catch { setDailyWords(FALLBACK_WORDS); }
+      try { setDailyKnow(await fetchDailyKnowledge(child, language)); } catch { setDailyKnow(FALLBACK_KNOW); }
+      try { setDailyCouplets(await fetchDailyCouplets(child, language)); } catch { setDailyCouplets([]); }
+      try { setDailySentences(await fetchDailySentences(child, language)); } catch { setDailySentences([]); }
     })();
-  }, [activeChildId, children]);
+  }, [activeChildId, children, language]);
 
   const handleOnboardingDone = () => {
     const kids = loadChildren();
@@ -3781,11 +3857,11 @@ export default function App() {
   return (
     <>
       <style>{baseStyles}</style>
-      {mode===null       && <HomeScreen activeChild={activeChild} activeChildId={activeChildId} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)}/>}
+      {mode===null       && <HomeScreen activeChild={activeChild} activeChildId={activeChildId} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)} onAdjustLevel={()=>setShowLangLevel(true)}/>}
 
-      {mode==="menu:reading"   && <CategoryMenu category="reading"   activeChild={activeChild} words={dailyWords} couplets={dailyCouplets} sentences={dailySentences} onSelect={handleStartSession} onBack={handleBackToHome}/>}
-      {mode==="menu:math"      && <CategoryMenu category="math"      activeChild={activeChild} onSelect={handleStartSession} onBack={handleBackToHome}/>}
-      {mode==="menu:knowledge" && <CategoryMenu category="knowledge" activeChild={activeChild} knowledge={dailyKnow} onSelect={handleStartSession} onBack={handleBackToHome}/>}
+      {mode==="menu:reading"   && <CategoryMenu category="reading"   activeChild={activeChild} language={language} words={dailyWords} couplets={dailyCouplets} sentences={dailySentences} onSelect={handleStartSession} onBack={handleBackToHome}/>}
+      {mode==="menu:math"      && <CategoryMenu category="math"      activeChild={activeChild} language={language} onSelect={handleStartSession} onBack={handleBackToHome}/>}
+      {mode==="menu:knowledge" && <CategoryMenu category="knowledge" activeChild={activeChild} language={language} knowledge={dailyKnow} onSelect={handleStartSession} onBack={handleBackToHome}/>}
 
       {mode==="progress" && <ProgressScreen child={activeChild} onBack={handleBackToHome}/>}
       {mode==="reading"  && sessionStatus && <ReadingSession childId={activeChildId} words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
@@ -3842,6 +3918,27 @@ export default function App() {
           onSave={handleSaveChild}
           onDelete={editingChild ? handleDeleteChild : null}
           onClose={()=>setEditingChild(undefined)}
+        />
+      )}
+
+      {showLangLevel && activeChild && (
+        <LanguageLevelSheet
+          child={activeChild}
+          language={language}
+          onSave={(newPosForLang)=>{
+            // Write the new position for this language into the child, saving
+            // to localStorage and updating React state to trigger reload.
+            const kids = loadChildren();
+            const i = kids.findIndex(c => c.id === activeChild.id);
+            if (i >= 0) {
+              kids[i].position = migratePosition(kids[i].position);
+              kids[i].position[language] = newPosForLang;
+              saveChildren(kids);
+              setChildren(kids);
+            }
+            setShowLangLevel(false);
+          }}
+          onClose={()=>setShowLangLevel(false)}
         />
       )}
     </>
