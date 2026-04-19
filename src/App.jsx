@@ -111,6 +111,33 @@ const SPEECH_LANG = {
   "Chinese (Teochew)":"nan-TW",
 };
 
+// Flag emoji per language, used as visual cue in the header. For languages
+// without an obvious national flag (English → both US/UK), we pick the most
+// commonly recognized variant.
+const LANGUAGE_FLAGS = {
+  English:"🇺🇸", Spanish:"🇪🇸", French:"🇫🇷", German:"🇩🇪", Italian:"🇮🇹",
+  Portuguese:"🇵🇹", "Portuguese (Brazil)":"🇧🇷", Russian:"🇷🇺",
+  "Chinese (Mandarin)":"🇨🇳", "Chinese (Cantonese)":"🇭🇰",
+  "Chinese (Shanghainese)":"🇨🇳", "Chinese (Toisanese)":"🇨🇳", "Chinese (Teochew)":"🇨🇳",
+  Japanese:"🇯🇵", Korean:"🇰🇷", Hebrew:"🇮🇱", Arabic:"🇸🇦", Hindi:"🇮🇳",
+  Vietnamese:"🇻🇳", "Vietnamese (Northern)":"🇻🇳", "Vietnamese (Southern)":"🇻🇳",
+  Thai:"🇹🇭", Turkish:"🇹🇷", Greek:"🇬🇷", Polish:"🇵🇱", Dutch:"🇳🇱",
+  Swedish:"🇸🇪", Danish:"🇩🇰", Norwegian:"🇳🇴", Finnish:"🇫🇮", Czech:"🇨🇿",
+  Hungarian:"🇭🇺", Romanian:"🇷🇴", Ukrainian:"🇺🇦", Indonesian:"🇮🇩",
+  Filipino:"🇵🇭", Malay:"🇲🇾", Swahili:"🇰🇪", Afrikaans:"🇿🇦", Persian:"🇮🇷",
+  Bengali:"🇧🇩", Urdu:"🇵🇰", Tamil:"🇮🇳", Telugu:"🇮🇳", Marathi:"🇮🇳",
+  Catalan:"🇪🇸", Slovak:"🇸🇰", Bulgarian:"🇧🇬", Croatian:"🇭🇷", Lao:"🇱🇦",
+  Serbian:"🇷🇸", Slovenian:"🇸🇮", Icelandic:"🇮🇸", Welsh:"🏴󠁧󠁢󠁷󠁬󠁳󠁿",
+  Latvian:"🇱🇻", Lithuanian:"🇱🇹", Estonian:"🇪🇪", Albanian:"🇦🇱",
+  Macedonian:"🇲🇰", Kazakh:"🇰🇿", Uzbek:"🇺🇿", Kyrgyz:"🇰🇬",
+  Malagasy:"🇲🇬", Mongolian:"🇲🇳", Burmese:"🇲🇲", Khmer:"🇰🇭",
+  Nepali:"🇳🇵", Sinhala:"🇱🇰", Gujarati:"🇮🇳", Punjabi:"🇮🇳",
+  Kannada:"🇮🇳", Malayalam:"🇮🇳", Armenian:"🇦🇲", Azerbaijani:"🇦🇿",
+  Georgian:"🇬🇪", Belarusian:"🇧🇾", Irish:"🇮🇪", Basque:"🇪🇸",
+  Galician:"🇪🇸", Latin:"🇻🇦",
+};
+function flagFor(lang) { return LANGUAGE_FLAGS[lang] || "🌍"; }
+
 // Hint words that commonly identify female vs male voices across platforms.
 // Web Speech API doesn't expose a gender field, so we inspect the voice name.
 // Browsers use inconsistent naming (Apple: "Samantha", Google: "Female",
@@ -459,6 +486,63 @@ function getSetsForPosition(allSetsArray, position, month) {
     }
   }
   return result.slice(0, 3);
+}
+
+// ── FAMILY PHOTOS ────────────────────────────────────────────────────────────
+// Parents can upload real photos for family-member words so babies learn those
+// specific faces. Photos are stored per-child as base64 in localStorage.
+//
+// Honest limits: localStorage caps around 5MB. We compress each upload to
+// <200KB using canvas resize (max 600px wide), so ~15-25 family photos fit
+// before hitting quota. If the quota fails, we show an error and keep the
+// existing photos.
+
+const FAMILY_PHOTO_WORDS = ["mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada"];
+
+function getFamilyPhotos(childId) {
+  try {
+    const raw = localStorage.getItem(`lb-photos-${childId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function setFamilyPhoto(childId, word, dataUrl) {
+  try {
+    const photos = getFamilyPhotos(childId);
+    if (dataUrl) photos[word] = dataUrl; else delete photos[word];
+    localStorage.setItem(`lb-photos-${childId}`, JSON.stringify(photos));
+    return true;
+  } catch (e) {
+    // Usually DOMException: QuotaExceededError
+    console.warn("Family photo storage failed:", e);
+    return false;
+  }
+}
+
+// Compress a File to a base64 data URL, max 600px wide, JPEG quality 0.8.
+// Returns a promise resolving to the data URL string.
+function compressImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Could not decode image"));
+      img.onload = () => {
+        const maxW = 600;
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 // ── FAMILY CODE (share across caregivers) ────────────────────────────────────
@@ -1375,7 +1459,7 @@ function formatMMSS(sec) {
   return `${m}:${String(s).padStart(2,"0")}`;
 }
 
-function CooldownScreen({ reason, secondsUntilReady, sessionNum, category, onBack }) {
+function CooldownScreen({ reason, secondsUntilReady, sessionNum, category, onBack, onReplay }) {
   const [remaining, setRemaining] = useState(secondsUntilReady);
 
   useEffect(()=>{
@@ -1410,6 +1494,25 @@ function CooldownScreen({ reason, secondsUntilReady, sessionNum, category, onBac
         </div>
       )}
       <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,color:"#aaa",fontSize:13,maxWidth:300,lineHeight:1.4}}>{subtitle}</p>
+
+      {/* Replay buttons shown only when all 3 sessions are done */}
+      {done && onReplay && (
+        <div style={{marginTop:6,display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+          <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#999",textTransform:"uppercase",letterSpacing:.5}}>review a session</div>
+          <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+            {[1,2,3].map(n => (
+              <button key={n} onClick={()=>onReplay(n)}
+                style={{background:"#fff",border:`2px solid ${RED}`,borderRadius:50,padding:"8px 16px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:RED}}>
+                ↻ Session {n}
+              </button>
+            ))}
+          </div>
+          <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#ccc",maxWidth:280,lineHeight:1.4}}>
+            Replays don't add to today's count.
+          </div>
+        </div>
+      )}
+
       <button onClick={onBack}
         style={{marginTop:8,background:"#f5f5f5",border:"none",borderRadius:50,padding:"10px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#555"}}>
         ← back to home
@@ -2187,9 +2290,30 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
     knowledge: { month: 1, setIdx: 0 },
   });
   const [editingCat, setEditingCat] = useState(null);  // null | "words" | "couplets" | "sentences" | "knowledge"
+  const [familyPhotos, setFamilyPhotosState] = useState(() => child?.id ? getFamilyPhotos(child.id) : {});
+  const [photoError, setPhotoError] = useState("");
   const isNew = !child;
 
   const toggleLang = (l)=>setLangs(p=>p.includes(l)?p.filter(x=>x!==l):[...p,l]);
+
+  const handlePhotoUpload = async (word, file) => {
+    if (!child?.id) { setPhotoError("Save the profile first, then add photos."); return; }
+    if (!file) return;
+    setPhotoError("");
+    try {
+      const dataUrl = await compressImageFile(file);
+      const ok = setFamilyPhoto(child.id, word, dataUrl);
+      if (!ok) { setPhotoError("Storage full — try a smaller photo or remove one."); return; }
+      setFamilyPhotosState(getFamilyPhotos(child.id));
+    } catch (e) {
+      setPhotoError("Could not read that photo: " + e.message);
+    }
+  };
+  const handlePhotoRemove = (word) => {
+    if (!child?.id) return;
+    setFamilyPhoto(child.id, word, null);
+    setFamilyPhotosState(getFamilyPhotos(child.id));
+  };
 
   return (
     <Sheet onClose={onClose}>
@@ -2259,6 +2383,43 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
             );
           })}
         </div>
+
+        {/* Family photos — replace emoji with real photo for family-member words */}
+        {!isNew && (
+          <div style={{marginTop:16,padding:"14px 14px 12px",background:"#FAFAFA",borderRadius:16,border:"1px solid #f0f0f0"}}>
+            <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:4,letterSpacing:.5,textTransform:"uppercase"}}>Family Photos</label>
+            <p style={{fontFamily:"Nunito,sans-serif",fontSize:11,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:12,lineHeight:1.4}}>
+              Upload a photo for each family-member word. Photos are stored on this device only.
+            </p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:8}}>
+              {FAMILY_PHOTO_WORDS.map(word => {
+                const photo = familyPhotos[word];
+                return (
+                  <div key={word} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                    <label style={{cursor:"pointer",position:"relative",width:"100%",aspectRatio:"1/1",borderRadius:12,overflow:"hidden",background:"#fff",border:photo?`2px solid ${RED}`:"2px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {photo ? (
+                        <img src={photo} alt={word} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                      ) : (
+                        <span style={{fontSize:22,color:"#ccc"}}>+</span>
+                      )}
+                      <input type="file" accept="image/*"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(word, f); e.target.value = ""; }}
+                        style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/>
+                    </label>
+                    <div style={{display:"flex",alignItems:"center",gap:4,fontSize:10,fontFamily:"Nunito,sans-serif",fontWeight:800,color:"#666"}}>
+                      <span>{word}</span>
+                      {photo && (
+                        <button onClick={()=>handlePhotoRemove(word)}
+                          style={{background:"none",border:"none",padding:0,cursor:"pointer",color:"#c44",fontSize:12,lineHeight:1}}>×</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {photoError && <p style={{marginTop:8,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:RED}}>{photoError}</p>}
+          </div>
+        )}
 
         {!isNew && onDelete && (
           <button onClick={()=>{
@@ -2638,22 +2799,88 @@ function CategoryMenu({ category, onSelect, onBack }) {
 
 // ── SESSION HEADER ────────────────────────────────────────────────────────────
 
-function SessionHeader({ onBack, index, total, sessionNum, autoPlay, onAutoPlay, extraDots }) {
+// Extract the unique set names present in a deck (used to label the session)
+function uniqueSetNames(cards) {
+  if (!cards || !cards.length) return [];
+  const seen = new Set();
+  const out = [];
+  for (const c of cards) {
+    if (c.setName && !seen.has(c.setName)) {
+      seen.add(c.setName);
+      out.push(c.setName);
+    }
+  }
+  return out;
+}
+
+// Detect portrait orientation on phones so sessions can prompt the user to
+// rotate. We only show the prompt on narrow viewports (mobile) — on tablets
+// and desktops portrait is fine.
+function useIsPhonePortrait() {
+  const [portrait, setPortrait] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(orientation: portrait) and (max-width: 600px)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(orientation: portrait) and (max-width: 600px)");
+    const handler = () => setPortrait(mq.matches);
+    handler();
+    // Safari iOS uses addListener (deprecated), modern uses addEventListener
+    if (mq.addEventListener) mq.addEventListener("change", handler);
+    else if (mq.addListener) mq.addListener(handler);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", handler);
+      else if (mq.removeListener) mq.removeListener(handler);
+    };
+  }, []);
+  return portrait;
+}
+
+function LandscapePrompt({ onDismiss }) {
   return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
-      <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
-      <div style={{display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#ccc"}}>
-          {index+1}/{total}{sessionNum ? ` · session ${sessionNum}/3` : ""}
-        </span>
-        {extraDots}
+    <div style={{position:"fixed",inset:0,background:"#fff",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center"}}>
+      <div style={{fontSize:64,marginBottom:20,animation:"lbRotate 2s ease-in-out infinite"}}>📱</div>
+      <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:0,marginBottom:10}}>Rotate your phone</h2>
+      <p style={{fontFamily:"Nunito,sans-serif",fontSize:14,fontWeight:700,color:"#777",maxWidth:280,lineHeight:1.5,marginTop:0,marginBottom:28}}>
+        Cards look best in landscape so the red word can fill the whole screen.
+      </p>
+      <button onClick={onDismiss} style={{background:"#f5f5f5",border:"none",borderRadius:50,padding:"10px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#666"}}>
+        use portrait anyway
+      </button>
+      <style>{`
+        @keyframes lbRotate {
+          0%, 100% { transform: rotate(0deg); }
+          50% { transform: rotate(90deg); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function SessionHeader({ onBack, index, total, sessionNum, autoPlay, onAutoPlay, extraDots, setNames }) {
+  return (
+    <div style={{borderBottom:"1px solid #f5f5f5"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px 6px"}}>
+        <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#ccc"}}>
+            {index+1}/{total}{sessionNum ? ` · session ${sessionNum}/3` : ""}
+          </span>
+          {extraDots}
+        </div>
+        {onAutoPlay
+          ? <button onClick={onAutoPlay} style={{background:autoPlay?RED:"#f5f5f5",border:"none",borderRadius:18,padding:"6px 14px",cursor:"pointer",color:autoPlay?"#fff":"#666",fontSize:13,fontFamily:"Nunito,sans-serif",fontWeight:800,transition:"all .2s"}}>
+              {autoPlay?"⏸ Auto":"▶ Auto"}
+            </button>
+          : <div style={{width:60}}/>
+        }
       </div>
-      {onAutoPlay
-        ? <button onClick={onAutoPlay} style={{background:autoPlay?RED:"#f5f5f5",border:"none",borderRadius:18,padding:"6px 14px",cursor:"pointer",color:autoPlay?"#fff":"#666",fontSize:13,fontFamily:"Nunito,sans-serif",fontWeight:800,transition:"all .2s"}}>
-            {autoPlay?"⏸ Auto":"▶ Auto"}
-          </button>
-        : <div style={{width:60}}/>
-      }
+      {setNames && setNames.length > 0 && (
+        <div style={{padding:"0 18px 10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#aaa",textAlign:"center",letterSpacing:.3,textTransform:"uppercase"}}>
+          {setNames.join(" • ")}
+        </div>
+      )}
     </div>
   );
 }
@@ -2668,7 +2895,10 @@ function ProgressBar({ index, total }) {
 
 // ── READING SESSION (3-frame Doman: word → photo → word → next) ───────────────
 
-function ReadingSession({ words, language, speechOn, sessionNum, onBack, onComplete }) {
+function ReadingSession({ childId, words, language, speechOn, sessionNum, onBack, onComplete }) {
+  const familyPhotos = useMemo(() => childId ? getFamilyPhotos(childId) : {}, [childId]);
+  const isPhonePortrait = useIsPhonePortrait();
+  const [orientationDismissed, setOrientationDismissed] = useState(false);
   const [cards, setCards]     = useState([]);
   const [translating, setTranslating] = useState(false);
   const [transError, setTransError]   = useState(null);
@@ -2762,7 +2992,9 @@ function ReadingSession({ words, language, speechOn, sessionNum, onBack, onCompl
 
   const card    = cards[idx]||{};
   const wordLen = card.word?.length||0;
-  const wordSize = wordLen>10?50:wordLen>7?64:82;
+  // Substantially larger word size — these are meant to fill the view as big
+  // as possible. Longer words scale down to still fit on screen.
+  const wordSize = wordLen > 14 ? 72 : wordLen > 10 ? 96 : wordLen > 6 ? 128 : 156;
 
   const frameDots = (
     <div style={{display:"flex",gap:5}}>
@@ -2788,12 +3020,14 @@ function ReadingSession({ words, language, speechOn, sessionNum, onBack, onCompl
 
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} extraDots={frameDots}/>
-      {card.setName && (
-        <div style={{textAlign:"center",padding:"4px 0 0",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#bbb",letterSpacing:.5}}>
-          {card.setName}
+      {isPhonePortrait && !orientationDismissed && <LandscapePrompt onDismiss={()=>setOrientationDismissed(true)}/>}
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} extraDots={frameDots} setNames={uniqueSetNames(cards)}/>
+      <div style={{display:"flex",justifyContent:"center",padding:"6px 0 0"}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:7,background:"#FFF0F1",border:`1px solid ${RED}22`,borderRadius:50,padding:"4px 12px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:RED}}>
+          <span style={{fontSize:15,lineHeight:1}}>{flagFor(language)}</span>
+          <span>{language}</span>
         </div>
-      )}
+      </div>
       {transError && <div style={{background:"#FFF0F1",padding:"6px 14px",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:RED,textAlign:"center",wordBreak:"break-word"}}>{transError}</div>}
 
       <div onClick={advance}
@@ -2803,15 +3037,20 @@ function ReadingSession({ words, language, speechOn, sessionNum, onBack, onCompl
 
         {frame===1 && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:18,width:"100%",maxWidth:340}}>
-            <PhotoDisplay
-              emoji={card.emoji}
-              style={{
-                width:"min(300px,82vw)",
-                height:"min(300px,82vw)",
-                borderRadius:22,
-                boxShadow:"0 8px 32px rgba(0,0,0,.14)"
-              }}
-            />
+            {familyPhotos[card.word] ? (
+              <img src={familyPhotos[card.word]} alt=""
+                style={{width:"min(300px,82vw)",height:"min(300px,82vw)",borderRadius:22,boxShadow:"0 8px 32px rgba(0,0,0,.14)",objectFit:"cover"}}/>
+            ) : (
+              <PhotoDisplay
+                emoji={card.emoji}
+                style={{
+                  width:"min(300px,82vw)",
+                  height:"min(300px,82vw)",
+                  borderRadius:22,
+                  boxShadow:"0 8px 32px rgba(0,0,0,.14)"
+                }}
+              />
+            )}
           </div>
         )}
 
@@ -2935,6 +3174,8 @@ function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComp
 // ── ENCYCLOPEDIA SESSION ──────────────────────────────────────────────────────
 
 function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack, onComplete }) {
+  const isPhonePortrait = useIsPhonePortrait();
+  const [orientationDismissed, setOrientationDismissed] = useState(false);
   // Photo-only cards: the baby sees a big photograph, the parent (or the app
   // voice) reads aloud the fact. Each card has 3 facts total — session 1 reads
   // fact[0], session 2 reads fact[1], session 3 reads fact[2].
@@ -3004,12 +3245,14 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
 
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
-      {card.setName && (
-        <div style={{textAlign:"center",padding:"4px 0 0",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#bbb",letterSpacing:.5,textTransform:"uppercase"}}>
-          {card.setName}
+      {isPhonePortrait && !orientationDismissed && <LandscapePrompt onDismiss={()=>setOrientationDismissed(true)}/>}
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} setNames={uniqueSetNames(cards)}/>
+      <div style={{display:"flex",justifyContent:"center",padding:"6px 0 0"}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:7,background:"#FFF0F1",border:`1px solid ${RED}22`,borderRadius:50,padding:"4px 12px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:RED}}>
+          <span style={{fontSize:15,lineHeight:1}}>{flagFor(language)}</span>
+          <span>{language}</span>
         </div>
-      )}
+      </div>
 
       <div onClick={advance}
         style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
@@ -3328,6 +3571,7 @@ export default function App() {
 
   const handleSessionComplete = (category) => {
     if (!activeChildId) return;
+    if (sessionStatus?.isReplay) return;  // replays don't add to today's count
     markSessionComplete(activeChildId, category, language);
   };
 
@@ -3363,6 +3607,11 @@ export default function App() {
           sessionNum={sessionStatus.sessionNum}
           category={prettyCategory}
           onBack={handleBackFromSession}
+          onReplay={(n)=>{
+            // Replay a previously completed session. Override lock and mark as
+            // a replay so completion doesn't add to today's count.
+            setSessionStatus({ sessionNum: n, locked: false, reason: "replay", isReplay: true, secondsUntilReady: 0 });
+          }}
         />
       </>
     );
@@ -3378,9 +3627,9 @@ export default function App() {
       {mode==="menu:knowledge" && <CategoryMenu category="knowledge" onSelect={handleStartSession} onBack={handleBackToHome}/>}
 
       {mode==="progress" && <ProgressScreen child={activeChild} onBack={handleBackToHome}/>}
-      {mode==="reading"  && sessionStatus && <ReadingSession words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
-      {mode==="couplets" && sessionStatus && <ReadingSession words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
-      {mode==="sentences"&& sessionStatus && <ReadingSession words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
+      {mode==="reading"  && sessionStatus && <ReadingSession childId={activeChildId} words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
+      {mode==="couplets" && sessionStatus && <ReadingSession childId={activeChildId} words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
+      {mode==="sentences"&& sessionStatus && <ReadingSession childId={activeChildId} words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
       {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("book")}/>}
       {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
       {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
