@@ -414,6 +414,34 @@ function getDayNumber() {
   }
 }
 
+// Get the day number FOR A SPECIFIC LANGUAGE for a given child. A child learns
+// each language at its own pace — so when they switch to a language they've
+// never used, it should show day 1, not the global day count.
+// We scan the child's session history for the earliest session done in that
+// language across any category, and count from there.
+function getDayNumberForLanguage(childId, language) {
+  try {
+    if (!childId || !language) return 1;
+    const hist = JSON.parse(localStorage.getItem(`lb-history-${childId}`) || "{}");
+    let earliest = null;  // "YYYY-MM-DD" string
+    for (const dateKey of Object.keys(hist)) {
+      const day = hist[dateKey] || {};
+      // keys look like "words:English", "couplets:Korean", etc.
+      const hasThisLang = Object.keys(day).some(k => k.endsWith(`:${language}`));
+      if (hasThisLang) {
+        if (!earliest || dateKey < earliest) earliest = dateKey;
+      }
+    }
+    if (!earliest) return 1;  // Never started this language — day 1
+    const start = new Date(earliest + "T00:00:00");
+    const today = new Date(todayKey() + "T00:00:00");
+    const days = Math.floor((today - start) / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, days);
+  } catch {
+    return 1;
+  }
+}
+
 // ── CHILD PROFILES ───────────────────────────────────────────────────────────
 // Each child has: id, name, emoji, languages (array), createdAt
 // Stored in localStorage as "lb-children" — array of child objects.
@@ -815,12 +843,18 @@ async function translateWords(words, lang) {
     }
 
     // Regular translation path
-    // Try the word as-is, then try a singular form (drop trailing "s" or "es")
-    // so "grapes" finds the "grape" entry, "berries" finds "berry", etc.
+    // Try the word as-is, then try several plural-to-singular fallbacks so
+    // "grapes" finds "grape", "berries" finds "berry", "tomatoes" finds "tomato".
+    // IMPORTANT: try BOTH -s and -es strips (not just one) — "grapes" needs
+    // "grape" (strip -s), but "tomatoes" needs "tomato" (strip -es). Earlier
+    // logic used else-if and missed the "grape" case.
     const lookups = [key];
-    if (key?.endsWith("ies") && key.length > 3) lookups.push(key.slice(0, -3) + "y");
-    else if (key?.endsWith("es") && key.length > 3) lookups.push(key.slice(0, -2));
-    else if (key?.endsWith("s") && key.length > 2) lookups.push(key.slice(0, -1));
+    if (key && key.length > 2) {
+      if (key.endsWith("ies")) lookups.push(key.slice(0, -3) + "y");
+      if (key.endsWith("ves")) lookups.push(key.slice(0, -3) + "f");
+      if (key.endsWith("s"))   lookups.push(key.slice(0, -1));
+      if (key.endsWith("es"))  lookups.push(key.slice(0, -2));
+    }
     let hit = null;
     for (const lk of lookups) {
       hit = CORE_TRANSLATIONS[lk]?.[lang] || EXTRA_TRANSLATIONS[lk]?.[lang];
@@ -1369,6 +1403,68 @@ function translateKnowledgeCard(card, lang) {
 
 // Display titles for knowledge cards. Most ids convert cleanly from snake_case
 // to Title Case, but a few need overrides (acronyms, proper names, flag labels).
+const KNOWLEDGE_TITLE_TRANSLATIONS = {
+  "cleopatra": { "Spanish":"Cleopatra", "French":"Cléopâtre", "German":"Kleopatra", "Italian":"Cleopatra", "Portuguese":"Cleópatra", "Portuguese (Brazil)":"Cleópatra", "Russian":"Клеопатра", "Chinese (Mandarin)":"克利奥帕特拉", "Chinese (Cantonese)":"克麗奧佩特拉", "Japanese":"クレオパトラ", "Korean":"클레오파트라", "Vietnamese":"Cleopatra", "Hebrew":"קלאופטרה", "Arabic":"كليوباترا", "Hindi":"क्लियोपेट्रा", "Thai":"คลีโอพัตรา", "Turkish":"Kleopatra" },
+  "joan_of_arc": { "Spanish":"Juana de Arco", "French":"Jeanne d'Arc", "German":"Jeanne d'Arc", "Italian":"Giovanna d'Arco", "Portuguese":"Joana d'Arc", "Portuguese (Brazil)":"Joana d'Arc", "Russian":"Жанна д'Арк", "Chinese (Mandarin)":"圣女贞德", "Chinese (Cantonese)":"聖女貞德", "Japanese":"ジャンヌ・ダルク", "Korean":"잔 다르크", "Vietnamese":"Jeanne d'Arc", "Hebrew":"ז'אן ד'ארק", "Arabic":"جان دارك", "Hindi":"जोन ऑफ आर्क", "Thai":"โจนออฟอาร์ค", "Turkish":"Jeanne d'Arc" },
+  "queen_victoria": { "Spanish":"Reina Victoria", "French":"Reine Victoria", "German":"Königin Victoria", "Italian":"Regina Vittoria", "Portuguese":"Rainha Vitória", "Portuguese (Brazil)":"Rainha Vitória", "Russian":"Королева Виктория", "Chinese (Mandarin)":"维多利亚女王", "Chinese (Cantonese)":"維多利亞女王", "Japanese":"ヴィクトリア女王", "Korean":"빅토리아 여왕", "Vietnamese":"Nữ hoàng Victoria", "Hebrew":"המלכה ויקטוריה", "Arabic":"الملكة فيكتوريا", "Hindi":"रानी विक्टोरिया", "Thai":"สมเด็จพระราชินีวิกตอเรีย", "Turkish":"Kraliçe Victoria" },
+  "amelia_earhart": { "Spanish":"Amelia Earhart", "French":"Amelia Earhart", "German":"Amelia Earhart", "Italian":"Amelia Earhart", "Portuguese":"Amelia Earhart", "Portuguese (Brazil)":"Amelia Earhart", "Russian":"Амелия Эрхарт", "Chinese (Mandarin)":"阿梅莉亚·埃尔哈特", "Chinese (Cantonese)":"艾美莉亞·艾爾哈特", "Japanese":"アメリア・イアハート", "Korean":"아멜리아 에어하트", "Vietnamese":"Amelia Earhart", "Hebrew":"אמיליה ארהרט", "Arabic":"أميليا إيرهارت", "Hindi":"अमेलिया इयरहार्ट", "Thai":"อะเมเลีย แอร์ฮาร์ต", "Turkish":"Amelia Earhart" },
+  "marie_curie": { "Spanish":"Marie Curie", "French":"Marie Curie", "German":"Marie Curie", "Italian":"Marie Curie", "Portuguese":"Marie Curie", "Portuguese (Brazil)":"Marie Curie", "Russian":"Мария Кюри", "Chinese (Mandarin)":"玛丽·居里", "Chinese (Cantonese)":"瑪麗·居禮", "Japanese":"マリー・キュリー", "Korean":"마리 퀴리", "Vietnamese":"Marie Curie", "Hebrew":"מארי קירי", "Arabic":"ماري كوري", "Hindi":"मैरी क्यूरी", "Thai":"มารี กูว์รี", "Turkish":"Marie Curie" },
+  "italy_flag": { "Spanish":"Bandera de Italia", "French":"Drapeau de l'Italie", "German":"Flagge Italiens", "Italian":"Bandiera dell'Italia", "Portuguese":"Bandeira da Itália", "Portuguese (Brazil)":"Bandeira da Itália", "Russian":"Флаг Италии", "Chinese (Mandarin)":"意大利国旗", "Chinese (Cantonese)":"意大利國旗", "Japanese":"イタリアの国旗", "Korean":"이탈리아 국기", "Vietnamese":"Cờ Ý", "Hebrew":"דגל איטליה", "Arabic":"علم إيطاليا", "Hindi":"इटली का झंडा" },
+  "france_flag": { "Spanish":"Bandera de Francia", "French":"Drapeau de la France", "German":"Flagge Frankreichs", "Italian":"Bandiera della Francia", "Portuguese":"Bandeira da França", "Portuguese (Brazil)":"Bandeira da França", "Russian":"Флаг Франции", "Chinese (Mandarin)":"法国国旗", "Chinese (Cantonese)":"法國國旗", "Japanese":"フランスの国旗", "Korean":"프랑스 국기", "Vietnamese":"Cờ Pháp", "Hebrew":"דגל צרפת", "Arabic":"علم فرنسا", "Hindi":"फ्रांस का झंडा" },
+  "germany_flag": { "Spanish":"Bandera de Alemania", "French":"Drapeau de l'Allemagne", "German":"Flagge Deutschlands", "Italian":"Bandiera della Germania", "Portuguese":"Bandeira da Alemanha", "Portuguese (Brazil)":"Bandeira da Alemanha", "Russian":"Флаг Германии", "Chinese (Mandarin)":"德国国旗", "Chinese (Cantonese)":"德國國旗", "Japanese":"ドイツの国旗", "Korean":"독일 국기", "Vietnamese":"Cờ Đức", "Hebrew":"דגל גרמניה", "Arabic":"علم ألمانيا", "Hindi":"जर्मनी का झंडा" },
+  "spain_flag": { "Spanish":"Bandera de España", "French":"Drapeau de l'Espagne", "German":"Flagge Spaniens", "Italian":"Bandiera della Spagna", "Portuguese":"Bandeira da Espanha", "Portuguese (Brazil)":"Bandeira da Espanha", "Russian":"Флаг Испании", "Chinese (Mandarin)":"西班牙国旗", "Chinese (Cantonese)":"西班牙國旗", "Japanese":"スペインの国旗", "Korean":"스페인 국기", "Vietnamese":"Cờ Tây Ban Nha", "Hebrew":"דגל ספרד", "Arabic":"علم إسبانيا", "Hindi":"स्पेन का झंडा" },
+  "uk_flag": { "Spanish":"Bandera del Reino Unido", "French":"Drapeau du Royaume-Uni", "German":"Flagge des Vereinigten Königreichs", "Italian":"Bandiera del Regno Unito", "Portuguese":"Bandeira do Reino Unido", "Portuguese (Brazil)":"Bandeira do Reino Unido", "Russian":"Флаг Великобритании", "Chinese (Mandarin)":"英国国旗", "Chinese (Cantonese)":"英國國旗", "Japanese":"イギリスの国旗", "Korean":"영국 국기", "Vietnamese":"Cờ Anh", "Hebrew":"דגל בריטניה", "Arabic":"علم المملكة المتحدة", "Hindi":"ब्रिटेन का झंडा" },
+  "eiffel_tower": { "Spanish":"Torre Eiffel", "French":"Tour Eiffel", "German":"Eiffelturm", "Italian":"Torre Eiffel", "Portuguese":"Torre Eiffel", "Portuguese (Brazil)":"Torre Eiffel", "Russian":"Эйфелева башня", "Chinese (Mandarin)":"埃菲尔铁塔", "Chinese (Cantonese)":"艾菲爾鐵塔", "Japanese":"エッフェル塔", "Korean":"에펠탑", "Vietnamese":"Tháp Eiffel", "Hebrew":"מגדל אייפל", "Arabic":"برج إيفل", "Hindi":"एफिल टावर", "Thai":"หอไอเฟล", "Turkish":"Eyfel Kulesi" },
+  "great_wall": { "Spanish":"Gran Muralla China", "French":"Grande Muraille de Chine", "German":"Chinesische Mauer", "Italian":"Grande Muraglia Cinese", "Portuguese":"Grande Muralha da China", "Portuguese (Brazil)":"Grande Muralha da China", "Russian":"Великая Китайская стена", "Chinese (Mandarin)":"长城", "Chinese (Cantonese)":"長城", "Japanese":"万里の長城", "Korean":"만리장성", "Vietnamese":"Vạn Lý Trường Thành", "Hebrew":"החומה הסינית הגדולה", "Arabic":"سور الصين العظيم", "Hindi":"चीन की महान दीवार" },
+  "statue_liberty": { "Spanish":"Estatua de la Libertad", "French":"Statue de la Liberté", "German":"Freiheitsstatue", "Italian":"Statua della Libertà", "Portuguese":"Estátua da Liberdade", "Portuguese (Brazil)":"Estátua da Liberdade", "Russian":"Статуя Свободы", "Chinese (Mandarin)":"自由女神像", "Chinese (Cantonese)":"自由女神像", "Japanese":"自由の女神像", "Korean":"자유의 여신상", "Vietnamese":"Tượng Nữ thần Tự do", "Hebrew":"פסל החירות", "Arabic":"تمثال الحرية", "Hindi":"स्टैच्यू ऑफ लिबर्टी" },
+  "pyramid": { "Spanish":"Pirámides de Egipto", "French":"Pyramides d'Égypte", "German":"Pyramiden von Ägypten", "Italian":"Piramidi d'Egitto", "Portuguese":"Pirâmides do Egito", "Portuguese (Brazil)":"Pirâmides do Egito", "Russian":"Пирамиды Египта", "Chinese (Mandarin)":"埃及金字塔", "Chinese (Cantonese)":"埃及金字塔", "Japanese":"エジプトのピラミッド", "Korean":"이집트 피라미드", "Vietnamese":"Kim tự tháp Ai Cập", "Hebrew":"פירמידות מצרים", "Arabic":"أهرامات مصر", "Hindi":"मिस्र के पिरामिड" },
+  "taj_mahal": { "Spanish":"Taj Mahal", "French":"Taj Mahal", "German":"Taj Mahal", "Italian":"Taj Mahal", "Portuguese":"Taj Mahal", "Portuguese (Brazil)":"Taj Mahal", "Russian":"Тадж-Махал", "Chinese (Mandarin)":"泰姬陵", "Chinese (Cantonese)":"泰姬陵", "Japanese":"タージ・マハル", "Korean":"타지마할", "Vietnamese":"Taj Mahal", "Hebrew":"טאג' מאהל", "Arabic":"تاج محل", "Hindi":"ताज महल" },
+  "labrador": { "Spanish":"Labrador", "French":"Labrador", "German":"Labrador", "Italian":"Labrador", "Portuguese":"Labrador", "Portuguese (Brazil)":"Labrador", "Russian":"Лабрадор", "Chinese (Mandarin)":"拉布拉多", "Chinese (Cantonese)":"拉布拉多", "Japanese":"ラブラドール", "Korean":"래브라도", "Vietnamese":"Labrador", "Hebrew":"לברדור", "Arabic":"لابرادور", "Hindi":"लैब्राडोर" },
+  "poodle": { "Spanish":"Caniche", "French":"Caniche", "German":"Pudel", "Italian":"Barboncino", "Portuguese":"Poodle", "Portuguese (Brazil)":"Poodle", "Russian":"Пудель", "Chinese (Mandarin)":"贵宾犬", "Chinese (Cantonese)":"貴婦狗", "Japanese":"プードル", "Korean":"푸들", "Vietnamese":"Chó Poodle", "Hebrew":"פודל", "Arabic":"البودل", "Hindi":"पूडल" },
+  "bulldog": { "Spanish":"Bulldog", "French":"Bouledogue", "German":"Bulldogge", "Italian":"Bulldog", "Portuguese":"Bulldog", "Portuguese (Brazil)":"Buldogue", "Russian":"Бульдог", "Chinese (Mandarin)":"斗牛犬", "Chinese (Cantonese)":"鬥牛犬", "Japanese":"ブルドッグ", "Korean":"불독", "Vietnamese":"Chó Bulldog", "Hebrew":"בולדוג", "Arabic":"بولدوغ", "Hindi":"बुलडॉग" },
+  "husky": { "Spanish":"Husky", "French":"Husky", "German":"Husky", "Italian":"Husky", "Portuguese":"Husky", "Portuguese (Brazil)":"Husky", "Russian":"Хаски", "Chinese (Mandarin)":"哈士奇", "Chinese (Cantonese)":"哈士奇", "Japanese":"ハスキー", "Korean":"허스키", "Vietnamese":"Husky", "Hebrew":"האסקי", "Arabic":"هاسكي", "Hindi":"हस्की" },
+  "corgi": { "Spanish":"Corgi", "French":"Corgi", "German":"Corgi", "Italian":"Corgi", "Portuguese":"Corgi", "Portuguese (Brazil)":"Corgi", "Russian":"Корги", "Chinese (Mandarin)":"柯基犬", "Chinese (Cantonese)":"哥基犬", "Japanese":"コーギー", "Korean":"코기", "Vietnamese":"Corgi", "Hebrew":"קורגי", "Arabic":"كورجي", "Hindi":"कॉर्गी" },
+  "soccer_ball": { "Spanish":"Balón de fútbol", "French":"Ballon de football", "German":"Fußball", "Italian":"Pallone da calcio", "Portuguese":"Bola de futebol", "Portuguese (Brazil)":"Bola de futebol", "Russian":"Футбольный мяч", "Chinese (Mandarin)":"足球", "Chinese (Cantonese)":"足球", "Japanese":"サッカーボール", "Korean":"축구공", "Vietnamese":"Bóng đá", "Hebrew":"כדורגל", "Arabic":"كرة قدم", "Hindi":"फुटबॉल" },
+  "basketball": { "Spanish":"Pelota de baloncesto", "French":"Ballon de basket", "German":"Basketball", "Italian":"Pallone da basket", "Portuguese":"Bola de basquete", "Portuguese (Brazil)":"Bola de basquete", "Russian":"Баскетбольный мяч", "Chinese (Mandarin)":"篮球", "Chinese (Cantonese)":"籃球", "Japanese":"バスケットボール", "Korean":"농구공", "Vietnamese":"Bóng rổ", "Hebrew":"כדורסל", "Arabic":"كرة السلة", "Hindi":"बास्केटबॉल" },
+  "baseball": { "Spanish":"Pelota de béisbol", "French":"Balle de baseball", "German":"Baseball", "Italian":"Palla da baseball", "Portuguese":"Bola de beisebol", "Portuguese (Brazil)":"Bola de beisebol", "Russian":"Бейсбольный мяч", "Chinese (Mandarin)":"棒球", "Chinese (Cantonese)":"棒球", "Japanese":"野球ボール", "Korean":"야구공", "Vietnamese":"Bóng chày", "Hebrew":"כדור בייסבול", "Arabic":"كرة بيسبول", "Hindi":"बेसबॉल" },
+  "tennis_ball": { "Spanish":"Pelota de tenis", "French":"Balle de tennis", "German":"Tennisball", "Italian":"Pallina da tennis", "Portuguese":"Bola de tênis", "Portuguese (Brazil)":"Bola de tênis", "Russian":"Теннисный мяч", "Chinese (Mandarin)":"网球", "Chinese (Cantonese)":"網球", "Japanese":"テニスボール", "Korean":"테니스공", "Vietnamese":"Bóng tennis", "Hebrew":"כדור טניס", "Arabic":"كرة تنس", "Hindi":"टेनिस बॉल" },
+  "football": { "Spanish":"Pelota de fútbol americano", "French":"Ballon de football américain", "German":"American Football", "Italian":"Pallone da football americano", "Portuguese":"Bola de futebol americano", "Portuguese (Brazil)":"Bola de futebol americano", "Russian":"Мяч для американского футбола", "Chinese (Mandarin)":"美式橄榄球", "Chinese (Cantonese)":"美式欖球", "Japanese":"アメリカンフットボール", "Korean":"미식축구공", "Vietnamese":"Bóng bầu dục", "Hebrew":"כדורגל אמריקאי", "Arabic":"كرة القدم الأمريكية", "Hindi":"अमेरिकी फुटबॉल" },
+  "bald_eagle": { "Spanish":"Águila calva", "French":"Pygargue à tête blanche", "German":"Weißkopfseeadler", "Italian":"Aquila calva", "Portuguese":"Águia-careca", "Portuguese (Brazil)":"Águia-careca", "Russian":"Белоголовый орлан", "Chinese (Mandarin)":"白头海雕", "Chinese (Cantonese)":"白頭海鵰", "Japanese":"ハクトウワシ", "Korean":"흰머리수리", "Vietnamese":"Đại bàng đầu trắng", "Hebrew":"עיט קירח", "Arabic":"النسر الأصلع", "Hindi":"बाल्ड ईगल" },
+  "liberty_bell": { "Spanish":"Campana de la Libertad", "French":"Cloche de la Liberté", "German":"Freiheitsglocke", "Italian":"Campana della Libertà", "Portuguese":"Sino da Liberdade", "Portuguese (Brazil)":"Sino da Liberdade", "Russian":"Колокол Свободы", "Chinese (Mandarin)":"自由钟", "Chinese (Cantonese)":"自由鐘", "Japanese":"自由の鐘", "Korean":"자유의 종", "Vietnamese":"Chuông Tự Do", "Hebrew":"פעמון החירות", "Arabic":"جرس الحرية", "Hindi":"लिबर्टी बेल" },
+  "american_flag": { "Spanish":"Bandera de Estados Unidos", "French":"Drapeau américain", "German":"Flagge der USA", "Italian":"Bandiera degli Stati Uniti", "Portuguese":"Bandeira dos EUA", "Portuguese (Brazil)":"Bandeira dos EUA", "Russian":"Флаг США", "Chinese (Mandarin)":"美国国旗", "Chinese (Cantonese)":"美國國旗", "Japanese":"アメリカの国旗", "Korean":"미국 국기", "Vietnamese":"Cờ Mỹ", "Hebrew":"דגל ארצות הברית", "Arabic":"العلم الأمريكي", "Hindi":"अमेरिकी झंडा" },
+  "white_house": { "Spanish":"Casa Blanca", "French":"Maison-Blanche", "German":"Weißes Haus", "Italian":"Casa Bianca", "Portuguese":"Casa Branca", "Portuguese (Brazil)":"Casa Branca", "Russian":"Белый дом", "Chinese (Mandarin)":"白宫", "Chinese (Cantonese)":"白宮", "Japanese":"ホワイトハウス", "Korean":"백악관", "Vietnamese":"Nhà Trắng", "Hebrew":"הבית הלבן", "Arabic":"البيت الأبيض", "Hindi":"व्हाइट हाउस" },
+  "mt_rushmore": { "Spanish":"Monte Rushmore", "French":"Mont Rushmore", "German":"Mount Rushmore", "Italian":"Monte Rushmore", "Portuguese":"Monte Rushmore", "Portuguese (Brazil)":"Monte Rushmore", "Russian":"Гора Рашмор", "Chinese (Mandarin)":"拉什莫尔山", "Chinese (Cantonese)":"拉什莫爾山", "Japanese":"ラシュモア山", "Korean":"러시모어산", "Vietnamese":"Núi Rushmore", "Hebrew":"הר רשמור", "Arabic":"جبل رشمور", "Hindi":"माउंट रशमोर" },
+  "japan_flag": { "Spanish":"Bandera de Japón", "French":"Drapeau du Japon", "German":"Flagge Japans", "Italian":"Bandiera del Giappone", "Portuguese":"Bandeira do Japão", "Portuguese (Brazil)":"Bandeira do Japão", "Russian":"Флаг Японии", "Chinese (Mandarin)":"日本国旗", "Chinese (Cantonese)":"日本國旗", "Japanese":"日本の国旗", "Korean":"일본 국기", "Vietnamese":"Cờ Nhật Bản", "Hebrew":"דגל יפן", "Arabic":"علم اليابان", "Hindi":"जापान का झंडा" },
+  "china_flag": { "Spanish":"Bandera de China", "French":"Drapeau de la Chine", "German":"Flagge Chinas", "Italian":"Bandiera della Cina", "Portuguese":"Bandeira da China", "Portuguese (Brazil)":"Bandeira da China", "Russian":"Флаг Китая", "Chinese (Mandarin)":"中国国旗", "Chinese (Cantonese)":"中國國旗", "Japanese":"中国の国旗", "Korean":"중국 국기", "Vietnamese":"Cờ Trung Quốc", "Hebrew":"דגל סין", "Arabic":"علم الصين", "Hindi":"चीन का झंडा" },
+  "korea_flag": { "Spanish":"Bandera de Corea del Sur", "French":"Drapeau de la Corée du Sud", "German":"Flagge Südkoreas", "Italian":"Bandiera della Corea del Sud", "Portuguese":"Bandeira da Coreia do Sul", "Portuguese (Brazil)":"Bandeira da Coreia do Sul", "Russian":"Флаг Южной Кореи", "Chinese (Mandarin)":"韩国国旗", "Chinese (Cantonese)":"韓國國旗", "Japanese":"韓国の国旗", "Korean":"대한민국 국기", "Vietnamese":"Cờ Hàn Quốc", "Hebrew":"דגל קוריאה הדרומית", "Arabic":"علم كوريا الجنوبية", "Hindi":"दक्षिण कोरिया का झंडा" },
+  "india_flag": { "Spanish":"Bandera de la India", "French":"Drapeau de l'Inde", "German":"Flagge Indiens", "Italian":"Bandiera dell'India", "Portuguese":"Bandeira da Índia", "Portuguese (Brazil)":"Bandeira da Índia", "Russian":"Флаг Индии", "Chinese (Mandarin)":"印度国旗", "Chinese (Cantonese)":"印度國旗", "Japanese":"インドの国旗", "Korean":"인도 국기", "Vietnamese":"Cờ Ấn Độ", "Hebrew":"דגל הודו", "Arabic":"علم الهند", "Hindi":"भारत का झंडा" },
+  "vietnam_flag": { "Spanish":"Bandera de Vietnam", "French":"Drapeau du Vietnam", "German":"Flagge Vietnams", "Italian":"Bandiera del Vietnam", "Portuguese":"Bandeira do Vietnã", "Portuguese (Brazil)":"Bandeira do Vietnã", "Russian":"Флаг Вьетнама", "Chinese (Mandarin)":"越南国旗", "Chinese (Cantonese)":"越南國旗", "Japanese":"ベトナムの国旗", "Korean":"베트남 국기", "Vietnamese":"Cờ Việt Nam", "Hebrew":"דגל וייטנאם", "Arabic":"علم فيتنام", "Hindi":"वियतनाम का झंडा" },
+  "lion": { "Spanish":"León", "French":"Lion", "German":"Löwe", "Italian":"Leone", "Portuguese":"Leão", "Portuguese (Brazil)":"Leão", "Russian":"Лев", "Chinese (Mandarin)":"狮子", "Chinese (Cantonese)":"獅子", "Japanese":"ライオン", "Korean":"사자", "Vietnamese":"Sư tử", "Hebrew":"אריה", "Arabic":"أسد", "Hindi":"शेर" },
+  "tiger": { "Spanish":"Tigre", "French":"Tigre", "German":"Tiger", "Italian":"Tigre", "Portuguese":"Tigre", "Portuguese (Brazil)":"Tigre", "Russian":"Тигр", "Chinese (Mandarin)":"老虎", "Chinese (Cantonese)":"老虎", "Japanese":"トラ", "Korean":"호랑이", "Vietnamese":"Hổ", "Hebrew":"נמר", "Arabic":"نمر", "Hindi":"बाघ" },
+  "leopard": { "Spanish":"Leopardo", "French":"Léopard", "German":"Leopard", "Italian":"Leopardo", "Portuguese":"Leopardo", "Portuguese (Brazil)":"Leopardo", "Russian":"Леопард", "Chinese (Mandarin)":"豹", "Chinese (Cantonese)":"豹", "Japanese":"ヒョウ", "Korean":"표범", "Vietnamese":"Báo", "Hebrew":"ברדלס", "Arabic":"فهد", "Hindi":"तेंदुआ" },
+  "cheetah": { "Spanish":"Guepardo", "French":"Guépard", "German":"Gepard", "Italian":"Ghepardo", "Portuguese":"Chita", "Portuguese (Brazil)":"Chita", "Russian":"Гепард", "Chinese (Mandarin)":"猎豹", "Chinese (Cantonese)":"獵豹", "Japanese":"チーター", "Korean":"치타", "Vietnamese":"Báo săn", "Hebrew":"ברדלס", "Arabic":"الفهد الصياد", "Hindi":"चीता" },
+  "jaguar": { "Spanish":"Jaguar", "French":"Jaguar", "German":"Jaguar", "Italian":"Giaguaro", "Portuguese":"Onça-pintada", "Portuguese (Brazil)":"Onça-pintada", "Russian":"Ягуар", "Chinese (Mandarin)":"美洲豹", "Chinese (Cantonese)":"美洲豹", "Japanese":"ジャガー", "Korean":"재규어", "Vietnamese":"Báo đốm Mỹ", "Hebrew":"יגואר", "Arabic":"جاكوار", "Hindi":"जगुआर" },
+  "sedan": { "Spanish":"Sedán", "French":"Berline", "German":"Limousine", "Italian":"Berlina", "Portuguese":"Sedan", "Portuguese (Brazil)":"Sedan", "Russian":"Седан", "Chinese (Mandarin)":"轿车", "Chinese (Cantonese)":"房車", "Japanese":"セダン", "Korean":"세단", "Vietnamese":"Xe sedan", "Hebrew":"סדאן", "Arabic":"سيدان", "Hindi":"सेडान" },
+  "suv": { "Spanish":"Todoterreno", "French":"SUV", "German":"SUV", "Italian":"SUV", "Portuguese":"SUV", "Portuguese (Brazil)":"SUV", "Russian":"Внедорожник", "Chinese (Mandarin)":"越野车", "Chinese (Cantonese)":"越野車", "Japanese":"SUV", "Korean":"SUV", "Vietnamese":"Xe SUV", "Hebrew":"רכב שטח", "Arabic":"سيارة دفع رباعي", "Hindi":"एसयूवी" },
+  "sportscar": { "Spanish":"Auto deportivo", "French":"Voiture de sport", "German":"Sportwagen", "Italian":"Auto sportiva", "Portuguese":"Carro esportivo", "Portuguese (Brazil)":"Carro esportivo", "Russian":"Спортивный автомобиль", "Chinese (Mandarin)":"跑车", "Chinese (Cantonese)":"跑車", "Japanese":"スポーツカー", "Korean":"스포츠카", "Vietnamese":"Xe thể thao", "Hebrew":"מכונית ספורט", "Arabic":"سيارة رياضية", "Hindi":"स्पोर्ट्स कार" },
+  "pickup": { "Spanish":"Camioneta", "French":"Pick-up", "German":"Pickup", "Italian":"Pickup", "Portuguese":"Caminhonete", "Portuguese (Brazil)":"Caminhonete", "Russian":"Пикап", "Chinese (Mandarin)":"皮卡", "Chinese (Cantonese)":"皮卡", "Japanese":"ピックアップトラック", "Korean":"픽업 트럭", "Vietnamese":"Xe bán tải", "Hebrew":"טנדר", "Arabic":"شاحنة صغيرة", "Hindi":"पिकअप ट्रक" },
+  "convertible": { "Spanish":"Convertible", "French":"Cabriolet", "German":"Cabrio", "Italian":"Cabrio", "Portuguese":"Conversível", "Portuguese (Brazil)":"Conversível", "Russian":"Кабриолет", "Chinese (Mandarin)":"敞篷车", "Chinese (Cantonese)":"開篷車", "Japanese":"コンバーチブル", "Korean":"컨버터블", "Vietnamese":"Xe mui trần", "Hebrew":"קבריולט", "Arabic":"سيارة قابلة للتحويل", "Hindi":"कन्वर्टिबल" },
+  "mlk": { "Spanish":"Martin Luther King Jr.", "French":"Martin Luther King Jr.", "German":"Martin Luther King Jr.", "Italian":"Martin Luther King Jr.", "Portuguese":"Martin Luther King Jr.", "Portuguese (Brazil)":"Martin Luther King Jr.", "Russian":"Мартин Лютер Кинг-младший", "Chinese (Mandarin)":"马丁·路德·金", "Chinese (Cantonese)":"馬丁·路德·金", "Japanese":"マーティン・ルーサー・キング・ジュニア", "Korean":"마틴 루서 킹 주니어", "Vietnamese":"Martin Luther King Jr.", "Hebrew":"מרטין לותר קינג", "Arabic":"مارتن لوثر كينغ الابن", "Hindi":"मार्टिन लूथर किंग जूनियर" },
+  "gandhi": { "Spanish":"Mahatma Gandhi", "French":"Mahatma Gandhi", "German":"Mahatma Gandhi", "Italian":"Mahatma Gandhi", "Portuguese":"Mahatma Gandhi", "Portuguese (Brazil)":"Mahatma Gandhi", "Russian":"Махатма Ганди", "Chinese (Mandarin)":"圣雄甘地", "Chinese (Cantonese)":"聖雄甘地", "Japanese":"マハトマ・ガンディー", "Korean":"마하트마 간디", "Vietnamese":"Mahatma Gandhi", "Hebrew":"מהטמה גנדי", "Arabic":"المهاتما غاندي", "Hindi":"महात्मा गांधी" },
+  "mandela": { "Spanish":"Nelson Mandela", "French":"Nelson Mandela", "German":"Nelson Mandela", "Italian":"Nelson Mandela", "Portuguese":"Nelson Mandela", "Portuguese (Brazil)":"Nelson Mandela", "Russian":"Нельсон Мандела", "Chinese (Mandarin)":"纳尔逊·曼德拉", "Chinese (Cantonese)":"納爾遜·曼德拉", "Japanese":"ネルソン・マンデラ", "Korean":"넬슨 만델라", "Vietnamese":"Nelson Mandela", "Hebrew":"נלסון מנדלה", "Arabic":"نيلسون مانديلا", "Hindi":"नेल्सन मंडेला" },
+  "mother_teresa": { "Spanish":"Madre Teresa", "French":"Mère Teresa", "German":"Mutter Teresa", "Italian":"Madre Teresa", "Portuguese":"Madre Teresa", "Portuguese (Brazil)":"Madre Teresa", "Russian":"Мать Тереза", "Chinese (Mandarin)":"特蕾莎修女", "Chinese (Cantonese)":"德蘭修女", "Japanese":"マザー・テレサ", "Korean":"마더 테레사", "Vietnamese":"Mẹ Teresa", "Hebrew":"מדר תרזה", "Arabic":"الأم تريزا", "Hindi":"मदर टेरेसा" },
+  "einstein": { "Spanish":"Albert Einstein", "French":"Albert Einstein", "German":"Albert Einstein", "Italian":"Albert Einstein", "Portuguese":"Albert Einstein", "Portuguese (Brazil)":"Albert Einstein", "Russian":"Альберт Эйнштейн", "Chinese (Mandarin)":"阿尔伯特·爱因斯坦", "Chinese (Cantonese)":"愛因斯坦", "Japanese":"アルベルト・アインシュタイン", "Korean":"알베르트 아인슈타인", "Vietnamese":"Albert Einstein", "Hebrew":"אלברט איינשטיין", "Arabic":"ألبرت أينشتاين", "Hindi":"अल्बर्ट आइंस्टीन" },
+  "elephant": { "Spanish":"Elefante", "French":"Éléphant", "German":"Elefant", "Italian":"Elefante", "Portuguese":"Elefante", "Portuguese (Brazil)":"Elefante", "Russian":"Слон", "Chinese (Mandarin)":"大象", "Chinese (Cantonese)":"大象", "Japanese":"ゾウ", "Korean":"코끼리", "Vietnamese":"Voi", "Hebrew":"פיל", "Arabic":"فيل", "Hindi":"हाथी" },
+  "giraffe": { "Spanish":"Jirafa", "French":"Girafe", "German":"Giraffe", "Italian":"Giraffa", "Portuguese":"Girafa", "Portuguese (Brazil)":"Girafa", "Russian":"Жираф", "Chinese (Mandarin)":"长颈鹿", "Chinese (Cantonese)":"長頸鹿", "Japanese":"キリン", "Korean":"기린", "Vietnamese":"Hươu cao cổ", "Hebrew":"ג'ירפה", "Arabic":"زرافة", "Hindi":"जिराफ" },
+  "zebra": { "Spanish":"Cebra", "French":"Zèbre", "German":"Zebra", "Italian":"Zebra", "Portuguese":"Zebra", "Portuguese (Brazil)":"Zebra", "Russian":"Зебра", "Chinese (Mandarin)":"斑马", "Chinese (Cantonese)":"斑馬", "Japanese":"シマウマ", "Korean":"얼룩말", "Vietnamese":"Ngựa vằn", "Hebrew":"זברה", "Arabic":"حمار وحشي", "Hindi":"ज़ेबरा" },
+  "rhinoceros": { "Spanish":"Rinoceronte", "French":"Rhinocéros", "German":"Nashorn", "Italian":"Rinoceronte", "Portuguese":"Rinoceronte", "Portuguese (Brazil)":"Rinoceronte", "Russian":"Носорог", "Chinese (Mandarin)":"犀牛", "Chinese (Cantonese)":"犀牛", "Japanese":"サイ", "Korean":"코뿔소", "Vietnamese":"Tê giác", "Hebrew":"קרנף", "Arabic":"وحيد القرن", "Hindi":"गैंडा" },
+  "sushi": { "Spanish":"Sushi", "French":"Sushi", "German":"Sushi", "Italian":"Sushi", "Portuguese":"Sushi", "Portuguese (Brazil)":"Sushi", "Russian":"Суши", "Chinese (Mandarin)":"寿司", "Chinese (Cantonese)":"壽司", "Japanese":"寿司", "Korean":"초밥", "Vietnamese":"Sushi", "Hebrew":"סושי", "Arabic":"سوشي", "Hindi":"सुशी" },
+  "pizza": { "Spanish":"Pizza", "French":"Pizza", "German":"Pizza", "Italian":"Pizza", "Portuguese":"Pizza", "Portuguese (Brazil)":"Pizza", "Russian":"Пицца", "Chinese (Mandarin)":"披萨", "Chinese (Cantonese)":"薄餅", "Japanese":"ピザ", "Korean":"피자", "Vietnamese":"Pizza", "Hebrew":"פיצה", "Arabic":"بيتزا", "Hindi":"पिज़्ज़ा" },
+  "tacos": { "Spanish":"Tacos", "French":"Tacos", "German":"Tacos", "Italian":"Tacos", "Portuguese":"Tacos", "Portuguese (Brazil)":"Tacos", "Russian":"Тако", "Chinese (Mandarin)":"墨西哥卷饼", "Chinese (Cantonese)":"墨西哥捲餅", "Japanese":"タコス", "Korean":"타코", "Vietnamese":"Bánh tacos", "Hebrew":"טאקוס", "Arabic":"تاكو", "Hindi":"टैकोस" },
+  "curry": { "Spanish":"Curry", "French":"Curry", "German":"Curry", "Italian":"Curry", "Portuguese":"Caril", "Portuguese (Brazil)":"Curry", "Russian":"Карри", "Chinese (Mandarin)":"咖喱", "Chinese (Cantonese)":"咖喱", "Japanese":"カレー", "Korean":"카레", "Vietnamese":"Cà ri", "Hebrew":"קארי", "Arabic":"كاري", "Hindi":"करी" },
+  "croissant": { "Spanish":"Cruasán", "French":"Croissant", "German":"Croissant", "Italian":"Croissant", "Portuguese":"Croissant", "Portuguese (Brazil)":"Croissant", "Russian":"Круассан", "Chinese (Mandarin)":"羊角面包", "Chinese (Cantonese)":"牛角包", "Japanese":"クロワッサン", "Korean":"크루아상", "Vietnamese":"Bánh sừng bò", "Hebrew":"קרואסון", "Arabic":"كرواسون", "Hindi":"क्रोइसैन" },
+};
+
 const KNOWLEDGE_TITLES = {
   // People — full names
   mlk: "Martin Luther King Jr.",
@@ -1436,9 +1532,14 @@ const KNOWLEDGE_TITLES = {
   jeep: "Jeep",
 };
 
-function titleForKnowledge(cardId) {
+function titleForKnowledge(cardId, language) {
+  // Try translated title in the requested language first
+  if (language && language !== "English") {
+    const trans = KNOWLEDGE_TITLE_TRANSLATIONS[cardId]?.[language];
+    if (trans) return trans;
+  }
+  // English (or missing translation) — use override or auto-derived Title Case
   if (KNOWLEDGE_TITLES[cardId]) return KNOWLEDGE_TITLES[cardId];
-  // Auto: snake_case → Title Case
   return cardId
     .split("_")
     .map(w => w.length ? w.charAt(0).toUpperCase() + w.slice(1) : w)
@@ -1455,7 +1556,7 @@ async function fetchDailyKnowledge(child, language) {
     for (const item of s.items) {
       out.push({
         id: item.id,
-        title: titleForKnowledge(item.id),
+        title: titleForKnowledge(item.id, language),
         // Photo URL using picsum.photos as placeholder — seeded by id so same
         // card always shows same photo. TODO: replace with curated photo URLs.
         photoUrl: `https://picsum.photos/seed/${encodeURIComponent(item.id)}/800/600`,
@@ -2744,7 +2845,9 @@ function LanguageLevelSheet({ child, language, onSave, onClose }) {
 }
 
 function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, language, speechOn, onLang, onToggleSpeech, onProgress, onOpenChildren, onAdjustLevel }) {
-  const dayNum = getDayNumber();
+  // Per-language day count — shows day 1 if child has never used this language,
+  // otherwise counts from the first session done in this language.
+  const dayNum = getDayNumberForLanguage(activeChildId, language);
 
   // Determine which categories are available right now.
   // A "category" here maps to what the home tiles offer: reading, math, knowledge.
@@ -2913,8 +3016,10 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
 // the full roadmap of unlocked/upcoming stages.
 
 function CategoryMenu({ category, activeChild, language, words, couplets, sentences, knowledge, onSelect, onBack }) {
-  const dayNum = getDayNumber();
   const lang = language || "English";
+  // Per-language day — a language the child has never touched unlocks stages
+  // based on its own day count, not on how long they've used a different language.
+  const dayNum = getDayNumberForLanguage(activeChild?.id, lang);
 
   // Each category has stages. A stage is "unlocked" if EITHER the day-number
   // passes its unlock threshold OR the parent has explicitly set the child's
@@ -3453,12 +3558,13 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
   const [imgError, setImgError] = useState(false);
 
   // Speak the card title aloud when it appears. Per Doman: photo + word only
-  // in the first months. Facts come later in the program.
+  // in the first months. Facts come later in the program. Speaks in the
+  // current language (title itself is already translated via titleForKnowledge).
   useEffect(() => {
     if (!speechOn || !visible) return;
     const card = cards[idx];
-    if (card?.title) speak(card.title, "English");
-  }, [idx, visible, speechOn, cards]);
+    if (card?.title) speak(card.title, language);
+  }, [idx, visible, speechOn, cards, language]);
 
   const advance = useCallback(() => {
     setVisible(false);
