@@ -48,17 +48,17 @@ const LANGUAGES = [
 // Day 161+   : Mixed equations (both dots and numerals shown)
 
 const MATH_STAGES = [
-  { id:"dots",           label:"Dots",           desc:"Scattered quantities 0–100",       unlockDay:1,   op:null,    showDots:true,  showNumerals:false, isEq:false },
-  { id:"add-dots",       label:"Addition (dots)",      desc:"Adding with dot quantities",       unlockDay:21,  op:"+",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"sub-dots",       label:"Subtraction (dots)",   desc:"Subtracting with dot quantities",  unlockDay:36,  op:"-",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"mul-dots",       label:"Multiplication (dots)",desc:"Multiplying with dot quantities",  unlockDay:51,  op:"×",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"div-dots",       label:"Division (dots)",      desc:"Dividing with dot quantities",     unlockDay:66,  op:"÷",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"numerals",       label:"Numerals",        desc:"Number symbols 0–100",             unlockDay:81,  op:null,    showDots:false, showNumerals:true,  isEq:false },
-  { id:"add-nums",       label:"Addition (numerals)",      desc:"Adding with number symbols",       unlockDay:101, op:"+",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"sub-nums",       label:"Subtraction (numerals)",   desc:"Subtracting with number symbols",  unlockDay:116, op:"-",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"mul-nums",       label:"Multiplication (numerals)",desc:"Multiplying with number symbols",  unlockDay:131, op:"×",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"div-nums",       label:"Division (numerals)",      desc:"Dividing with number symbols",     unlockDay:146, op:"÷",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"eq-both",        label:"Equations (both)",     desc:"Dots and numerals together",       unlockDay:161, op:"mix",   showDots:true,  showNumerals:true,  isEq:true  },
+  { id:"dots",           label:"Dots",                     desc:"dots · range 0–100 · shuffled",              unlockDay:1,   op:null,    showDots:true,  showNumerals:false, isEq:false },
+  { id:"add-dots",       label:"Addition (dots)",          desc:"dot addition · small sums · shuffled",       unlockDay:21,  op:"+",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"sub-dots",       label:"Subtraction (dots)",       desc:"dot subtraction · small · shuffled",         unlockDay:36,  op:"-",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"mul-dots",       label:"Multiplication (dots)",    desc:"dot multiplication · small · shuffled",      unlockDay:51,  op:"×",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"div-dots",       label:"Division (dots)",          desc:"dot division · small · shuffled",            unlockDay:66,  op:"÷",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"numerals",       label:"Numerals",                 desc:"numerals · range 0–100 · shuffled",          unlockDay:81,  op:null,    showDots:false, showNumerals:true,  isEq:false },
+  { id:"add-nums",       label:"Addition (numerals)",      desc:"numeral addition · mixed · shuffled",        unlockDay:101, op:"+",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"sub-nums",       label:"Subtraction (numerals)",   desc:"numeral subtraction · mixed · shuffled",     unlockDay:116, op:"-",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"mul-nums",       label:"Multiplication (numerals)",desc:"numeral multiplication · mixed · shuffled",  unlockDay:131, op:"×",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"div-nums",       label:"Division (numerals)",      desc:"numeral division · mixed · shuffled",        unlockDay:146, op:"÷",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"eq-both",        label:"Equations (both)",         desc:"dots + numerals · all ops · shuffled",       unlockDay:161, op:"mix",   showDots:true,  showNumerals:true,  isEq:true  },
 ];
 
 // Return the single stage the child should be doing today.
@@ -2288,6 +2288,7 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
     couplets:  null,
     sentences: null,
     knowledge: { month: 1, setIdx: 0 },
+    math:      "dots",
   });
   const [editingCat, setEditingCat] = useState(null);  // null | "words" | "couplets" | "sentences" | "knowledge"
   const [familyPhotos, setFamilyPhotosState] = useState(() => child?.id ? getFamilyPhotos(child.id) : {});
@@ -2350,33 +2351,41 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
           + add language
         </button>
 
-        {/* Curriculum position editor — only available on existing profiles (need child data structure) */}
+        {/* Curriculum position editor */}
         <div style={{marginTop:24,padding:"14px 14px 10px",background:"#FAFAFA",borderRadius:16,border:"1px solid #f0f0f0"}}>
           <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:4,letterSpacing:.5,textTransform:"uppercase"}}>Current Learning Position</label>
           <p style={{fontFamily:"Nunito,sans-serif",fontSize:11,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:12,lineHeight:1.4}}>
-            Tap a category to choose which set your child is learning right now.
+            Tap a category to choose your child's current level. Setting a level automatically unlocks that category. Tap "not started" in the picker to deselect.
           </p>
 
           {[
-            { key:"words",     label:"Single Words",  data:WORDS_BY_MONTH,     startsMonth:1, endsMonth:3 },
-            { key:"couplets",  label:"Couplets",      data:COUPLETS_BY_MONTH,  startsMonth:2, endsMonth:2 },
-            { key:"sentences", label:"Sentences",     data:SENTENCES_BY_MONTH, startsMonth:3, endsMonth:3 },
-            { key:"knowledge", label:"Knowledge",     data:KNOWLEDGE_BY_MONTH, startsMonth:1, endsMonth:3 },
+            { key:"words",     type:"sets", label:"Single Words",  data:WORDS_BY_MONTH,     startsMonth:1, endsMonth:3 },
+            { key:"couplets",  type:"sets", label:"Couplets",      data:COUPLETS_BY_MONTH,  startsMonth:2, endsMonth:2 },
+            { key:"sentences", type:"sets", label:"Sentences",     data:SENTENCES_BY_MONTH, startsMonth:3, endsMonth:3 },
+            { key:"knowledge", type:"sets", label:"Knowledge",     data:KNOWLEDGE_BY_MONTH, startsMonth:1, endsMonth:3 },
+            { key:"math",      type:"math", label:"Math",          stages:MATH_STAGES },
           ].map(cat => {
             const pos = position[cat.key];
-            const summary = pos
-              ? `Month ${pos.month}, Set ${pos.setIdx + 1}${
-                  cat.data[pos.month]?.[pos.setIdx]?.name
-                    ? ` — ${cat.data[pos.month][pos.setIdx].name}`
-                    : ""
-                }`
-              : "not started";
+            let summary;
+            if (cat.type === "sets") {
+              summary = pos
+                ? `Month ${pos.month}, Set ${pos.setIdx + 1}${
+                    cat.data[pos.month]?.[pos.setIdx]?.name
+                      ? ` — ${cat.data[pos.month][pos.setIdx].name}`
+                      : ""
+                  }`
+                : "not started";
+            } else {
+              // math: pos is a stageId string
+              const stage = cat.stages.find(s => s.id === pos);
+              summary = stage ? stage.label : "not started";
+            }
             return (
               <button key={cat.key} onClick={()=>setEditingCat(cat)}
                 style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid #eee",borderRadius:12,padding:"10px 12px",cursor:"pointer",marginBottom:6,textAlign:"left"}}>
-                <div style={{flex:1}}>
+                <div style={{flex:1,minWidth:0}}>
                   <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111"}}>{cat.label}</div>
-                  <div style={{fontFamily:"Nunito,sans-serif",fontSize:11,fontWeight:700,color:"#888",marginTop:2}}>{summary}</div>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontSize:11,fontWeight:700,color:"#888",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{summary}</div>
                 </div>
                 <span style={{fontSize:16,color:"#ccc"}}>›</span>
               </button>
@@ -2475,6 +2484,48 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
 // Sheet for picking a specific set within a category. Shows month tabs + a scrollable list
 // of set names so parent can tap their child's current position.
 function PositionPicker({ category, current, onSelect, onClear, onClose }) {
+  const isMath = category.type === "math";
+
+  // Math version: flat list of stages, current is a stageId string
+  if (isMath) {
+    return (
+      <Sheet onClose={onClose}>
+        <div style={{padding:"22px 22px 12px",borderBottom:"1px solid #f0f0f0"}}>
+          <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",margin:0}}>{category.label}</h2>
+          <p style={{fontFamily:"Nunito,sans-serif",fontSize:12,color:"#888",fontWeight:700,marginTop:4,marginBottom:0}}>
+            Which math level is your child currently on?
+          </p>
+        </div>
+        <div style={{overflowY:"auto",flex:1,padding:"14px 14px 8px"}}>
+          {category.stages.map((s) => {
+            const selected = current === s.id;
+            return (
+              <button key={s.id} onClick={()=>onSelect(s.id)}
+                style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:selected?"#FFF0F1":"#fff",border:selected?`2px solid ${RED}`:"1px solid #eee",borderRadius:12,padding:"11px 14px",cursor:"pointer",marginBottom:6,textAlign:"left"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:13,color:selected?RED:"#111"}}>{s.label}</div>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontSize:11,fontWeight:700,color:"#888",marginTop:2}}>{s.desc}</div>
+                </div>
+                {selected && <span style={{color:RED,fontSize:16}}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{padding:"12px 22px 22px",borderTop:"1px solid #f0f0f0",display:"flex",gap:10}}>
+          <button onClick={onClear}
+            style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"11px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#888"}}>
+            not started
+          </button>
+          <button onClick={onClose}
+            style={{flex:1,background:"#fff",border:"2px solid #eee",borderRadius:50,padding:"11px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#666"}}>
+            done
+          </button>
+        </div>
+      </Sheet>
+    );
+  }
+
+  // Sets version (words/couplets/sentences/knowledge): pick month + set index
   const [month, setMonth] = useState(current?.month || category.startsMonth);
   const monthsAvail = [];
   for (let m = category.startsMonth; m <= category.endsMonth; m++) monthsAvail.push(m);
@@ -2625,6 +2676,19 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
       </div>
 
       <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+        {/* Language + speech controls — above the big CTA so parents can see & swap */}
+        <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap",justifyContent:"center"}}>
+          <button onClick={onLang} style={{display:"flex",alignItems:"center",gap:7,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"7px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:RED}}>
+            <span style={{fontSize:16,lineHeight:1}}>{flagFor(language)}</span>
+            <span>{language}</span>
+            <span style={{fontSize:9,opacity:.5}}>▼</span>
+          </button>
+          <button onClick={onToggleSpeech}
+            style={{display:"flex",alignItems:"center",gap:6,background:speechOn?RED:"#f5f5f5",border:`2px solid ${speechOn?RED:"#e8e8e8"}`,borderRadius:50,padding:"7px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:speechOn?"#fff":"#555"}}>
+            {speechOn ? "🔊" : "🔇"}
+          </button>
+        </div>
+
         {/* Primary CTA — smart "next session" button */}
         <button
           onClick={ctaAction || (() => {})}
@@ -2649,17 +2713,6 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
             {ctaSubtitle}
           </div>
         </button>
-
-        {/* Secondary category chooser — smaller tiles showing other options */}
-        <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap",justifyContent:"center"}}>
-          <button onClick={onLang} style={{display:"flex",alignItems:"center",gap:6,background:"#FFF0F1",border:`2px solid ${RED}`,borderRadius:50,padding:"7px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:RED}}>
-            🌍 {language} <span style={{fontSize:9,opacity:.5}}>▼</span>
-          </button>
-          <button onClick={onToggleSpeech}
-            style={{display:"flex",alignItems:"center",gap:6,background:speechOn?RED:"#f5f5f5",border:`2px solid ${speechOn?RED:"#e8e8e8"}`,borderRadius:50,padding:"7px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:speechOn?"#fff":"#555"}}>
-            {speechOn ? "🔊" : "🔇"}
-          </button>
-        </div>
 
         <div style={{width:"100%",maxWidth:380,marginTop:6}}>
           <div style={{fontSize:11,color:"#bbb",fontFamily:"Nunito,sans-serif",fontWeight:800,textAlign:"center",marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>
@@ -2696,28 +2749,39 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
 // Shown after tapping a home-screen category. Displays today's lesson plan +
 // the full roadmap of unlocked/upcoming stages.
 
-function CategoryMenu({ category, onSelect, onBack }) {
+function CategoryMenu({ category, activeChild, words, couplets, sentences, knowledge, onSelect, onBack }) {
   const dayNum = getDayNumber();
 
-  // Each category defines its stages, along with unlock day.
-  // For reading, the categories unlock progressively (single words → couplets → sentences → book).
-  // For math, we use MATH_STAGES.
-  // For knowledge, there's really just one session type but we can show the theme rotation.
-
+  // Each category has stages. A stage is "unlocked" if EITHER the day-number
+  // passes its unlock threshold OR the parent has explicitly set the child's
+  // position for that category (parent knows best).
   let stages = [];
   let categoryIcon = "";
   let categoryLabel = "";
   let categoryColor = "#FFF0F1";
+
+  // Helpers to get set names currently being learned for a given category
+  const descForCards = (cards) => {
+    const names = uniqueSetNames(cards);
+    if (!names.length) return null;
+    return names.join(" · ");
+  };
+  const readingDesc      = descForCards(words)     || "themed vocabulary · 3 sessions a day";
+  const coupletsDesc     = descForCards(couplets)  || "two-word phrases · 3 sessions a day";
+  const sentencesDesc    = descForCards(sentences) || "three-word sentences · 3 a day";
+  const knowledgeDesc    = descForCards(knowledge) || "knowledge categories · 3 sessions a day";
+
+  const hasPos = (key) => activeChild?.position?.[key] != null;
 
   if (category === "reading") {
     categoryIcon = "📖";
     categoryLabel = "Reading";
     categoryColor = "#FFF0F1";
     stages = [
-      { id:"reading",   label:"Single Words",    emoji:"📖", desc:"Themed vocabulary · 3 sessions a day",   unlockDay:1  },
-      { id:"couplets",  label:"Couplets",        emoji:"📝", desc:"Two-word phrases · 3 sessions/day",   unlockDay:31 },
-      { id:"sentences", label:"Sentences",       emoji:"✍️", desc:"Three-word sentences · 3 per day",    unlockDay:61 },
-      { id:"book",      label:"Book",            emoji:"📚", desc:"Read a short story · 3 times/day",    unlockDay:91 },
+      { id:"reading",   label:"Single Words",    emoji:"📖", desc:readingDesc,   unlockDay:1,  posKey:"words"     },
+      { id:"couplets",  label:"Couplets",        emoji:"📝", desc:coupletsDesc,  unlockDay:31, posKey:"couplets"  },
+      { id:"sentences", label:"Sentences",       emoji:"✍️", desc:sentencesDesc, unlockDay:61, posKey:"sentences" },
+      { id:"book",      label:"Book",            emoji:"📚", desc:"read a short story · 3 times a day", unlockDay:91 },
     ];
   } else if (category === "math") {
     categoryIcon = "🔢";
@@ -2725,20 +2789,42 @@ function CategoryMenu({ category, onSelect, onBack }) {
     categoryColor = "#F0F8FF";
     stages = MATH_STAGES.map(s => ({
       id: s.id, label: s.label, desc: s.desc, unlockDay: s.unlockDay,
-      emoji: s.isEq ? "🧮" : (s.showDots ? "🔴" : "🔢")
+      emoji: s.isEq ? "🧮" : (s.showDots ? "🔴" : "🔢"),
+      posKey: "math"  // all math stages share the math position slot
     }));
   } else if (category === "knowledge") {
     categoryIcon = "🌍";
     categoryLabel = "Knowledge";
     categoryColor = "#F0FFF4";
     stages = [
-      { id:"encyclopedia", label:"Knowledge Cards", emoji:"🌍", desc:"Facts across rolling themes · 3 per day",  unlockDay:1 },
+      { id:"encyclopedia", label:"Knowledge Cards", emoji:"🌍", desc:knowledgeDesc, unlockDay:1, posKey:"knowledge" },
     ];
   }
 
+  // A stage is unlocked if: day-based threshold met OR parent set a position for
+  // it. Math unlocks progressively by stage-unlock-day since all math stages
+  // share one posKey — so if parent sets math.dots=true, ALL math stages at
+  // unlockDay<=that stage's unlockDay would unlock... but we only want that
+  // stage and below. So for math, only unlock the specific stage in position.
+  const isUnlocked = (s) => {
+    if (dayNum >= s.unlockDay) return true;
+    if (!s.posKey) return false;
+    // For math: the "math" posKey holds the current stageId — unlock only that
+    // specific stage and earlier (lower unlockDay) ones.
+    if (s.posKey === "math") {
+      const mathStageId = activeChild?.position?.math;  // e.g. "add-dots" or null
+      if (!mathStageId) return false;
+      const setStage = MATH_STAGES.find(ms => ms.id === mathStageId);
+      if (!setStage) return false;
+      return s.unlockDay <= setStage.unlockDay;
+    }
+    // For reading/knowledge: any non-null position unlocks the stage
+    return hasPos(s.posKey);
+  };
+
   // Today's recommended stage = highest unlocked
   let todayStage = stages[0];
-  for (const s of stages) if (dayNum >= s.unlockDay) todayStage = s;
+  for (const s of stages) if (isUnlocked(s)) todayStage = s;
 
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
@@ -2749,14 +2835,13 @@ function CategoryMenu({ category, onSelect, onBack }) {
       </div>
 
       <div style={{flex:1,overflowY:"auto",padding:"20px 20px 32px"}}>
-        {/* Today's lesson card */}
         <div style={{background:categoryColor,border:`2px solid ${RED}`,borderRadius:22,padding:"18px 20px",marginBottom:22,boxShadow:"0 6px 20px rgba(232,25,44,.08)"}}>
           <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:RED,textTransform:"uppercase",letterSpacing:.8,marginBottom:6}}>today's lesson</div>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <span style={{fontSize:44}}>{todayStage.emoji}</span>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",lineHeight:1.1}}>{todayStage.label}</div>
-              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#888",marginTop:2}}>{todayStage.desc}</div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#888",marginTop:2,lineHeight:1.35}}>{todayStage.desc}</div>
             </div>
           </div>
           <button onClick={()=>onSelect(todayStage.id)}
@@ -2765,24 +2850,23 @@ function CategoryMenu({ category, onSelect, onBack }) {
           </button>
         </div>
 
-        {/* Roadmap */}
         {stages.length > 1 && (
           <>
             <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",marginBottom:12,paddingLeft:4}}>roadmap</div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {stages.map(s => {
-                const unlocked = dayNum >= s.unlockDay;
+                const unlocked = isUnlocked(s);
                 const isToday = s.id === todayStage.id;
                 return (
                   <button key={s.id} onClick={()=>unlocked && onSelect(s.id)} disabled={!unlocked}
                     style={{background:isToday?"#FFF0F1":"#fff",border:`2px solid ${isToday?RED:"#f0f0f0"}`,borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,cursor:unlocked?"pointer":"not-allowed",opacity:unlocked?1:0.55,textAlign:"left"}}>
                     <span style={{fontSize:28,filter:unlocked?"none":"grayscale(1)"}}>{s.emoji}</span>
-                    <div style={{flex:1}}>
+                    <div style={{flex:1,minWidth:0}}>
                       <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:unlocked?"#111":"#999"}}>
                         {s.label} {!unlocked && <span style={{fontSize:11}}>🔒</span>}
                       </div>
-                      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#aaa",marginTop:2}}>
-                        {unlocked ? s.desc : `unlocks at day ${s.unlockDay}`}
+                      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#aaa",marginTop:2,lineHeight:1.35}}>
+                        {unlocked ? s.desc : `unlocks at day ${s.unlockDay} (or set child's level in profile)`}
                       </div>
                     </div>
                     {unlocked && <span style={{fontSize:16,color:"#ccc"}}>›</span>}
@@ -3021,13 +3105,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, onBack
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
       {isPhonePortrait && !orientationDismissed && <LandscapePrompt onDismiss={()=>setOrientationDismissed(true)}/>}
-      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} extraDots={frameDots} setNames={uniqueSetNames(cards)}/>
-      <div style={{display:"flex",justifyContent:"center",padding:"6px 0 0"}}>
-        <div style={{display:"inline-flex",alignItems:"center",gap:7,background:"#FFF0F1",border:`1px solid ${RED}22`,borderRadius:50,padding:"4px 12px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:RED}}>
-          <span style={{fontSize:15,lineHeight:1}}>{flagFor(language)}</span>
-          <span>{language}</span>
-        </div>
-      </div>
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} extraDots={frameDots}/>
       {transError && <div style={{background:"#FFF0F1",padding:"6px 14px",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:RED,textAlign:"center",wordBreak:"break-word"}}>{transError}</div>}
 
       <div onClick={advance}
@@ -3246,13 +3324,7 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
       {isPhonePortrait && !orientationDismissed && <LandscapePrompt onDismiss={()=>setOrientationDismissed(true)}/>}
-      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} setNames={uniqueSetNames(cards)}/>
-      <div style={{display:"flex",justifyContent:"center",padding:"6px 0 0"}}>
-        <div style={{display:"inline-flex",alignItems:"center",gap:7,background:"#FFF0F1",border:`1px solid ${RED}22`,borderRadius:50,padding:"4px 12px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:RED}}>
-          <span style={{fontSize:15,lineHeight:1}}>{flagFor(language)}</span>
-          <span>{language}</span>
-        </div>
-      </div>
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
 
       <div onClick={advance}
         style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
@@ -3622,9 +3694,9 @@ export default function App() {
       <style>{baseStyles}</style>
       {mode===null       && <HomeScreen activeChild={activeChild} activeChildId={activeChildId} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)}/>}
 
-      {mode==="menu:reading"   && <CategoryMenu category="reading"   onSelect={handleStartSession} onBack={handleBackToHome}/>}
-      {mode==="menu:math"      && <CategoryMenu category="math"      onSelect={handleStartSession} onBack={handleBackToHome}/>}
-      {mode==="menu:knowledge" && <CategoryMenu category="knowledge" onSelect={handleStartSession} onBack={handleBackToHome}/>}
+      {mode==="menu:reading"   && <CategoryMenu category="reading"   activeChild={activeChild} words={dailyWords} couplets={dailyCouplets} sentences={dailySentences} onSelect={handleStartSession} onBack={handleBackToHome}/>}
+      {mode==="menu:math"      && <CategoryMenu category="math"      activeChild={activeChild} onSelect={handleStartSession} onBack={handleBackToHome}/>}
+      {mode==="menu:knowledge" && <CategoryMenu category="knowledge" activeChild={activeChild} knowledge={dailyKnow} onSelect={handleStartSession} onBack={handleBackToHome}/>}
 
       {mode==="progress" && <ProgressScreen child={activeChild} onBack={handleBackToHome}/>}
       {mode==="reading"  && sessionStatus && <ReadingSession childId={activeChildId} words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
