@@ -876,6 +876,40 @@ function getHistory(childId) {
   } catch { return {}; }
 }
 
+// ── AGE HELPERS ───────────────────────────────────────────────────────────────
+// Given a YYYY-MM-DD birthdate string and an optional reference date, compute
+// the child's age. Returns null if birthdate missing/invalid. Returns a small
+// object {days, weeks, months, label} where `label` is the best human-readable
+// summary for the progress screen (e.g. "3 weeks", "11 months", "16 months").
+
+function ageFromBirthdate(birthdate, refDate) {
+  if (!birthdate) return null;
+  try {
+    const bd = new Date(birthdate + "T00:00:00");
+    if (isNaN(bd.getTime())) return null;
+    const ref = refDate instanceof Date ? refDate : new Date();
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const days = Math.floor((ref - bd) / msPerDay);
+    if (days < 0) return null;
+    const weeks = Math.floor(days / 7);
+    // Months via calendar math (approximate but stable for milestones)
+    let months = (ref.getFullYear() - bd.getFullYear()) * 12 + (ref.getMonth() - bd.getMonth());
+    if (ref.getDate() < bd.getDate()) months -= 1;
+    months = Math.max(0, months);
+    let label;
+    if (weeks < 12) {
+      label = weeks === 1 ? "1 week old" : `${weeks} weeks old`;
+    } else if (months < 24) {
+      label = months === 1 ? "1 month old" : `${months} months old`;
+    } else {
+      const years = Math.floor(months / 12);
+      const remM = months % 12;
+      label = remM === 0 ? `${years} years old` : `${years}y ${remM}m old`;
+    }
+    return { days, weeks, months, label };
+  } catch { return null; }
+}
+
 // Compute streak (consecutive days with at least one session of any kind)
 function computeStreak(hist) {
   if (!hist) return 0;
@@ -2042,7 +2076,14 @@ function ProgressScreen({ child, onBack }) {
         <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
         <div style={{textAlign:"center"}}>
           <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:18,color:"#111",margin:0}}>Progress</h2>
-          {child && <p style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#aaa",margin:"2px 0 0"}}>{child.emoji} {child.name}</p>}
+          {child && (
+            <p style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#aaa",margin:"2px 0 0"}}>
+              {child.emoji} {child.name}
+              {ageFromBirthdate(child.birthdate) && (
+                <span style={{color:RED}}> · {ageFromBirthdate(child.birthdate).label}</span>
+              )}
+            </p>
+          )}
         </div>
         <div style={{width:38}}/>
       </div>
@@ -2068,6 +2109,7 @@ function ProgressScreen({ child, onBack }) {
             {(() => {
               const vocab = countUniqueWordsExposed(hist);
               const milestone = cefrForVocabCount(vocab);
+              const age = ageFromBirthdate(child?.birthdate);
               return (
                 <div style={{marginBottom:22,background:"linear-gradient(135deg,#FFF0F1 0%,#FFE4E6 100%)",border:`2px solid ${RED}`,borderRadius:18,padding:"16px 18px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
@@ -2081,6 +2123,11 @@ function ProgressScreen({ child, onBack }) {
                       <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#aaa",textTransform:"uppercase",letterSpacing:.5}}>words</div>
                     </div>
                   </div>
+                  {age && child?.name && vocab > 0 && (
+                    <div style={{marginTop:10,padding:"10px 12px",background:"#fff",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#444",textAlign:"center",lineHeight:1.35}}>
+                      ✨ {child.name} has learned <span style={{color:RED}}>{vocab}</span> words at <span style={{color:RED}}>{age.label.replace(" old","")}</span>!
+                    </div>
+                  )}
                   <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#999",lineHeight:1.4,marginTop:8,fontStyle:"italic"}}>
                     Vocabulary exposure mapped to CEFR vocabulary-size thresholds. Not a formal assessment.
                   </div>
@@ -2701,6 +2748,7 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
   const [name, setName] = useState(child?.name || "");
   const [emoji, setEmoji] = useState(child?.emoji || CHILD_EMOJIS[0]);
   const [langs, setLangs] = useState(child?.languages || ["English"]);
+  const [birthdate, setBirthdate] = useState(child?.birthdate || "");
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [familyPhotos, setFamilyPhotosState] = useState(() => child?.id ? getFamilyPhotos(child.id) : {});
   const [photoError, setPhotoError] = useState("");
@@ -2739,6 +2787,13 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
         <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Name</label>
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="Name"
           style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"2px solid #eee",fontSize:15,fontFamily:"Nunito,sans-serif",fontWeight:700,outline:"none",boxSizing:"border-box",marginBottom:14}}/>
+
+        <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Birthdate</label>
+        <input type="date" value={birthdate} onChange={e=>setBirthdate(e.target.value)} max={new Date().toISOString().slice(0,10)}
+          style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"2px solid #eee",fontSize:15,fontFamily:"Nunito,sans-serif",fontWeight:700,outline:"none",boxSizing:"border-box",marginBottom:6,color:birthdate?"#111":"#999"}}/>
+        <p style={{fontFamily:"Nunito,sans-serif",fontSize:10,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:14,lineHeight:1.4}}>
+          Used to show your child's real age alongside their progress (e.g., "148 words at 16 months").
+        </p>
 
         <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Avatar</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
@@ -2829,6 +2884,7 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
             onSave({
               id: child?.id || newChildId(),
               name: name.trim(), emoji, languages: langs.length ? langs : ["English"],
+              birthdate: birthdate || null,
               // Preserve whatever position data already exists — position is
               // now edited from the home screen per-language, not here.
               position: child?.position,
@@ -3068,7 +3124,9 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
 
   const tips = [
     { emoji:"✨", title:"Babies are truly limitless.", body:"Start from any age — the earlier the better, but it's never too late." },
-    { emoji:"🌍", title:"Finish Sentences in one language before starting a new one.", body:"Once your child reaches the Sentences stage, they can keep reading books in that language while you begin introducing a new language." },
+    { emoji:"🍼", title:"Start red words as early as 12 weeks old.", body:"By three months, babies can focus on large red words at close range. This is the ideal time to begin Reading sessions." },
+    { emoji:"🎂", title:"Add your baby's birthday.", body:"We'll track your child's real age alongside their progress — so you can see milestones like \"148 words at 16 months\" in the progress report." },
+    { emoji:"🌍", title:"Finish Sentences before starting a new language.", body:"Once your child has finished (not just reached) the Sentences stage, they can keep reading books in that language while you begin introducing a new one." },
     { emoji:"📅", title:"Aim for 9 sessions a day.", body:"Three Reading + three Math + three Knowledge sessions, with 5-minute breaks between each. If that's too much today — no pressure." },
     { emoji:"💛", title:"If a day slips by, no worries.", body:"You're already far ahead just by having this tool in your hand. Consistency over intensity." },
     { emoji:"🎉", title:"Make every session joyous.", body:"This is supposed to be fun. Smile, cheer, be silly. If they're tired or fussy, stop and try again later." },
@@ -3148,25 +3206,33 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
         {tab === "about" && (
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={{padding:"18px 18px",background:"#FFF8F8",border:`1px solid ${RED}22`,borderRadius:14}}>
-              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:17,color:"#111",lineHeight:1.3,marginBottom:10}}>
-                Created by Olivia, a UC Berkeley linguist and Columbia MBA
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:19,color:"#111",lineHeight:1.25,marginBottom:4}}>
+                Created by Olivia Thai Martinez
+              </div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#888",letterSpacing:.3,marginBottom:12}}>
+                UC Berkeley Linguistics · Columbia Business School
               </div>
               <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#444",lineHeight:1.6}}>
-                Limitless Babies was built for Olivia's own twins, <strong>Callisto &amp; Elara</strong>.
-                <br/><br/>
-                Elara started signing at <strong>6 weeks</strong>. Callisto said his first word at <strong>2 months</strong>. By <strong>4 months</strong>, both were using words across <strong>4 languages</strong>. By <strong>6 months</strong>, they could identify written words — shown the words <em>"gato"</em> and <em>"hola,"</em> they consistently chose the right one.
-                <br/><br/>
-                Today, Callisto &amp; Elara are actively exposed to <strong>20 languages</strong>, along with a math program, encyclopedic knowledge, and a perfect pitch music program Olivia developed from her 12 years of teaching music.
+                Limitless Babies draws inspiration from several different early-learning methods — but it isn't exactly like any one in particular. It's an intentional blend designed around what actually works for real families raising multilingual babies, shaped by Olivia's years of teaching, raising her own twins Callisto &amp; Elara in 20 languages, and the emerging research on how young brains absorb language, music, and knowledge.
               </div>
             </div>
-            <div style={{padding:"14px 16px",background:"#F6F8FC",borderRadius:12}}>
-              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:6}}>
-                Babies are truly limitless.
+
+            <div style={{padding:"14px 16px",background:"#F6F8FC",borderRadius:14}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:8}}>
+                📚 Recommended reading
               </div>
-              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#666",lineHeight:1.55}}>
-                This app exists to share a curriculum that started as one mom's "insane" experiment — and turned out to work.
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#555",lineHeight:1.55,marginBottom:10}}>
+                Books that pair beautifully with this app — curated companion reading for parents who want to go deeper.
+              </div>
+              <a href="https://amzn.to/48crb3C" target="_blank" rel="noopener noreferrer"
+                style={{display:"inline-block",background:RED,color:"#fff",borderRadius:50,padding:"8px 16px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,textDecoration:"none"}}>
+                view companion books →
+              </a>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",lineHeight:1.4,marginTop:8,fontStyle:"italic"}}>
+                Amazon affiliate link — purchases support ongoing development of this app.
               </div>
             </div>
+
             <div style={{padding:"12px 14px",textAlign:"center",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",lineHeight:1.5}}>
               Developed with the help of Anthropic's Claude.
             </div>
@@ -3931,7 +3997,7 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
   const cards = notes.map(n => ({ note: n, label: noteDisplayLabel(n) }));
 
   const [idx, setIdx] = useState(0);
-  const [autoPlay, setAutoPlay] = useState(true);
+  const [autoPlay, setAutoPlay] = useState(false);
   const [visible, setVisible] = useState(true);
   const advanceTimerRef = useRef(null);
 
