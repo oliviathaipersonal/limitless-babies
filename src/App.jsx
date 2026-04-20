@@ -1546,6 +1546,24 @@ function titleForKnowledge(cardId, language) {
     .join(" ");
 }
 
+// Curated photo URLs for knowledge cards — keyed by card id. When populated,
+// takes priority over the picsum.photos placeholder. URLs are expected to be
+// publicly accessible (Wikipedia Commons, etc.). Empty entries or missing keys
+// fall through to picsum.
+const KNOWLEDGE_PHOTO_URLS = {
+  // Epic Historical Women
+  cleopatra:      "https://upload.wikimedia.org/wikipedia/commons/3/3e/Kleopatra-VII.-Altes-Museum-Berlin1.jpg",
+  joan_of_arc:    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Joan_of_Arc_miniature_graded.jpg/500px-Joan_of_Arc_miniature_graded.jpg",
+  queen_victoria: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Queen_Victoria_by_Bassano.jpg/500px-Queen_Victoria_by_Bassano.jpg",
+  amelia_earhart: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Amelia_Earhart_standing_under_nose_of_her_Lockheed_Model_10-E_Electra%2C_small_%28cropped%29.jpg/500px-Amelia_Earhart_standing_under_nose_of_her_Lockheed_Model_10-E_Electra%2C_small_%28cropped%29.jpg",
+  marie_curie:    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Marie_Curie_c._1920s.jpg/500px-Marie_Curie_c._1920s.jpg",
+};
+
+function photoUrlForKnowledge(cardId) {
+  return KNOWLEDGE_PHOTO_URLS[cardId] ||
+    `https://picsum.photos/seed/${encodeURIComponent(cardId)}/800/600`;
+}
+
 async function fetchDailyKnowledge(child, language) {
   const pos = getChildPosition(child, "knowledge", language);
   if (!pos) return [];
@@ -1557,9 +1575,8 @@ async function fetchDailyKnowledge(child, language) {
       out.push({
         id: item.id,
         title: titleForKnowledge(item.id, language),
-        // Photo URL using picsum.photos as placeholder — seeded by id so same
-        // card always shows same photo. TODO: replace with curated photo URLs.
-        photoUrl: `https://picsum.photos/seed/${encodeURIComponent(item.id)}/800/600`,
+        // Curated Wikipedia Commons URL if available, else picsum placeholder.
+        photoUrl: photoUrlForKnowledge(item.id),
         setName: s.name,
         setId: s.id,
         // Three facts per card, shown in sessions 1/2/3 respectively.
