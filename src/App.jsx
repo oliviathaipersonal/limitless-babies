@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   WORD_SETS, EXTRA_TRANSLATIONS, KNOWLEDGE_SETS,
   COUPLET_SETS, SENTENCE_SETS, SAMPLE_BOOK,
