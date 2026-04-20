@@ -71,6 +71,142 @@ function getTodayMathStage(dayNum) {
   return current;
 }
 
+// ── MUSIC: PERFECT PITCH PROGRAM ──────────────────────────────────────────────
+// A perfect-pitch training curriculum developed by Olivia from 12 years of
+// music teaching. Children hear + see note names while the app plays the tone.
+// Progression follows the circle of fifths: each "scale" is one week of work,
+// with three session variants per day:
+//   Session 1 — major scale, ascending in order
+//   Session 2 — relative minor (different register)
+//   Session 3 — shuffled notes from the major scale
+// Scales stay within a young child's singing range (roughly A3–E5).
+// Notes are named in English letters (C, D, E…) initially; solfège + intervals
+// + chords come later in the program.
+
+const MUSIC_SCALES = [
+  { id:"c-major",      weekNum:1,  majorLabel:"C Major",  majorNotes:["C4","D4","E4","F4","G4","A4","B4","C5"],   minorLabel:"A Minor",  minorNotes:["A3","B3","C4","D4","E4","F4","G4","A4"] },
+  { id:"g-major",      weekNum:2,  majorLabel:"G Major",  majorNotes:["G3","A3","B3","C4","D4","E4","F#4","G4"],  minorLabel:"E Minor",  minorNotes:["E4","F#4","G4","A4","B4","C5","D5","E5"] },
+  { id:"d-major",      weekNum:3,  majorLabel:"D Major",  majorNotes:["D4","E4","F#4","G4","A4","B4","C#5","D5"], minorLabel:"B Minor",  minorNotes:["B3","C#4","D4","E4","F#4","G4","A4","B4"] },
+  { id:"a-major",      weekNum:4,  majorLabel:"A Major",  majorNotes:["A3","B3","C#4","D4","E4","F#4","G#4","A4"], minorLabel:"F# Minor", minorNotes:["F#4","G#4","A4","B4","C#5","D5","E5","F#5"] },
+  { id:"e-major",      weekNum:5,  majorLabel:"E Major",  majorNotes:["E4","F#4","G#4","A4","B4","C#5","D#5","E5"], minorLabel:"C# Minor", minorNotes:["C#4","D#4","E4","F#4","G#4","A4","B4","C#5"] },
+  { id:"b-major",      weekNum:6,  majorLabel:"B Major",  majorNotes:["B3","C#4","D#4","E4","F#4","G#4","A#4","B4"], minorLabel:"G# Minor", minorNotes:["G#3","A#3","B3","C#4","D#4","E4","F#4","G#4"] },
+  { id:"fsharp-major", weekNum:7,  majorLabel:"F# Major", majorNotes:["F#4","G#4","A#4","B4","C#5","D#5","F5","F#5"], minorLabel:"D# Minor", minorNotes:["D#4","F4","F#4","G#4","A#4","B4","C#5","D#5"] },
+  { id:"db-major",     weekNum:8,  majorLabel:"Db Major", majorNotes:["Db4","Eb4","F4","Gb4","Ab4","Bb4","C5","Db5"], minorLabel:"Bb Minor", minorNotes:["Bb3","C4","Db4","Eb4","F4","Gb4","Ab4","Bb4"] },
+  { id:"ab-major",     weekNum:9,  majorLabel:"Ab Major", majorNotes:["Ab3","Bb3","C4","Db4","Eb4","F4","G4","Ab4"], minorLabel:"F Minor",  minorNotes:["F4","G4","Ab4","Bb4","C5","Db5","Eb5","F5"] },
+  { id:"eb-major",     weekNum:10, majorLabel:"Eb Major", majorNotes:["Eb4","F4","G4","Ab4","Bb4","C5","D5","Eb5"],  minorLabel:"C Minor",  minorNotes:["C4","D4","Eb4","F4","G4","Ab4","Bb4","C5"] },
+  { id:"bb-major",     weekNum:11, majorLabel:"Bb Major", majorNotes:["Bb3","C4","D4","Eb4","F4","G4","A4","Bb4"],   minorLabel:"G Minor",  minorNotes:["G3","A3","Bb3","C4","D4","Eb4","F4","G4"] },
+  { id:"f-major",      weekNum:12, majorLabel:"F Major",  majorNotes:["F4","G4","A4","Bb4","C5","D5","E5","F5"],    minorLabel:"D Minor",  minorNotes:["D4","E4","F4","G4","A4","Bb4","C5","D5"] },
+];
+
+// Human-readable short labels for note names shown on-screen. Strips the octave
+// number and renders sharps/flats as glyphs for a cleaner look.
+function noteDisplayLabel(note) {
+  const m = note.match(/^([A-G])([#b]?)\d$/);
+  if (!m) return note;
+  return m[1] + (m[2] === "#" ? "♯" : m[2] === "b" ? "♭" : "");
+}
+
+// Convert a scientific pitch name (e.g. "C4", "F#4", "Bb3") to a frequency in
+// Hertz. Uses A4 = 440Hz as the reference.
+function noteToFrequency(note) {
+  const m = note.match(/^([A-G])([#b]?)(-?\d)$/);
+  if (!m) return 440;
+  const letter = m[1];
+  const accidental = m[2];
+  const octave = parseInt(m[3], 10);
+  const semitoneOffsets = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+  const accShift = accidental === "#" ? 1 : accidental === "b" ? -1 : 0;
+  const midi = 12 * (octave + 1) + semitoneOffsets[letter] + accShift;
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+// Lazy-create a single AudioContext. Browsers (especially iOS Safari) require
+// the first AudioContext to be created in response to a user gesture, so we
+// defer creation until the first call to playTone().
+let _audioCtx = null;
+function getAudioCtx() {
+  if (_audioCtx) return _audioCtx;
+  const Ctx = (typeof window !== "undefined") && (window.AudioContext || window.webkitAudioContext);
+  if (!Ctx) return null;
+  try { _audioCtx = new Ctx(); } catch { return null; }
+  return _audioCtx;
+}
+
+// Play a single note with a soft piano-ish timbre using additive synthesis.
+// Stack: triangle fundamental + sine octave-overtone + sine perfect-fifth,
+// all through a low-pass filter and a master ADSR envelope.
+function playTone(noteName, durationMs = 900) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === "suspended") { try { ctx.resume(); } catch {} }
+  const freq = noteToFrequency(noteName);
+  const now = ctx.currentTime;
+  const durS = durationMs / 1000;
+  const releaseS = 0.35;
+  const attackS = 0.008;
+  const decayS = 0.15;
+  const sustainEnd = Math.max(attackS + decayS + 0.05, durS - releaseS);
+
+  // Master envelope
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0, now);
+  master.gain.linearRampToValueAtTime(0.32, now + attackS);
+  master.gain.exponentialRampToValueAtTime(0.15, now + attackS + decayS);
+  master.gain.setValueAtTime(0.15, now + sustainEnd);
+  master.gain.exponentialRampToValueAtTime(0.0001, now + sustainEnd + releaseS);
+  master.connect(ctx.destination);
+
+  // Low-pass filter for warmth
+  const filter = ctx.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(3500, now);
+  filter.Q.value = 0.5;
+  filter.connect(master);
+
+  // Fundamental — triangle wave (warm, flute-like without harshness)
+  const osc1 = ctx.createOscillator();
+  osc1.type = "triangle";
+  osc1.frequency.value = freq;
+  const g1 = ctx.createGain(); g1.gain.value = 0.7;
+  osc1.connect(g1); g1.connect(filter);
+  osc1.start(now); osc1.stop(now + sustainEnd + releaseS + 0.1);
+
+  // Octave overtone — sine (adds bell-like richness)
+  const osc2 = ctx.createOscillator();
+  osc2.type = "sine";
+  osc2.frequency.value = freq * 2;
+  const g2 = ctx.createGain(); g2.gain.value = 0.22;
+  osc2.connect(g2); g2.connect(filter);
+  osc2.start(now); osc2.stop(now + sustainEnd + releaseS + 0.1);
+
+  // Perfect fifth — sine (body)
+  const osc3 = ctx.createOscillator();
+  osc3.type = "sine";
+  osc3.frequency.value = freq * 1.5;
+  const g3 = ctx.createGain(); g3.gain.value = 0.1;
+  osc3.connect(g3); g3.connect(filter);
+  osc3.start(now); osc3.stop(now + sustainEnd + releaseS + 0.1);
+}
+
+// Resolve the "today" music content for a child in a given language.
+// Returns { stageId, scale, sessionType: "major"|"minor"|"shuffled", notes, label }
+// sessionType depends on which of today's 3 sessions the child is on.
+function getMusicContent(child, language, sessionNum) {
+  // Child's current music stage — positions are per-language (same pattern as math).
+  const lang = language || "English";
+  const allPos = migratePosition(child?.position);
+  const stageId = allPos[lang]?.music || MUSIC_SCALES[0].id;
+  const scale = MUSIC_SCALES.find(s => s.id === stageId) || MUSIC_SCALES[0];
+
+  if (sessionNum === 2) {
+    return { stageId: scale.id, scale, sessionType: "minor", notes: scale.minorNotes, label: scale.minorLabel };
+  }
+  if (sessionNum === 3) {
+    return { stageId: scale.id, scale, sessionType: "shuffled", notes: shuffle(scale.majorNotes), label: scale.majorLabel + " (shuffled)" };
+  }
+  return { stageId: scale.id, scale, sessionType: "major", notes: scale.majorNotes, label: scale.majorLabel };
+}
+
 const RED   = "#E8192C";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
@@ -1551,12 +1687,66 @@ function titleForKnowledge(cardId, language) {
 // publicly accessible (Wikipedia Commons, etc.). Empty entries or missing keys
 // fall through to picsum.
 const KNOWLEDGE_PHOTO_URLS = {
-  // Epic Historical Women
-  cleopatra:      "https://upload.wikimedia.org/wikipedia/commons/3/3e/Kleopatra-VII.-Altes-Museum-Berlin1.jpg",
-  joan_of_arc:    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Joan_of_Arc_miniature_graded.jpg/500px-Joan_of_Arc_miniature_graded.jpg",
+  cleopatra: "https://upload.wikimedia.org/wikipedia/commons/3/3e/Kleopatra-VII.-Altes-Museum-Berlin1.jpg",
+  joan_of_arc: "https://i.natgeofe.com/k/f1c570bf-a993-432e-bcc8-13e58d1d13c2/joan-of-arc-profile_16x9.jpg",
   queen_victoria: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Queen_Victoria_by_Bassano.jpg/500px-Queen_Victoria_by_Bassano.jpg",
   amelia_earhart: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Amelia_Earhart_standing_under_nose_of_her_Lockheed_Model_10-E_Electra%2C_small_%28cropped%29.jpg/500px-Amelia_Earhart_standing_under_nose_of_her_Lockheed_Model_10-E_Electra%2C_small_%28cropped%29.jpg",
-  marie_curie:    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Marie_Curie_c._1920s.jpg/500px-Marie_Curie_c._1920s.jpg",
+  marie_curie: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Marie_Curie_c._1920s.jpg/500px-Marie_Curie_c._1920s.jpg",
+  mlk: "https://upload.wikimedia.org/wikipedia/commons/0/05/Martin_Luther_King%2C_Jr..jpg",
+  gandhi: "https://cdn.britannica.com/66/194466-050-CD294675/Mahatma-Gandhi-1931.jpg?w=740&h=416&c=crop",
+  mandela: "https://i0.wp.com/www.culturetype.com/wp-content/uploads/2013/12/mandela.png?ssl=1",
+  mother_teresa: "https://cdn.britannica.com/42/155442-050-AB85E00E/Mother-Teresa.jpg",
+  einstein: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/Albert_Einstein_Head_cleaned.jpg/250px-Albert_Einstein_Head_cleaned.jpg",
+  eiffel_tower: "https://media.architecturaldigest.com/photos/66a951edce728792a48166e6/master/pass/GettyImages-955441104.jpg",
+  great_wall: "https://images.nationalgeographic.org/image/upload/t_edhub_resource_key_image/v1638892506/EducationHub/photos/the-great-wall-of-china.jpg",
+  statue_liberty: "https://www.exp1.com/wp-content/uploads/sites/2/2025/02/AdobeStock_268267939-scaled.jpeg",
+  pyramid: "https://cdn.mos.cms.futurecdn.net/YMa7Wx2FyjQFUjEeqa72Rm-1200-80.jpg",
+  taj_mahal: "https://media.architecturaldigest.com/photos/67acb9b0339bcbaaadeb91b5/3:2/w_5850,h_3900,c_limit/GettyImages-873536102.jpg",
+  white_house: "https://media.architecturaldigest.com/photos/6559735fb796d428bef00d25/4:3/w_4948,h_3711,c_limit/GettyImages-1731443210.jpg",
+  mt_rushmore: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Mount_Rushmore_detail_view_%28100MP%29.jpg/1280px-Mount_Rushmore_detail_view_%28100MP%29.jpg",
+  liberty_bell: "https://www.nps.gov/inde/images/DSC8249.jpg",
+  italy_flag: "https://flagcdn.com/w320/it.png",
+  france_flag: "https://flagcdn.com/w320/fr.png",
+  germany_flag: "https://flagcdn.com/w320/de.png",
+  spain_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Bandera_de_Espa%C3%B1a.svg/1280px-Bandera_de_Espa%C3%B1a.svg.png",
+  uk_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Flag_of_the_United_Kingdom_%283-5%29.svg/250px-Flag_of_the_United_Kingdom_%283-5%29.svg.png",
+  american_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg/330px-Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg.png",
+  usa_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg/330px-Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg.png",
+  japan_flag: "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Flag_of_Japan.svg/1280px-Flag_of_Japan.svg.png",
+  china_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Flag_of_the_People%27s_Republic_of_China.svg/330px-Flag_of_the_People%27s_Republic_of_China.svg.png",
+  korea_flag: "https://flagcdn.com/w320/kr.png",
+  india_flag: "https://flagcdn.com/w320/in.png",
+  vietnam_flag: "https://flagcdn.com/w320/vn.png",
+  labrador: "https://bestforpet.co.nz/wp-content/uploads/2025/07/Labrador_Retriever_1200x800.jpg",
+  poodle: "https://upload.wikimedia.org/wikipedia/commons/f/f8/Full_attention_%288067543690%29.jpg",
+  bulldog: "https://upload.wikimedia.org/wikipedia/commons/b/bf/Bulldog_inglese.jpg",
+  husky: "https://www.akc.org/wp-content/uploads/2017/11/Siberian-Husky-standing-outdoors-in-the-winter.jpg",
+  corgi: "https://www.akc.org/wp-content/uploads/2017/11/Pembroke-Welsh-Corgi-standing-outdoors-in-the-fall.jpg",
+  soccer_ball: "https://upload.wikimedia.org/wikipedia/commons/1/1d/Football_Pallo_valmiina-cropped.jpg",
+  basketball: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Basketball.png/250px-Basketball.png",
+  baseball: "https://upload.wikimedia.org/wikipedia/en/1/1e/Baseball_%28crop%29.jpg",
+  tennis_ball: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Tennis_Racket_and_Balls.jpg/250px-Tennis_Racket_and_Balls.jpg",
+  football: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/American_football.svg/960px-American_football.svg.png",
+  lion: "https://images.squarespace-cdn.com/content/v1/5b061f0e0dbda31446baccc0/1527895159358-L9MJ3G7A5ITWRIB8F0SZ/image-asset.jpeg?format=2500w",
+  tiger: "https://upload.wikimedia.org/wikipedia/commons/b/b0/Bengal_tiger_%28Panthera_tigris_tigris%29_female_3_crop.jpg",
+  leopard: "https://upload.wikimedia.org/wikipedia/commons/8/8e/Nagarhole_Kabini_Karnataka_India%2C_Leopard_September_2013.jpg",
+  cheetah: "https://upload.wikimedia.org/wikipedia/commons/9/92/Male_cheetah_facing_left_in_South_Africa.jpg",
+  jaguar: "https://upload.wikimedia.org/wikipedia/commons/0/0a/Standing_jaguar.jpg",
+  elephant: "https://upload.wikimedia.org/wikipedia/commons/9/94/178_Male_African_bush_elephant_in_Etosha_National_Park_Photo_by_Giles_Laurent.jpg",
+  giraffe: "https://www.andbeyond.com/wp-content/uploads/sites/5/Giraffe-Maasai-01-no-bgnd.png",
+  zebra: "https://upload.wikimedia.org/wikipedia/commons/9/96/Plains_Zebra_Equus_quagga_cropped.jpg",
+  rhinoceros: "https://upload.wikimedia.org/wikipedia/commons/6/69/Black_Rhino_at_Working_with_Wildlife.jpg",
+  sedan: "https://upload.wikimedia.org/wikipedia/commons/b/b6/Toyota_Camry_2.5_Hybrid_Ascent_Sport_%28IX%29_%E2%80%93_f_02012026.jpg",
+  suv: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSa1Dr4_J2mIRM7EeCMbRI6pLOuMKWsH4_7sBbQqQ5pI1RgFjh93fgqcDM&s=10",
+  sportscar: "https://imageio.forbes.com/specials-images/imageserve/6064c6802c761b99a89d1f21/0x0.jpg?format=jpg&crop=2375,1336,x0,y120,safe&height=600&width=1200&fit=bounds",
+  pickup: "https://upload.wikimedia.org/wikipedia/commons/0/02/Ford_F-150_crew_cab_--_05-28-2011.jpg",
+  convertible: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/Peugeot-204-cabriolet-de-1968-rouge-China-1135-villegiature-arriere.jpg/1920px-Peugeot-204-cabriolet-de-1968-rouge-China-1135-villegiature-arriere.jpg",
+  sushi: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/60/Sushi_platter.jpg/330px-Sushi_platter.jpg",
+  pizza: "https://upload.wikimedia.org/wikipedia/commons/9/91/Pizza-3007395.jpg",
+  tacos: "https://upload.wikimedia.org/wikipedia/commons/7/73/001_Tacos_de_carnitas%2C_carne_asada_y_al_pastor.jpg",
+  curry: "https://www.allrecipes.com/thmb/n_0kMGogNFnpJhGhGCf8cNoFqo4=/0x512/filters:no_upscale():max_bytes(150000):strip_icc()/46822-Indian-Chicken-Curry-PICS-Beauty-4x3-9535b806e7dc4f1da14f8ddb7a6367a4.jpg",
+  croissant: "https://upload.wikimedia.org/wikipedia/commons/2/2a/Croissant-Petr_Kratochvil.jpg",
+  bald_eagle: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Bald_eagle_about_to_fly_in_Alaska_%282016%29.jpg/1280px-Bald_eagle_about_to_fly_in_Alaska_%282016%29.jpg",
 };
 
 function photoUrlForKnowledge(cardId) {
@@ -2660,16 +2850,16 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
 // Sheet for picking a specific set within a category. Shows month tabs + a scrollable list
 // of set names so parent can tap their child's current position.
 function PositionPicker({ category, current, onSelect, onClear, onClose }) {
-  const isMath = category.type === "math";
+  const isFlatStages = category.type === "math" || category.type === "music";
 
-  // Math version: flat list of stages, current is a stageId string
-  if (isMath) {
+  // Flat-stage list (math, music): stages are an array of {id,label,desc}, current is a stageId string
+  if (isFlatStages) {
     return (
       <Sheet onClose={onClose}>
         <div style={{padding:"22px 22px 12px",borderBottom:"1px solid #f0f0f0"}}>
           <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",margin:0}}>{category.label}</h2>
           <p style={{fontFamily:"Nunito,sans-serif",fontSize:12,color:"#888",fontWeight:700,marginTop:4,marginBottom:0}}>
-            Which math level is your child currently on?
+            Which {category.label.toLowerCase()} level is your child currently on?
           </p>
         </div>
         <div style={{overflowY:"auto",flex:1,padding:"14px 14px 8px"}}>
@@ -2778,8 +2968,16 @@ function LanguageLevelSheet({ child, language, onSave, onClose }) {
     sentences: initial.sentences !== undefined ? initial.sentences : null,
     knowledge: initial.knowledge !== undefined ? initial.knowledge : { month: 1, setIdx: 0 },
     math:      initial.math      !== undefined ? initial.math      : "dots",
+    music:     initial.music     !== undefined ? initial.music     : "c-major",
   });
   const [editingCat, setEditingCat] = useState(null);
+
+  // Build a music stages array shaped like MATH_STAGES for PositionPicker.
+  const musicStages = MUSIC_SCALES.map(s => ({
+    id: s.id,
+    label: `Week ${s.weekNum} — ${s.majorLabel}`,
+    desc: `${s.majorLabel} + ${s.minorLabel} · 3 sessions a day`,
+  }));
 
   const categories = [
     { key:"words",     type:"sets", label:"Single Words",  data:WORDS_BY_MONTH,     startsMonth:1, endsMonth:3 },
@@ -2787,6 +2985,7 @@ function LanguageLevelSheet({ child, language, onSave, onClose }) {
     { key:"sentences", type:"sets", label:"Sentences",     data:SENTENCES_BY_MONTH, startsMonth:3, endsMonth:3 },
     { key:"knowledge", type:"sets", label:"Knowledge",     data:KNOWLEDGE_BY_MONTH, startsMonth:1, endsMonth:3 },
     { key:"math",      type:"math", label:"Math",          stages:MATH_STAGES },
+    { key:"music",     type:"music",label:"Music",         stages:musicStages },
   ];
 
   return (
@@ -2861,10 +3060,153 @@ function LanguageLevelSheet({ child, language, onSave, onClose }) {
   );
 }
 
-function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, language, speechOn, onLang, onToggleSpeech, onProgress, onOpenChildren, onAdjustLevel }) {
+// Welcome + FAQ sheet. Shown automatically the first time a user opens the
+// app (via localStorage flag "lb-seen-welcome") and available anytime via the
+// "?" button in the home header.
+function WelcomeSheet({ onClose, startOnFaq = false }) {
+  const [tab, setTab] = useState(startOnFaq ? "faq" : "welcome");
+
+  const tips = [
+    { emoji:"✨", title:"Babies are truly limitless.", body:"Start from any age — the earlier the better, but it's never too late." },
+    { emoji:"🌍", title:"Finish Sentences in one language before starting a new one.", body:"Once your child reaches the Sentences stage, they can keep reading books in that language while you begin introducing a new language." },
+    { emoji:"📅", title:"Aim for 9 sessions a day.", body:"Three Reading + three Math + three Knowledge sessions, with 5-minute breaks between each. If that's too much today — no pressure." },
+    { emoji:"💛", title:"If a day slips by, no worries.", body:"You're already far ahead just by having this tool in your hand. Consistency over intensity." },
+    { emoji:"🎉", title:"Make every session joyous.", body:"This is supposed to be fun. Smile, cheer, be silly. If they're tired or fussy, stop and try again later." },
+    { emoji:"🗣️", title:"Native speakers are best.", body:"Whenever possible, have a native speaker read the cards aloud to your baby. If that's not available, you and the app are plenty." },
+    { emoji:"⚡", title:"Move fast — about 1 second per card.", body:"It feels counterintuitive, but babies absorb information much faster than we do. Flip cards quickly so their brain stays engaged." },
+  ];
+
+  const faqs = [
+    {
+      q: "When can we test the baby?",
+      a: "We never test them in this app. Testing makes children feel challenged rather than celebrated, and it's counterproductive at this age. If you're consistent, you will see results — be patient. This method has been used for nearly 100 years; we're just trying to make it mainstream. 🤓😎"
+    },
+    {
+      q: "Can we mix languages in one session?",
+      a: "We don't code-switch within a session — each session stays in one language. That said, if your child already knows another word for something, it helps to repeat it verbally when the photo appears. For example, our kids call all dogs \"uau uau,\" so when they are learning \"dog,\" we read \"dog, uau uau, dog.\""
+    },
+  ];
+
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{padding:"22px 22px 0",borderBottom:"1px solid #f0f0f0"}}>
+        <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:0}}>
+          {tab === "welcome" ? "Before we get started" : tab === "faq" ? "FAQ" : "About"}
+        </h2>
+        <p style={{fontFamily:"Nunito,sans-serif",fontSize:12,color:"#888",fontWeight:700,marginTop:6,marginBottom:14,lineHeight:1.4}}>
+          {tab === "welcome"
+            ? "A few things to know before you dive in."
+            : tab === "faq"
+              ? "Quick answers to common questions."
+              : "The story behind Limitless Babies."}
+        </p>
+        <div style={{display:"flex",gap:4,marginBottom:0}}>
+          <button onClick={()=>setTab("welcome")}
+            style={{flex:1,background:tab==="welcome"?RED:"#f5f5f5",color:tab==="welcome"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,cursor:"pointer"}}>
+            ✨ tips
+          </button>
+          <button onClick={()=>setTab("faq")}
+            style={{flex:1,background:tab==="faq"?RED:"#f5f5f5",color:tab==="faq"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,cursor:"pointer"}}>
+            ❓ FAQ
+          </button>
+          <button onClick={()=>setTab("about")}
+            style={{flex:1,background:tab==="about"?RED:"#f5f5f5",color:tab==="about"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,cursor:"pointer"}}>
+            💛 about
+          </button>
+        </div>
+      </div>
+
+      <div style={{overflowY:"auto",flex:1,padding:"16px 20px 20px"}}>
+        {tab === "welcome" && (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {tips.map((t, i) => (
+              <div key={i} style={{display:"flex",gap:12,padding:"14px 14px",background:"#FFF8F8",border:`1px solid ${RED}22`,borderRadius:14}}>
+                <span style={{fontSize:26,lineHeight:1.1}}>{t.emoji}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",lineHeight:1.2,marginBottom:4}}>{t.title}</div>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#666",lineHeight:1.5}}>{t.body}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{marginTop:6,padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",lineHeight:1.5,textAlign:"center"}}>
+              You can reopen these tips anytime via the <strong>?</strong> button on the home screen.
+            </div>
+          </div>
+        )}
+
+        {tab === "faq" && (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {faqs.map((f, i) => (
+              <div key={i} style={{padding:"14px 16px",background:"#fff",border:"1px solid #eee",borderRadius:14}}>
+                <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:RED,lineHeight:1.2,marginBottom:6}}>{f.q}</div>
+                <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#444",lineHeight:1.55}}>{f.a}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === "about" && (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{padding:"18px 18px",background:"#FFF8F8",border:`1px solid ${RED}22`,borderRadius:14}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:17,color:"#111",lineHeight:1.3,marginBottom:10}}>
+                Created by Olivia, a UC Berkeley linguist and Columbia MBA
+              </div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#444",lineHeight:1.6}}>
+                Limitless Babies was built for Olivia's own twins, <strong>Callisto &amp; Elara</strong>.
+                <br/><br/>
+                Elara started signing at <strong>6 weeks</strong>. Callisto said his first word at <strong>2 months</strong>. By <strong>4 months</strong>, both were using words across <strong>4 languages</strong>. By <strong>6 months</strong>, they could identify written words — shown the words <em>"gato"</em> and <em>"hola,"</em> they consistently chose the right one.
+                <br/><br/>
+                Today, Callisto &amp; Elara are actively exposed to <strong>20 languages</strong>, along with a math program, encyclopedic knowledge, and a perfect pitch music program Olivia developed from her 12 years of teaching music.
+              </div>
+            </div>
+            <div style={{padding:"14px 16px",background:"#F6F8FC",borderRadius:12}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:6}}>
+                Babies are truly limitless.
+              </div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#666",lineHeight:1.55}}>
+                This app exists to share a curriculum that started as one mom's "insane" experiment — and turned out to work.
+              </div>
+            </div>
+            <div style={{padding:"12px 14px",textAlign:"center",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",lineHeight:1.5}}>
+              Developed with the help of Anthropic's Claude.
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{padding:"12px 22px 22px",borderTop:"1px solid #f0f0f0"}}>
+        <button onClick={onClose}
+          style={{width:"100%",background:RED,border:"none",borderRadius:50,padding:"13px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+          {tab === "welcome" ? "let's go →" : "close"}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, language, speechOn, onLang, onToggleSpeech, onProgress, onOpenChildren, onAdjustLevel, onOpenWelcome, onEditActiveChild }) {
   // Per-language day count — shows day 1 if child has never used this language,
   // otherwise counts from the first session done in this language.
   const dayNum = getDayNumberForLanguage(activeChildId, language);
+
+  // Family photo onboarding prompt — shown only if the child has zero family
+  // photos uploaded AND the parent hasn't dismissed the prompt. Auto-disappears
+  // once at least one photo exists.
+  const [familyPromptDismissed, setFamilyPromptDismissed] = useState(() => {
+    try { return !!localStorage.getItem("lb-fam-dismissed"); } catch { return false; }
+  });
+  const familyPhotoCount = useMemo(() => {
+    if (!activeChildId) return 0;
+    try {
+      const photos = getFamilyPhotos(activeChildId);
+      return Object.values(photos || {}).filter(Boolean).length;
+    } catch { return 0; }
+  }, [activeChildId]);
+  const showFamilyPrompt = activeChildId && familyPhotoCount === 0 && !familyPromptDismissed;
+  const dismissFamilyPrompt = () => {
+    try { localStorage.setItem("lb-fam-dismissed", "1"); } catch {}
+    setFamilyPromptDismissed(true);
+  };
 
   // Determine which categories are available right now.
   // A "category" here maps to what the home tiles offer: reading, math, knowledge.
@@ -2881,6 +3223,7 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
     { id:"reading",   label:"Reading",   emoji:"📖", color:"#FFF0F1", statusKey:"reading",      desc:"Words, phrases, and stories" },
     { id:"math",      label:"Math",      emoji:"🔢", color:"#F0F8FF", statusKey:"math",         desc:"Quantities and equations" },
     { id:"knowledge", label:"Knowledge", emoji:"🌍", color:"#F0FFF4", statusKey:"encyclopedia", desc:"Facts about the world" },
+    { id:"music",     label:"Music",     emoji:"🎵", color:"#FDF4FF", statusKey:"music",        desc:"Perfect pitch training" },
   ];
 
   // Compute per-category status: ready, cooldown (with seconds), or done (all 3 sessions completed)
@@ -2943,10 +3286,19 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",padding:"16px 20px 24px"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
         <ChildSwitcher activeChild={activeChild} onOpen={onOpenChildren}/>
-        <button onClick={onProgress}
-          style={{display:"flex",alignItems:"center",gap:6,background:streak>0?"#FFF4E6":"#f5f5f5",border:`2px solid ${streak>0?"#FFB347":"#e8e8e8"}`,borderRadius:50,padding:"6px 14px",cursor:"pointer",fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:streak>0?"#E8850E":"#aaa"}}>
-          🔥 {streak}
-        </button>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {onOpenWelcome && (
+            <button onClick={onOpenWelcome}
+              style={{background:"#f5f5f5",border:"2px solid #e8e8e8",borderRadius:50,width:34,height:34,fontSize:15,cursor:"pointer",color:"#888",fontFamily:"'Fredoka One','Baloo 2',cursive",display:"flex",alignItems:"center",justifyContent:"center"}}
+              aria-label="tips and FAQ">
+              ?
+            </button>
+          )}
+          <button onClick={onProgress}
+            style={{display:"flex",alignItems:"center",gap:6,background:streak>0?"#FFF4E6":"#f5f5f5",border:`2px solid ${streak>0?"#FFB347":"#e8e8e8"}`,borderRadius:50,padding:"6px 14px",cursor:"pointer",fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:streak>0?"#E8850E":"#aaa"}}>
+            🔥 {streak}
+          </button>
+        </div>
       </div>
 
       <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
@@ -2989,6 +3341,35 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
         </button>
 
         <div style={{width:"100%",maxWidth:380,marginTop:6}}>
+          {/* Family photo onboarding prompt — gentle, dismissable, auto-hides
+              once at least one family photo is uploaded. */}
+          {showFamilyPrompt && (
+            <div style={{position:"relative",background:"#FFF8F8",border:`2px dashed ${RED}55`,borderRadius:18,padding:"14px 16px 14px",marginBottom:14}}>
+              <button onClick={dismissFamilyPrompt}
+                style={{position:"absolute",top:8,right:10,background:"none",border:"none",cursor:"pointer",color:"#bbb",fontSize:16,padding:4,lineHeight:1}}
+                aria-label="dismiss">
+                ×
+              </button>
+              <div style={{display:"flex",alignItems:"flex-start",gap:12,paddingRight:16}}>
+                <span style={{fontSize:26,lineHeight:1.1}}>📸</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",lineHeight:1.25,marginBottom:4}}>
+                    Make it personal — add family photos
+                  </div>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#666",lineHeight:1.5,marginBottom:10}}>
+                    Upload photos of mom, dad, grandma, etc. They'll appear when your baby learns family words — in every language, throughout the whole program.
+                  </div>
+                  {onEditActiveChild && (
+                    <button onClick={onEditActiveChild}
+                      style={{background:RED,border:"none",borderRadius:50,padding:"7px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#fff"}}>
+                      upload photos →
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={{fontSize:11,color:"#bbb",fontFamily:"Nunito,sans-serif",fontWeight:800,textAlign:"center",marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>
             or pick a lesson
           </div>
@@ -3541,6 +3922,83 @@ function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComp
 
 // ── ENCYCLOPEDIA SESSION ──────────────────────────────────────────────────────
 
+// ── MUSIC SESSION ─────────────────────────────────────────────────────────────
+// Flash-card-style perfect pitch training. Each card is one note: the app plays
+// the tone + shows the note name + speaks it. Auto-advances after ~1 second,
+// same cadence as Reading sessions.
+function MusicSession({ content, language, speechOn, sessionNum, onBack, onComplete }) {
+  const { notes, label } = content || { notes: [], label: "" };
+  const cards = notes.map(n => ({ note: n, label: noteDisplayLabel(n) }));
+
+  const [idx, setIdx] = useState(0);
+  const [autoPlay, setAutoPlay] = useState(true);
+  const [visible, setVisible] = useState(true);
+  const advanceTimerRef = useRef(null);
+
+  // Play the note + speak its name each time a card appears.
+  useEffect(() => {
+    if (!visible) return;
+    const card = cards[idx];
+    if (!card) return;
+    // Start the tone immediately
+    try { playTone(card.note, 900); } catch {}
+    // Speak the letter name shortly after — gives parent a verbal anchor too
+    if (speechOn) {
+      setTimeout(() => { try { speak(card.label, language || "English"); } catch {} }, 50);
+    }
+  }, [idx, visible, speechOn, cards, language]);
+
+  const advance = useCallback(() => {
+    setVisible(false);
+    if (advanceTimerRef.current) { clearTimeout(advanceTimerRef.current); advanceTimerRef.current = null; }
+    setTimeout(() => {
+      if (idx >= cards.length - 1) {
+        onComplete && onComplete();
+      } else {
+        setIdx(i => i + 1);
+        setVisible(true);
+      }
+    }, 120);
+  }, [idx, cards.length, onComplete]);
+
+  // Auto-advance after 1 second — same as Reading
+  useEffect(() => {
+    if (!autoPlay || !visible) return;
+    advanceTimerRef.current = setTimeout(() => advance(), 1000);
+    return () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current); };
+  }, [idx, autoPlay, visible, advance]);
+
+  if (!cards.length) {
+    return (
+      <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,color:"#888"}}>No music content yet.</p>
+        <button onClick={onBack} style={{marginTop:14,background:RED,border:"none",borderRadius:50,padding:"10px 20px",color:"#fff",fontFamily:"Nunito,sans-serif",fontWeight:800,cursor:"pointer"}}>back</button>
+      </div>
+    );
+  }
+
+  const card = cards[idx];
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px",cursor:"pointer"}}
+        onClick={()=>advance()}>
+        {/* Scale label at top */}
+        <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.5,textTransform:"uppercase",marginBottom:16}}>
+          {label}
+        </div>
+        {visible && (
+          <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:"min(240px,50vw)",color:RED,lineHeight:1,userSelect:"none"}}>
+            {card.label}
+          </div>
+        )}
+        <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>tap to advance →</p>
+      </div>
+      <ProgressBar index={idx} total={cards.length}/>
+    </div>
+  );
+}
+
 function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack, onComplete }) {
   const isPhonePortrait = useIsPhonePortrait();
   const [orientationDismissed, setOrientationDismissed] = useState(false);
@@ -3717,6 +4175,14 @@ export default function App() {
   const [showChildren, setShowChildren]   = useState(false);
   const [showSharing, setShowSharing]     = useState(false);
   const [showLangLevel, setShowLangLevel] = useState(false);
+  // Auto-open welcome/tips the first time a user opens the app.
+  const [showWelcome, setShowWelcome] = useState(() => {
+    try { return !localStorage.getItem("lb-seen-welcome"); } catch { return false; }
+  });
+  const handleCloseWelcome = () => {
+    try { localStorage.setItem("lb-seen-welcome", "1"); } catch {}
+    setShowWelcome(false);
+  };
   const [editingChild, setEditingChild]   = useState(undefined);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dailyWords, setDailyWords]   = useState([]);
@@ -3885,6 +4351,14 @@ export default function App() {
 
   // Parent taps one of the 3 big tiles on the home screen → open category menu
   const handleSelectCategory = (category) => {
+    // Music goes directly into a session (no sub-menu, single stage per week)
+    if (category === "music") {
+      if (!activeChildId) return;
+      const status = getSessionStatus(activeChildId, "music", language);
+      setSessionStatus(status);
+      setMode("music");
+      return;
+    }
     setMode(`menu:${category}`);
   };
 
@@ -3919,6 +4393,8 @@ export default function App() {
       returnTo = "menu:math";
     } else if (mode === "encyclopedia") {
       returnTo = "menu:knowledge";
+    } else if (mode === "music") {
+      returnTo = null;  // music has no sub-menu, go straight home
     }
     setMode(returnTo);
     setSessionStatus(null);
@@ -3980,7 +4456,7 @@ export default function App() {
   return (
     <>
       <style>{baseStyles}</style>
-      {mode===null       && <HomeScreen activeChild={activeChild} activeChildId={activeChildId} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)} onAdjustLevel={()=>setShowLangLevel(true)}/>}
+      {mode===null       && <HomeScreen activeChild={activeChild} activeChildId={activeChildId} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)} onAdjustLevel={()=>setShowLangLevel(true)} onOpenWelcome={()=>setShowWelcome(true)} onEditActiveChild={()=>activeChild && setEditingChild(activeChild)}/>}
 
       {mode==="menu:reading"   && <CategoryMenu category="reading"   activeChild={activeChild} language={language} words={dailyWords} couplets={dailyCouplets} sentences={dailySentences} onSelect={handleStartSession} onBack={handleBackToHome}/>}
       {mode==="menu:math"      && <CategoryMenu category="math"      activeChild={activeChild} language={language} onSelect={handleStartSession} onBack={handleBackToHome}/>}
@@ -3993,6 +4469,7 @@ export default function App() {
       {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("book")}/>}
       {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
       {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
+      {mode==="music" && sessionStatus && activeChild && <MusicSession content={getMusicContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("music")}/>}
 
       {showLang && activeChild && (
         <ChildLanguagePicker
@@ -4064,6 +4541,8 @@ export default function App() {
           onClose={()=>setShowLangLevel(false)}
         />
       )}
+
+      {showWelcome && <WelcomeSheet onClose={handleCloseWelcome}/>}
     </>
   );
 }
