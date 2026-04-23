@@ -3,7 +3,8 @@ import {
   WORD_SETS, EXTRA_TRANSLATIONS, KNOWLEDGE_SETS,
   COUPLET_SETS, SENTENCE_SETS, SAMPLE_BOOK,
   cefrForVocabCount, getRollingSets, buildDeckFromSets,
-  countUniqueWordsExposed,
+  countUniqueWordsExposed, countUniqueWordsExposedInLanguage,
+  languagesWithVocabProgress,
   KINSHIP_VARIANTS, KINSHIP_LANGUAGES,
   KNOWLEDGE_SET_TRANSLATIONS,
   WORDS_BY_MONTH, COUPLETS_BY_MONTH, SENTENCES_BY_MONTH, KNOWLEDGE_BY_MONTH
@@ -15,7 +16,7 @@ const LANGUAGES = [
   "Afrikaans","Albanian","Amharic","Arabic","Armenian","Azerbaijani","Basque",
   "Belarusian","Bengali","Bosnian","Bulgarian","Catalan","Cebuano",
   "Chinese (Cantonese)","Chinese (Mandarin)","Croatian","Czech","Danish","Dutch",
-  "English","Esperanto","Estonian","Filipino","Finnish","French","Galician",
+  "English","Esperanto","Estonian","Tagalog","Finnish","French","Galician",
   "Georgian","German","Greek","Gujarati","Haitian Creole","Hausa","Hawaiian",
   "Hebrew","Hindi","Hmong","Hungarian","Icelandic","Igbo","Indonesian","Irish",
   "Italian","Japanese","Javanese","Kannada","Kazakh","Khmer","Korean","Kurdish",
@@ -48,17 +49,17 @@ const LANGUAGES = [
 // Day 161+   : Mixed equations (both dots and numerals shown)
 
 const MATH_STAGES = [
-  { id:"dots",           label:"Dots",                     desc:"dots · range 0–100 · shuffled",              unlockDay:1,   op:null,    showDots:true,  showNumerals:false, isEq:false },
-  { id:"add-dots",       label:"Addition (dots)",          desc:"dot addition · small sums · shuffled",       unlockDay:21,  op:"+",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"sub-dots",       label:"Subtraction (dots)",       desc:"dot subtraction · small · shuffled",         unlockDay:36,  op:"-",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"mul-dots",       label:"Multiplication (dots)",    desc:"dot multiplication · small · shuffled",      unlockDay:51,  op:"×",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"div-dots",       label:"Division (dots)",          desc:"dot division · small · shuffled",            unlockDay:66,  op:"÷",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"numerals",       label:"Numerals",                 desc:"numerals · range 0–100 · shuffled",          unlockDay:81,  op:null,    showDots:false, showNumerals:true,  isEq:false },
-  { id:"add-nums",       label:"Addition (numerals)",      desc:"numeral addition · mixed · shuffled",        unlockDay:101, op:"+",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"sub-nums",       label:"Subtraction (numerals)",   desc:"numeral subtraction · mixed · shuffled",     unlockDay:116, op:"-",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"mul-nums",       label:"Multiplication (numerals)",desc:"numeral multiplication · mixed · shuffled",  unlockDay:131, op:"×",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"div-nums",       label:"Division (numerals)",      desc:"numeral division · mixed · shuffled",        unlockDay:146, op:"÷",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"eq-both",        label:"Equations (both)",         desc:"dots + numerals · all ops · shuffled",       unlockDay:161, op:"mix",   showDots:true,  showNumerals:true,  isEq:true  },
+  { id:"dots",           label:"Dots",                     desc:"dots · range 0–100 · S1 in order, then shuffled",              unlockDay:1,   op:null,    showDots:true,  showNumerals:false, isEq:false },
+  { id:"add-dots",       label:"Addition (dots)",          desc:"dot addition · S1 in order, then shuffled",                    unlockDay:21,  op:"+",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"sub-dots",       label:"Subtraction (dots)",       desc:"dot subtraction · S1 in order, then shuffled",                 unlockDay:36,  op:"-",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"mul-dots",       label:"Multiplication (dots)",    desc:"dot multiplication · S1 in order, then shuffled",              unlockDay:51,  op:"×",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"div-dots",       label:"Division (dots)",          desc:"dot division · S1 in order, then shuffled",                    unlockDay:66,  op:"÷",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"numerals",       label:"Numerals",                 desc:"numerals · range 0–100 · S1 in order, then shuffled",          unlockDay:81,  op:null,    showDots:false, showNumerals:true,  isEq:false },
+  { id:"add-nums",       label:"Addition (numerals)",      desc:"numeral addition · S1 in order, then shuffled",                unlockDay:101, op:"+",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"sub-nums",       label:"Subtraction (numerals)",   desc:"numeral subtraction · S1 in order, then shuffled",             unlockDay:116, op:"-",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"mul-nums",       label:"Multiplication (numerals)",desc:"numeral multiplication · S1 in order, then shuffled",          unlockDay:131, op:"×",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"div-nums",       label:"Division (numerals)",      desc:"numeral division · S1 in order, then shuffled",                unlockDay:146, op:"÷",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"eq-both",        label:"Equations (both)",         desc:"dots + numerals · all ops · S1 in order, then shuffled",       unlockDay:161, op:"mix",   showDots:true,  showNumerals:true,  isEq:true  },
 ];
 
 // Return the single stage the child should be doing today.
@@ -230,7 +231,7 @@ const SPEECH_LANG = {
   Arabic:"ar-SA", Hindi:"hi-IN", Vietnamese:"vi-VN", Thai:"th-TH", Turkish:"tr-TR",
   Greek:"el-GR", Polish:"pl-PL", Dutch:"nl-NL", Swedish:"sv-SE", Danish:"da-DK",
   Norwegian:"nb-NO", Finnish:"fi-FI", Czech:"cs-CZ", Hungarian:"hu-HU",
-  Romanian:"ro-RO", Ukrainian:"uk-UA", Indonesian:"id-ID", Filipino:"fil-PH",
+  Romanian:"ro-RO", Ukrainian:"uk-UA", Indonesian:"id-ID", Tagalog:"fil-PH",
   Malay:"ms-MY", Swahili:"sw-KE", Afrikaans:"af-ZA", Persian:"fa-IR",
   Bengali:"bn-IN", Urdu:"ur-PK", Tamil:"ta-IN", Telugu:"te-IN", Marathi:"mr-IN",
   Catalan:"ca-ES", Slovak:"sk-SK", Bulgarian:"bg-BG", Croatian:"hr-HR",
@@ -260,7 +261,7 @@ const LANGUAGE_FLAGS = {
   Thai:"🇹🇭", Turkish:"🇹🇷", Greek:"🇬🇷", Polish:"🇵🇱", Dutch:"🇳🇱",
   Swedish:"🇸🇪", Danish:"🇩🇰", Norwegian:"🇳🇴", Finnish:"🇫🇮", Czech:"🇨🇿",
   Hungarian:"🇭🇺", Romanian:"🇷🇴", Ukrainian:"🇺🇦", Indonesian:"🇮🇩",
-  Filipino:"🇵🇭", Malay:"🇲🇾", Swahili:"🇰🇪", Afrikaans:"🇿🇦", Persian:"🇮🇷",
+  Tagalog:"🇵🇭", Malay:"🇲🇾", Swahili:"🇰🇪", Afrikaans:"🇿🇦", Persian:"🇮🇷",
   Bengali:"🇧🇩", Urdu:"🇵🇰", Tamil:"🇮🇳", Telugu:"🇮🇳", Marathi:"🇮🇳",
   Catalan:"🇪🇸", Slovak:"🇸🇰", Bulgarian:"🇧🇬", Croatian:"🇭🇷", Lao:"🇱🇦",
   Serbian:"🇷🇸", Slovenian:"🇸🇮", Icelandic:"🇮🇸", Welsh:"🏴󠁧󠁢󠁷󠁬󠁳󠁿",
@@ -519,16 +520,29 @@ function getDomanWindow(dayNum, stageId) {
   return nums;
 }
 
-// One session = 11 cards (always shuffled, every session).
+// One session = 11 cards. Session 1 is always in-order to help babies
+// anchor the sequence. Sessions 2 and 3 are shuffled for variety.
 function getMathCards(stageId, dayNum, sessionNum) {
   const stage = MATH_STAGES.find(s => s.id === stageId);
   if (!stage) return [];
   if (!stage.isEq) {
     const w = getDomanWindow(dayNum, stageId);
-    const ordered = shuffle(w);
+    const ordered = sessionNum === 1 ? w : shuffle(w);
     return ordered.map(n => ({ n }));
   }
-  return genEquations(stageId, dayNum);
+  // Equation stages — keep the genEquations logic but optionally un-shuffle
+  // for session 1 so the first daily session is pedagogically ordered.
+  const eqs = genEquations(stageId, dayNum);
+  if (sessionNum === 1) {
+    // genEquations may pre-shuffle internally; sort by left-operand ascending
+    // to approximate a "session 1 in order" experience. Best effort.
+    return [...eqs].sort((a, b) => {
+      const av = a.left ?? a.n ?? 0;
+      const bv = b.left ?? b.n ?? 0;
+      return av - bv;
+    });
+  }
+  return eqs;
 }
 
 // Get the day number based on when parent first opened the app.
@@ -684,7 +698,112 @@ function getSetsForPosition(allSetsArray, position, month) {
 // before hitting quota. If the quota fails, we show an error and keep the
 // existing photos.
 
-const FAMILY_PHOTO_WORDS = ["mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada"];
+// Family photo slots — supports both generic ("sister") and kinship-specific
+// ("sister_older", "grandma_paternal") uploads. Languages that differentiate
+// kinship (Cantonese, Korean, Vietnamese, Hindi, etc.) look up the specific
+// slot first and fall back to the generic slot if not available.
+//
+// The parent only sees the specific slots if at least one of the child's
+// learning languages uses them (dynamic display, decision C from user).
+const FAMILY_PHOTO_WORDS = [
+  "mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada"
+];
+
+// Kinship slot mapping — when the curriculum card has a specific kinship
+// note (e.g. "older sister", "paternal grandma"), we try the specific slot
+// first and fall back to the generic base word if that slot isn't uploaded.
+const KINSHIP_SLOTS = {
+  sister:  ["sister_older", "sister_younger"],
+  brother: ["brother_older", "brother_younger"],
+  grandma: ["grandma_paternal", "grandma_maternal"],
+  grandpa: ["grandpa_paternal", "grandpa_maternal"],
+  aunt:    ["aunt_paternal", "aunt_maternal"],
+  uncle:   ["uncle_paternal", "uncle_maternal"],
+};
+
+// Human-readable labels for each kinship slot in the photo upload UI.
+const KINSHIP_SLOT_LABELS = {
+  sister_older:    "Older sister",
+  sister_younger:  "Younger sister",
+  brother_older:   "Older brother",
+  brother_younger: "Younger brother",
+  grandma_paternal:"Grandma (paternal — dad's mom)",
+  grandma_maternal:"Grandma (maternal — mom's mom)",
+  grandpa_paternal:"Grandpa (paternal — dad's dad)",
+  grandpa_maternal:"Grandpa (maternal — mom's dad)",
+  aunt_paternal:   "Aunt (paternal — dad's sister)",
+  aunt_maternal:   "Aunt (maternal — mom's sister)",
+  uncle_paternal:  "Uncle (paternal — dad's brother)",
+  uncle_maternal:  "Uncle (maternal — mom's brother)",
+};
+
+// Given a card's English canonical word + optional note (e.g. "older sister",
+// "paternal grandma"), determine the best photo slot to use.
+// Returns the specific slot if the note matches, else the base word.
+function resolveFamilyPhotoSlot(englishWord, note) {
+  if (!englishWord) return null;
+  const base = englishWord.toLowerCase();
+  const n = (note || "").toLowerCase();
+  if (base === "sister") {
+    if (n.includes("older")) return "sister_older";
+    if (n.includes("younger") || n.includes("youngest")) return "sister_younger";
+    return "sister";
+  }
+  if (base === "brother") {
+    if (n.includes("older")) return "brother_older";
+    if (n.includes("younger") || n.includes("youngest")) return "brother_younger";
+    return "brother";
+  }
+  if (base === "grandma") {
+    if (n.includes("paternal")) return "grandma_paternal";
+    if (n.includes("maternal")) return "grandma_maternal";
+    return "grandma";
+  }
+  if (base === "grandpa") {
+    if (n.includes("paternal")) return "grandpa_paternal";
+    if (n.includes("maternal")) return "grandpa_maternal";
+    return "grandpa";
+  }
+  if (base === "aunt") {
+    if (n.includes("paternal")) return "aunt_paternal";
+    if (n.includes("maternal")) return "aunt_maternal";
+    return "aunt";
+  }
+  if (base === "uncle") {
+    if (n.includes("paternal")) return "uncle_paternal";
+    if (n.includes("maternal")) return "uncle_maternal";
+    return "uncle";
+  }
+  return base;
+}
+
+// Given a family photo dictionary and a card, return the photo URL to display.
+// Falls back from specific slot → generic base word → null.
+// (Decision A from user: some personalization > none.)
+function lookupFamilyPhoto(familyPhotos, englishWord, note) {
+  if (!familyPhotos || !englishWord) return null;
+  const slot = resolveFamilyPhotoSlot(englishWord, note);
+  if (familyPhotos[slot]) return familyPhotos[slot];
+  // Fall back to base word
+  const base = englishWord.toLowerCase();
+  return familyPhotos[base] || null;
+}
+
+// Determine which kinship slots to show in the photo upload UI, given the
+// languages the child is actively learning. Decision C from user: dynamic.
+// Returns an array of slot ids like ["sister_older","grandma_paternal"].
+function kinshipSlotsForLanguages(learningLanguages) {
+  if (!learningLanguages || learningLanguages.length === 0) return [];
+  const uses = (base) => learningLanguages.some(l => l !== "English" && KINSHIP_LANGUAGES.includes(l) && KINSHIP_VARIANTS[base]?.[l]);
+  const out = [];
+  if (uses("sister"))  out.push("sister_older", "sister_younger");
+  if (uses("brother")) out.push("brother_older", "brother_younger");
+  if (uses("grandma")) out.push("grandma_paternal", "grandma_maternal");
+  if (uses("grandpa")) out.push("grandpa_paternal", "grandpa_maternal");
+  if (uses("aunt"))    out.push("aunt_paternal", "aunt_maternal");
+  if (uses("uncle"))   out.push("uncle_paternal", "uncle_maternal");
+  return out;
+}
 
 function getFamilyPhotos(childId) {
   try {
@@ -968,22 +1087,22 @@ function PhotoDisplay({ emoji, style }) {
 // Core baby vocabulary translated into 30+ major languages.
 
 const CORE_TRANSLATIONS = {
-  "mama":      { Spanish:"mamá", French:"maman", German:"mama", Italian:"mamma", Portuguese:"mamãe", "Portuguese (Brazil)":"mamãe", Russian:"мама", "Chinese (Mandarin)":"妈妈", "Chinese (Cantonese)":"媽媽", Japanese:"ママ", Korean:"엄마", Hebrew:"אמא", Arabic:"ماما", Hindi:"माँ", Vietnamese:"mẹ", Thai:"แม่", Turkish:"anne", Greek:"μαμά", Polish:"mama", Dutch:"mama", Swedish:"mamma", Afrikaans:"mamma", Filipino:"nanay", Indonesian:"ibu", Swahili:"mama", Persian:"مامان", Bengali:"মা", Urdu:"امی", Romanian:"mama", Ukrainian:"мама", Czech:"máma", Lao:"ແມ່" },
-  "dada":      { Spanish:"papá", French:"papa", German:"papa", Italian:"papà", Portuguese:"papai", "Portuguese (Brazil)":"papai", Russian:"папа", "Chinese (Mandarin)":"爸爸", "Chinese (Cantonese)":"爸爸", Japanese:"パパ", Korean:"아빠", Hebrew:"אבא", Arabic:"بابا", Hindi:"पापा", Vietnamese:"bố", Thai:"พ่อ", Turkish:"baba", Greek:"μπαμπά", Polish:"tata", Dutch:"papa", Swedish:"pappa", Afrikaans:"pappa", Filipino:"tatay", Indonesian:"ayah", Swahili:"baba", Persian:"بابا", Bengali:"বাবা", Urdu:"ابو", Romanian:"tata", Ukrainian:"тато", Czech:"táta", Lao:"ພໍ່" },
-  "baby":      { Spanish:"bebé", French:"bébé", German:"baby", Italian:"bambino", Portuguese:"bebê", "Portuguese (Brazil)":"bebê", Russian:"малыш", "Chinese (Mandarin)":"宝宝", "Chinese (Cantonese)":"寶寶", Japanese:"赤ちゃん", Korean:"아기", Hebrew:"תינוק", Arabic:"طفل", Hindi:"बच्चा", Vietnamese:"em bé", Thai:"ทารก", Turkish:"bebek", Greek:"μωρό", Polish:"dziecko", Dutch:"baby", Swedish:"bebis", Afrikaans:"baba", Filipino:"sanggol", Indonesian:"bayi", Swahili:"mtoto", Persian:"نوزاد", Bengali:"শিশু", Urdu:"بچہ", Romanian:"bebeluș", Ukrainian:"малюк", Czech:"miminko", Lao:"ລູກນ້ອຍ" },
-  "ball":      { Spanish:"pelota", French:"balle", German:"ball", Italian:"palla", Portuguese:"bola", "Portuguese (Brazil)":"bola", Russian:"мяч", "Chinese (Mandarin)":"球", "Chinese (Cantonese)":"波", Japanese:"ボール", Korean:"공", Hebrew:"כדור", Arabic:"كرة", Hindi:"गेंद", Vietnamese:"bóng", Thai:"ลูกบอล", Turkish:"top", Greek:"μπάλα", Polish:"piłka", Dutch:"bal", Swedish:"boll", Afrikaans:"bal", Filipino:"bola", Indonesian:"bola", Swahili:"mpira", Persian:"توپ", Bengali:"বল", Urdu:"گیند", Romanian:"minge", Ukrainian:"м'яч", Czech:"míč" },
-  "cat":       { Spanish:"gato", French:"chat", German:"katze", Italian:"gatto", Portuguese:"gato", "Portuguese (Brazil)":"gato", Russian:"кот", "Chinese (Mandarin)":"猫", "Chinese (Cantonese)":"貓", Japanese:"ねこ", Korean:"고양이", Hebrew:"חתול", Arabic:"قطة", Hindi:"बिल्ली", Vietnamese:"mèo", Thai:"แมว", Turkish:"kedi", Greek:"γάτα", Polish:"kot", Dutch:"kat", Swedish:"katt", Afrikaans:"kat", Filipino:"pusa", Indonesian:"kucing", Swahili:"paka", Persian:"گربه", Bengali:"বিড়াল", Urdu:"بلی", Romanian:"pisică", Ukrainian:"кіт", Czech:"kočka" },
-  "dog":       { Spanish:"perro", French:"chien", German:"hund", Italian:"cane", Portuguese:"cão", "Portuguese (Brazil)":"cachorro", Russian:"собака", "Chinese (Mandarin)":"狗", "Chinese (Cantonese)":"狗", Japanese:"いぬ", Korean:"개", Hebrew:"כלב", Arabic:"كلب", Hindi:"कुत्ता", Vietnamese:"chó", Thai:"หมา", Turkish:"köpek", Greek:"σκύλος", Polish:"pies", Dutch:"hond", Swedish:"hund", Afrikaans:"hond", Filipino:"aso", Indonesian:"anjing", Swahili:"mbwa", Persian:"سگ", Bengali:"কুকুর", Urdu:"کتا", Romanian:"câine", Ukrainian:"собака", Czech:"pes" },
-  "sun":       { Spanish:"sol", French:"soleil", German:"sonne", Italian:"sole", Portuguese:"sol", "Portuguese (Brazil)":"sol", Russian:"солнце", "Chinese (Mandarin)":"太阳", "Chinese (Cantonese)":"太陽", Japanese:"たいよう", Korean:"해", Hebrew:"שמש", Arabic:"شمس", Hindi:"सूरज", Vietnamese:"mặt trời", Thai:"ดวงอาทิตย์", Turkish:"güneş", Greek:"ήλιος", Polish:"słońce", Dutch:"zon", Swedish:"sol", Afrikaans:"son", Filipino:"araw", Indonesian:"matahari", Swahili:"jua", Persian:"خورشید", Bengali:"সূর্য", Urdu:"سورج", Romanian:"soare", Ukrainian:"сонце", Czech:"slunce" },
-  "moon":      { Spanish:"luna", French:"lune", German:"mond", Italian:"luna", Portuguese:"lua", "Portuguese (Brazil)":"lua", Russian:"луна", "Chinese (Mandarin)":"月亮", "Chinese (Cantonese)":"月亮", Japanese:"つき", Korean:"달", Hebrew:"ירח", Arabic:"قمر", Hindi:"चाँद", Vietnamese:"mặt trăng", Thai:"ดวงจันทร์", Turkish:"ay", Greek:"φεγγάρι", Polish:"księżyc", Dutch:"maan", Swedish:"måne", Afrikaans:"maan", Filipino:"buwan", Indonesian:"bulan", Swahili:"mwezi", Persian:"ماه", Bengali:"চাঁদ", Urdu:"چاند", Romanian:"lună", Ukrainian:"місяць", Czech:"měsíc" },
-  "tree":      { Spanish:"árbol", French:"arbre", German:"baum", Italian:"albero", Portuguese:"árvore", "Portuguese (Brazil)":"árvore", Russian:"дерево", "Chinese (Mandarin)":"树", "Chinese (Cantonese)":"樹", Japanese:"き", Korean:"나무", Hebrew:"עץ", Arabic:"شجرة", Hindi:"पेड़", Vietnamese:"cây", Thai:"ต้นไม้", Turkish:"ağaç", Greek:"δέντρο", Polish:"drzewo", Dutch:"boom", Swedish:"träd", Afrikaans:"boom", Filipino:"puno", Indonesian:"pohon", Swahili:"mti", Persian:"درخت", Bengali:"গাছ", Urdu:"درخت", Romanian:"copac", Ukrainian:"дерево", Czech:"strom" },
-  "fish":      { Spanish:"pez", French:"poisson", German:"fisch", Italian:"pesce", Portuguese:"peixe", "Portuguese (Brazil)":"peixe", Russian:"рыба", "Chinese (Mandarin)":"鱼", "Chinese (Cantonese)":"魚", Japanese:"さかな", Korean:"물고기", Hebrew:"דג", Arabic:"سمكة", Hindi:"मछली", Vietnamese:"cá", Thai:"ปลา", Turkish:"balık", Greek:"ψάρι", Polish:"ryba", Dutch:"vis", Swedish:"fisk", Afrikaans:"vis", Filipino:"isda", Indonesian:"ikan", Swahili:"samaki", Persian:"ماهی", Bengali:"মাছ", Urdu:"مچھلی", Romanian:"pește", Ukrainian:"риба", Czech:"ryba" },
-  "bird":      { Spanish:"pájaro", French:"oiseau", German:"vogel", Italian:"uccello", Portuguese:"pássaro", "Portuguese (Brazil)":"pássaro", Russian:"птица", "Chinese (Mandarin)":"鸟", "Chinese (Cantonese)":"雀", Japanese:"とり", Korean:"새", Hebrew:"ציפור", Arabic:"طائر", Hindi:"चिड़िया", Vietnamese:"chim", Thai:"นก", Turkish:"kuş", Greek:"πουλί", Polish:"ptak", Dutch:"vogel", Swedish:"fågel", Afrikaans:"voël", Filipino:"ibon", Indonesian:"burung", Swahili:"ndege", Persian:"پرنده", Bengali:"পাখি", Urdu:"پرندہ", Romanian:"pasăre", Ukrainian:"птах", Czech:"pták" },
-  "apple":     { Spanish:"manzana", French:"pomme", German:"apfel", Italian:"mela", Portuguese:"maçã", "Portuguese (Brazil)":"maçã", Russian:"яблоко", "Chinese (Mandarin)":"苹果", "Chinese (Cantonese)":"蘋果", Japanese:"りんご", Korean:"사과", Hebrew:"תפוח", Arabic:"تفاحة", Hindi:"सेब", Vietnamese:"táo", Thai:"แอปเปิล", Turkish:"elma", Greek:"μήλο", Polish:"jabłko", Dutch:"appel", Swedish:"äpple", Afrikaans:"appel", Filipino:"mansanas", Indonesian:"apel", Swahili:"tufaha", Persian:"سیب", Bengali:"আপেল", Urdu:"سیب", Romanian:"măr", Ukrainian:"яблуко", Czech:"jablko" },
-  "flower":    { Spanish:"flor", French:"fleur", German:"blume", Italian:"fiore", Portuguese:"flor", "Portuguese (Brazil)":"flor", Russian:"цветок", "Chinese (Mandarin)":"花", "Chinese (Cantonese)":"花", Japanese:"はな", Korean:"꽃", Hebrew:"פרח", Arabic:"زهرة", Hindi:"फूल", Vietnamese:"hoa", Thai:"ดอกไม้", Turkish:"çiçek", Greek:"λουλούδι", Polish:"kwiat", Dutch:"bloem", Swedish:"blomma", Afrikaans:"blom", Filipino:"bulaklak", Indonesian:"bunga", Swahili:"ua", Persian:"گل", Bengali:"ফুল", Urdu:"پھول", Romanian:"floare", Ukrainian:"квітка", Czech:"květina" },
-  "water":     { Spanish:"agua", French:"eau", German:"wasser", Italian:"acqua", Portuguese:"água", "Portuguese (Brazil)":"água", Russian:"вода", "Chinese (Mandarin)":"水", "Chinese (Cantonese)":"水", Japanese:"みず", Korean:"물", Hebrew:"מים", Arabic:"ماء", Hindi:"पानी", Vietnamese:"nước", Thai:"น้ำ", Turkish:"su", Greek:"νερό", Polish:"woda", Dutch:"water", Swedish:"vatten", Afrikaans:"water", Filipino:"tubig", Indonesian:"air", Swahili:"maji", Persian:"آب", Bengali:"জল", Urdu:"پانی", Romanian:"apă", Ukrainian:"вода", Czech:"voda" },
-  "milk":      { Spanish:"leche", French:"lait", German:"milch", Italian:"latte", Portuguese:"leite", "Portuguese (Brazil)":"leite", Russian:"молоко", "Chinese (Mandarin)":"牛奶", "Chinese (Cantonese)":"牛奶", Japanese:"ミルク", Korean:"우유", Hebrew:"חלב", Arabic:"حليب", Hindi:"दूध", Vietnamese:"sữa", Thai:"นม", Turkish:"süt", Greek:"γάλα", Polish:"mleko", Dutch:"melk", Swedish:"mjölk", Afrikaans:"melk", Filipino:"gatas", Indonesian:"susu", Swahili:"maziwa", Persian:"شیر", Bengali:"দুধ", Urdu:"دودھ", Romanian:"lapte", Ukrainian:"молоко", Czech:"mléko" },
-  "book":      { Spanish:"libro", French:"livre", German:"buch", Italian:"libro", Portuguese:"livro", "Portuguese (Brazil)":"livro", Russian:"книга", "Chinese (Mandarin)":"书", "Chinese (Cantonese)":"書", Japanese:"ほん", Korean:"책", Hebrew:"ספר", Arabic:"كتاب", Hindi:"किताब", Vietnamese:"sách", Thai:"หนังสือ", Turkish:"kitap", Greek:"βιβλίο", Polish:"książka", Dutch:"boek", Swedish:"bok", Afrikaans:"boek", Filipino:"libro", Indonesian:"buku", Swahili:"kitabu", Persian:"کتاب", Bengali:"বই", Urdu:"کتاب", Romanian:"carte", Ukrainian:"книга", Czech:"kniha" },
+  "mama":      { Spanish:"mamá", French:"maman", German:"mama", Italian:"mamma", Portuguese:"mamãe", "Portuguese (Brazil)":"mamãe", Russian:"мама", "Chinese (Mandarin)":"妈妈", "Chinese (Cantonese)":"媽媽", Japanese:"ママ", Korean:"엄마", Hebrew:"אמא", Arabic:"ماما", Hindi:"माँ", Vietnamese:"mẹ", Thai:"แม่", Turkish:"anne", Greek:"μαμά", Polish:"mama", Dutch:"mama", Swedish:"mamma", Afrikaans:"mamma", Tagalog:"nanay", Indonesian:"ibu", Swahili:"mama", Persian:"مامان", Bengali:"মা", Urdu:"امی", Romanian:"mama", Ukrainian:"мама", Czech:"máma", Lao:"ແມ່" },
+  "dada":      { Spanish:"papá", French:"papa", German:"papa", Italian:"papà", Portuguese:"papai", "Portuguese (Brazil)":"papai", Russian:"папа", "Chinese (Mandarin)":"爸爸", "Chinese (Cantonese)":"爸爸", Japanese:"パパ", Korean:"아빠", Hebrew:"אבא", Arabic:"بابا", Hindi:"पापा", Vietnamese:"bố", Thai:"พ่อ", Turkish:"baba", Greek:"μπαμπά", Polish:"tata", Dutch:"papa", Swedish:"pappa", Afrikaans:"pappa", Tagalog:"tatay", Indonesian:"ayah", Swahili:"baba", Persian:"بابا", Bengali:"বাবা", Urdu:"ابو", Romanian:"tata", Ukrainian:"тато", Czech:"táta", Lao:"ພໍ່" },
+  "baby":      { Spanish:"bebé", French:"bébé", German:"baby", Italian:"bambino", Portuguese:"bebê", "Portuguese (Brazil)":"bebê", Russian:"малыш", "Chinese (Mandarin)":"宝宝", "Chinese (Cantonese)":"寶寶", Japanese:"赤ちゃん", Korean:"아기", Hebrew:"תינוק", Arabic:"طفل", Hindi:"बच्चा", Vietnamese:"em bé", Thai:"ทารก", Turkish:"bebek", Greek:"μωρό", Polish:"dziecko", Dutch:"baby", Swedish:"bebis", Afrikaans:"baba", Tagalog:"sanggol", Indonesian:"bayi", Swahili:"mtoto", Persian:"نوزاد", Bengali:"শিশু", Urdu:"بچہ", Romanian:"bebeluș", Ukrainian:"малюк", Czech:"miminko", Lao:"ລູກນ້ອຍ" },
+  "ball":      { Spanish:"pelota", French:"balle", German:"ball", Italian:"palla", Portuguese:"bola", "Portuguese (Brazil)":"bola", Russian:"мяч", "Chinese (Mandarin)":"球", "Chinese (Cantonese)":"波", Japanese:"ボール", Korean:"공", Hebrew:"כדור", Arabic:"كرة", Hindi:"गेंद", Vietnamese:"bóng", Thai:"ลูกบอล", Turkish:"top", Greek:"μπάλα", Polish:"piłka", Dutch:"bal", Swedish:"boll", Afrikaans:"bal", Tagalog:"bola", Indonesian:"bola", Swahili:"mpira", Persian:"توپ", Bengali:"বল", Urdu:"گیند", Romanian:"minge", Ukrainian:"м'яч", Czech:"míč" },
+  "cat":       { Spanish:"gato", French:"chat", German:"katze", Italian:"gatto", Portuguese:"gato", "Portuguese (Brazil)":"gato", Russian:"кот", "Chinese (Mandarin)":"猫", "Chinese (Cantonese)":"貓", Japanese:"ねこ", Korean:"고양이", Hebrew:"חתול", Arabic:"قطة", Hindi:"बिल्ली", Vietnamese:"mèo", Thai:"แมว", Turkish:"kedi", Greek:"γάτα", Polish:"kot", Dutch:"kat", Swedish:"katt", Afrikaans:"kat", Tagalog:"pusa", Indonesian:"kucing", Swahili:"paka", Persian:"گربه", Bengali:"বিড়াল", Urdu:"بلی", Romanian:"pisică", Ukrainian:"кіт", Czech:"kočka" },
+  "dog":       { Spanish:"perro", French:"chien", German:"hund", Italian:"cane", Portuguese:"cão", "Portuguese (Brazil)":"cachorro", Russian:"собака", "Chinese (Mandarin)":"狗", "Chinese (Cantonese)":"狗", Japanese:"いぬ", Korean:"개", Hebrew:"כלב", Arabic:"كلب", Hindi:"कुत्ता", Vietnamese:"chó", Thai:"หมา", Turkish:"köpek", Greek:"σκύλος", Polish:"pies", Dutch:"hond", Swedish:"hund", Afrikaans:"hond", Tagalog:"aso", Indonesian:"anjing", Swahili:"mbwa", Persian:"سگ", Bengali:"কুকুর", Urdu:"کتا", Romanian:"câine", Ukrainian:"собака", Czech:"pes" },
+  "sun":       { Spanish:"sol", French:"soleil", German:"sonne", Italian:"sole", Portuguese:"sol", "Portuguese (Brazil)":"sol", Russian:"солнце", "Chinese (Mandarin)":"太阳", "Chinese (Cantonese)":"太陽", Japanese:"たいよう", Korean:"해", Hebrew:"שמש", Arabic:"شمس", Hindi:"सूरज", Vietnamese:"mặt trời", Thai:"ดวงอาทิตย์", Turkish:"güneş", Greek:"ήλιος", Polish:"słońce", Dutch:"zon", Swedish:"sol", Afrikaans:"son", Tagalog:"araw", Indonesian:"matahari", Swahili:"jua", Persian:"خورشید", Bengali:"সূর্য", Urdu:"سورج", Romanian:"soare", Ukrainian:"сонце", Czech:"slunce" },
+  "moon":      { Spanish:"luna", French:"lune", German:"mond", Italian:"luna", Portuguese:"lua", "Portuguese (Brazil)":"lua", Russian:"луна", "Chinese (Mandarin)":"月亮", "Chinese (Cantonese)":"月亮", Japanese:"つき", Korean:"달", Hebrew:"ירח", Arabic:"قمر", Hindi:"चाँद", Vietnamese:"mặt trăng", Thai:"ดวงจันทร์", Turkish:"ay", Greek:"φεγγάρι", Polish:"księżyc", Dutch:"maan", Swedish:"måne", Afrikaans:"maan", Tagalog:"buwan", Indonesian:"bulan", Swahili:"mwezi", Persian:"ماه", Bengali:"চাঁদ", Urdu:"چاند", Romanian:"lună", Ukrainian:"місяць", Czech:"měsíc" },
+  "tree":      { Spanish:"árbol", French:"arbre", German:"baum", Italian:"albero", Portuguese:"árvore", "Portuguese (Brazil)":"árvore", Russian:"дерево", "Chinese (Mandarin)":"树", "Chinese (Cantonese)":"樹", Japanese:"き", Korean:"나무", Hebrew:"עץ", Arabic:"شجرة", Hindi:"पेड़", Vietnamese:"cây", Thai:"ต้นไม้", Turkish:"ağaç", Greek:"δέντρο", Polish:"drzewo", Dutch:"boom", Swedish:"träd", Afrikaans:"boom", Tagalog:"puno", Indonesian:"pohon", Swahili:"mti", Persian:"درخت", Bengali:"গাছ", Urdu:"درخت", Romanian:"copac", Ukrainian:"дерево", Czech:"strom" },
+  "fish":      { Spanish:"pez", French:"poisson", German:"fisch", Italian:"pesce", Portuguese:"peixe", "Portuguese (Brazil)":"peixe", Russian:"рыба", "Chinese (Mandarin)":"鱼", "Chinese (Cantonese)":"魚", Japanese:"さかな", Korean:"물고기", Hebrew:"דג", Arabic:"سمكة", Hindi:"मछली", Vietnamese:"cá", Thai:"ปลา", Turkish:"balık", Greek:"ψάρι", Polish:"ryba", Dutch:"vis", Swedish:"fisk", Afrikaans:"vis", Tagalog:"isda", Indonesian:"ikan", Swahili:"samaki", Persian:"ماهی", Bengali:"মাছ", Urdu:"مچھلی", Romanian:"pește", Ukrainian:"риба", Czech:"ryba" },
+  "bird":      { Spanish:"pájaro", French:"oiseau", German:"vogel", Italian:"uccello", Portuguese:"pássaro", "Portuguese (Brazil)":"pássaro", Russian:"птица", "Chinese (Mandarin)":"鸟", "Chinese (Cantonese)":"雀", Japanese:"とり", Korean:"새", Hebrew:"ציפור", Arabic:"طائر", Hindi:"चिड़िया", Vietnamese:"chim", Thai:"นก", Turkish:"kuş", Greek:"πουλί", Polish:"ptak", Dutch:"vogel", Swedish:"fågel", Afrikaans:"voël", Tagalog:"ibon", Indonesian:"burung", Swahili:"ndege", Persian:"پرنده", Bengali:"পাখি", Urdu:"پرندہ", Romanian:"pasăre", Ukrainian:"птах", Czech:"pták" },
+  "apple":     { Spanish:"manzana", French:"pomme", German:"apfel", Italian:"mela", Portuguese:"maçã", "Portuguese (Brazil)":"maçã", Russian:"яблоко", "Chinese (Mandarin)":"苹果", "Chinese (Cantonese)":"蘋果", Japanese:"りんご", Korean:"사과", Hebrew:"תפוח", Arabic:"تفاحة", Hindi:"सेब", Vietnamese:"táo", Thai:"แอปเปิล", Turkish:"elma", Greek:"μήλο", Polish:"jabłko", Dutch:"appel", Swedish:"äpple", Afrikaans:"appel", Tagalog:"mansanas", Indonesian:"apel", Swahili:"tufaha", Persian:"سیب", Bengali:"আপেল", Urdu:"سیب", Romanian:"măr", Ukrainian:"яблуко", Czech:"jablko" },
+  "flower":    { Spanish:"flor", French:"fleur", German:"blume", Italian:"fiore", Portuguese:"flor", "Portuguese (Brazil)":"flor", Russian:"цветок", "Chinese (Mandarin)":"花", "Chinese (Cantonese)":"花", Japanese:"はな", Korean:"꽃", Hebrew:"פרח", Arabic:"زهرة", Hindi:"फूल", Vietnamese:"hoa", Thai:"ดอกไม้", Turkish:"çiçek", Greek:"λουλούδι", Polish:"kwiat", Dutch:"bloem", Swedish:"blomma", Afrikaans:"blom", Tagalog:"bulaklak", Indonesian:"bunga", Swahili:"ua", Persian:"گل", Bengali:"ফুল", Urdu:"پھول", Romanian:"floare", Ukrainian:"квітка", Czech:"květina" },
+  "water":     { Spanish:"agua", French:"eau", German:"wasser", Italian:"acqua", Portuguese:"água", "Portuguese (Brazil)":"água", Russian:"вода", "Chinese (Mandarin)":"水", "Chinese (Cantonese)":"水", Japanese:"みず", Korean:"물", Hebrew:"מים", Arabic:"ماء", Hindi:"पानी", Vietnamese:"nước", Thai:"น้ำ", Turkish:"su", Greek:"νερό", Polish:"woda", Dutch:"water", Swedish:"vatten", Afrikaans:"water", Tagalog:"tubig", Indonesian:"air", Swahili:"maji", Persian:"آب", Bengali:"জল", Urdu:"پانی", Romanian:"apă", Ukrainian:"вода", Czech:"voda" },
+  "milk":      { Spanish:"leche", French:"lait", German:"milch", Italian:"latte", Portuguese:"leite", "Portuguese (Brazil)":"leite", Russian:"молоко", "Chinese (Mandarin)":"牛奶", "Chinese (Cantonese)":"牛奶", Japanese:"ミルク", Korean:"우유", Hebrew:"חלב", Arabic:"حليب", Hindi:"दूध", Vietnamese:"sữa", Thai:"นม", Turkish:"süt", Greek:"γάλα", Polish:"mleko", Dutch:"melk", Swedish:"mjölk", Afrikaans:"melk", Tagalog:"gatas", Indonesian:"susu", Swahili:"maziwa", Persian:"شیر", Bengali:"দুধ", Urdu:"دودھ", Romanian:"lapte", Ukrainian:"молоко", Czech:"mléko" },
+  "book":      { Spanish:"libro", French:"livre", German:"buch", Italian:"libro", Portuguese:"livro", "Portuguese (Brazil)":"livro", Russian:"книга", "Chinese (Mandarin)":"书", "Chinese (Cantonese)":"書", Japanese:"ほん", Korean:"책", Hebrew:"ספר", Arabic:"كتاب", Hindi:"किताब", Vietnamese:"sách", Thai:"หนังสือ", Turkish:"kitap", Greek:"βιβλίο", Polish:"książka", Dutch:"boek", Swedish:"bok", Afrikaans:"boek", Tagalog:"libro", Indonesian:"buku", Swahili:"kitabu", Persian:"کتاب", Bengali:"বই", Urdu:"کتاب", Romanian:"carte", Ukrainian:"книга", Czech:"kniha" },
   "banana":    { Spanish:"plátano", French:"banane", German:"banane", Italian:"banana", Portuguese:"banana", "Portuguese (Brazil)":"banana", Russian:"банан", "Chinese (Mandarin)":"香蕉", "Chinese (Cantonese)":"香蕉", Japanese:"バナナ", Korean:"바나나", Hebrew:"בננה", Arabic:"موز", Hindi:"केला", Vietnamese:"chuối", Thai:"กล้วย", Turkish:"muz", Greek:"μπανάνα", Polish:"banan", Dutch:"banaan", Swedish:"banan", Afrikaans:"piesang" },
   "car":       { Spanish:"coche", French:"voiture", German:"auto", Italian:"macchina", Portuguese:"carro", "Portuguese (Brazil)":"carro", Russian:"машина", "Chinese (Mandarin)":"汽车", "Chinese (Cantonese)":"車", Japanese:"くるま", Korean:"차", Hebrew:"מכונית", Arabic:"سيارة", Hindi:"कार", Vietnamese:"xe", Thai:"รถ", Turkish:"araba", Greek:"αυτοκίνητο", Polish:"samochód", Dutch:"auto", Swedish:"bil", Afrikaans:"motor" },
   "house":     { Spanish:"casa", French:"maison", German:"haus", Italian:"casa", Portuguese:"casa", "Portuguese (Brazil)":"casa", Russian:"дом", "Chinese (Mandarin)":"房子", "Chinese (Cantonese)":"屋", Japanese:"いえ", Korean:"집", Hebrew:"בית", Arabic:"بيت", Hindi:"घर", Vietnamese:"nhà", Thai:"บ้าน", Turkish:"ev", Greek:"σπίτι", Polish:"dom", Dutch:"huis", Swedish:"hus", Afrikaans:"huis" },
@@ -2115,8 +2234,9 @@ function ProgressScreen({ child, onBack }) {
                   <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
                     <span style={{fontSize:28}}>🎓</span>
                     <div style={{flex:1}}>
-                      <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:18,color:RED,lineHeight:1.1}}>{milestone.level}</div>
-                      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:2}}>{milestone.description}</div>
+                      <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:18,color:RED,lineHeight:1.1}}>{milestone.babyLabel}</div>
+                      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#888",marginTop:3,letterSpacing:.3}}>{milestone.level}</div>
+                      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#999",marginTop:3}}>{milestone.description}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:20,color:RED,lineHeight:1}}>~{vocab}</div>
@@ -2130,6 +2250,40 @@ function ProgressScreen({ child, onBack }) {
                   )}
                   <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#999",lineHeight:1.4,marginTop:8,fontStyle:"italic"}}>
                     Vocabulary exposure mapped to CEFR vocabulary-size thresholds. Not a formal assessment.
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Per-language CEFR breakdown — only renders when at least one
+                language has recorded word-session exposure. Shows one compact
+                row per language with its own CEFR level + vocab count so
+                parents can see progress in each language separately. */}
+            {(() => {
+              const perLang = languagesWithVocabProgress(hist);
+              if (perLang.length === 0) return null;
+              return (
+                <div style={{marginBottom:22}}>
+                  <h3 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>
+                    progress by language
+                  </h3>
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {perLang.map(({ language: lang, vocab }) => {
+                      const m = cefrForVocabCount(vocab);
+                      return (
+                        <div key={lang} style={{display:"flex",alignItems:"center",gap:12,background:"#fff",border:"1px solid #eee",borderRadius:14,padding:"12px 14px"}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",lineHeight:1.1}}>{lang}</div>
+                            <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:RED,marginTop:3}}>{m.babyLabel}</div>
+                            <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#999",marginTop:1}}>{m.level}</div>
+                          </div>
+                          <div style={{textAlign:"right",flexShrink:0}}>
+                            <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:RED,lineHeight:1}}>~{vocab}</div>
+                            <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#aaa",marginTop:2}}>words</div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -2752,7 +2906,60 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [familyPhotos, setFamilyPhotosState] = useState(() => child?.id ? getFamilyPhotos(child.id) : {});
   const [photoError, setPhotoError] = useState("");
+  const [showFamilyInfo, setShowFamilyInfo] = useState(false);
   const isNew = !child;
+
+  // Dynamic kinship slots based on the child's learning languages (decision C).
+  // Recomputes whenever langs changes so parents see updated slots after
+  // adding/removing a language.
+  const activeKinshipSlots = useMemo(() => kinshipSlotsForLanguages(langs), [langs]);
+
+  // For the "same family as [other child]" button — find OTHER children with
+  // at least one uploaded family photo.
+  const otherChildrenWithPhotos = useMemo(() => {
+    if (!child?.id) return [];
+    try {
+      const allKids = loadChildren();
+      return allKids
+        .filter(k => k.id !== child.id)
+        .map(k => ({
+          ...k,
+          hasPhotos: Object.values(getFamilyPhotos(k.id) || {}).filter(Boolean).length > 0
+        }))
+        .filter(k => k.hasPhotos);
+    } catch { return []; }
+  }, [child?.id]);
+
+  // Used inside the kinship-slots helper text
+  const childName = name || child?.name || "";
+
+  const handleCopyPhotosFrom = (otherChildId) => {
+    if (!child?.id) return;
+    try {
+      const sourcePhotos = getFamilyPhotos(otherChildId);
+      const keys = Object.keys(sourcePhotos || {});
+      if (keys.length === 0) return;
+      // Merge: don't overwrite existing photos (safer default).
+      // If the parent wants to force-copy, they can remove and re-copy.
+      const current = getFamilyPhotos(child.id);
+      let added = 0;
+      keys.forEach(k => {
+        if (!current[k] && sourcePhotos[k]) {
+          current[k] = sourcePhotos[k];
+          added++;
+        }
+      });
+      if (added === 0) {
+        setPhotoError("All photos were already uploaded for this child.");
+        return;
+      }
+      localStorage.setItem(`lb-photos-${child.id}`, JSON.stringify(current));
+      setFamilyPhotosState(current);
+      setPhotoError(""); // clear any previous error
+    } catch (e) {
+      setPhotoError("Couldn't copy photos — try again.");
+    }
+  };
 
   const toggleLang = (l)=>setLangs(p=>p.includes(l)?p.filter(x=>x!==l):[...p,l]);
 
@@ -2830,10 +3037,43 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
         {/* Family photos — replace emoji with real photo for family-member words */}
         {!isNew && (
           <div style={{marginTop:16,padding:"14px 14px 12px",background:"#FAFAFA",borderRadius:16,border:"1px solid #f0f0f0"}}>
-            <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:4,letterSpacing:.5,textTransform:"uppercase"}}>Family Photos</label>
-            <p style={{fontFamily:"Nunito,sans-serif",fontSize:11,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:12,lineHeight:1.4}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+              <label style={{fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",letterSpacing:.5,textTransform:"uppercase"}}>Family Photos</label>
+              <button type="button" onClick={()=>setShowFamilyInfo(v=>!v)}
+                aria-label="family photo info"
+                style={{background:"#eee",border:"none",borderRadius:"50%",width:18,height:18,fontSize:11,lineHeight:"18px",padding:0,cursor:"pointer",color:"#666",fontFamily:"'Fredoka One','Baloo 2',cursive"}}>
+                ?
+              </button>
+            </div>
+            <p style={{fontFamily:"Nunito,sans-serif",fontSize:11,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:10,lineHeight:1.4}}>
               Upload a photo for each family-member word. Photos are stored on this device only.
             </p>
+
+            {showFamilyInfo && (
+              <div style={{marginBottom:12,padding:"10px 12px",background:"#F6F8FC",border:"1px solid #e0e8f5",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#555",lineHeight:1.55}}>
+                💛 <strong>Families come in all shapes.</strong> If your child has parents of the same sex, feel free to upload photos of both parents under "Mother" or "Father" — whichever feels right for your family. These photos are here to make the cards more meaningful, not to enforce any particular family structure. Teaching your baby to read is what matters.
+              </div>
+            )}
+
+            {/* "Same family as [other child]" — copy photos from a sibling */}
+            {otherChildrenWithPhotos.length > 0 && (
+              <div style={{marginBottom:12}}>
+                <div style={{fontFamily:"Nunito,sans-serif",fontSize:10,fontWeight:800,color:"#888",letterSpacing:.3,textTransform:"uppercase",marginBottom:6}}>
+                  Same family as another child?
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {otherChildrenWithPhotos.map(other => (
+                    <button key={other.id} type="button" onClick={()=>handleCopyPhotosFrom(other.id)}
+                      style={{background:"#fff",border:"1px solid #ddd",borderRadius:50,padding:"6px 12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#555",display:"flex",alignItems:"center",gap:4}}>
+                      <span>{other.emoji}</span>
+                      <span>copy from {other.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Base family photo slots (always shown) */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:8}}>
               {FAMILY_PHOTO_WORDS.map(word => {
                 const photo = familyPhotos[word];
@@ -2860,6 +3100,44 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
                 );
               })}
             </div>
+
+            {/* Kinship-specific slots — only shown if the child is learning
+                a language that differentiates (decision C from user). */}
+            {activeKinshipSlots.length > 0 && (
+              <>
+                <div style={{marginTop:14,marginBottom:8,padding:"8px 10px",background:"#FFF8F8",border:`1px dashed ${RED}55`,borderRadius:10,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#777",lineHeight:1.4}}>
+                  Since {childName || "this child"} is learning languages that distinguish kinship (older/younger, maternal/paternal), you can optionally upload specific photos. If you leave these blank, the generic photo above will be used.
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(2, 1fr)",gap:8}}>
+                  {activeKinshipSlots.map(slot => {
+                    const photo = familyPhotos[slot];
+                    const label = KINSHIP_SLOT_LABELS[slot] || slot;
+                    return (
+                      <div key={slot} style={{display:"flex",alignItems:"center",gap:8,padding:"6px",background:"#fff",border:photo?`2px solid ${RED}`:"1px dashed #ddd",borderRadius:10}}>
+                        <label style={{cursor:"pointer",position:"relative",width:46,height:46,borderRadius:8,overflow:"hidden",background:"#fafafa",border:"1px solid #eee",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                          {photo ? (
+                            <img src={photo} alt={slot} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                          ) : (
+                            <span style={{fontSize:18,color:"#ccc"}}>+</span>
+                          )}
+                          <input type="file" accept="image/*"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(slot, f); e.target.value = ""; }}
+                            style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/>
+                        </label>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#444",lineHeight:1.2}}>{label}</div>
+                          {photo && (
+                            <button onClick={()=>handlePhotoRemove(slot)}
+                              style={{background:"none",border:"none",padding:0,cursor:"pointer",color:"#c44",fontSize:10,lineHeight:1,fontFamily:"Nunito,sans-serif",fontWeight:800,marginTop:3}}>remove</button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
             {photoError && <p style={{marginTop:8,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:RED}}>{photoError}</p>}
           </div>
         )}
@@ -3124,14 +3402,14 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
 
   const tips = [
     { emoji:"✨", title:"Babies are truly limitless.", body:"Start from any age — the earlier the better, but it's never too late." },
-    { emoji:"🍼", title:"Start red words as early as 12 weeks old.", body:"By three months, babies can focus on large red words at close range. This is the ideal time to begin Reading sessions." },
-    { emoji:"🎂", title:"Add your baby's birthday.", body:"We'll track your child's real age alongside their progress — so you can see milestones like \"148 words at 16 months\" in the progress report." },
+    { emoji:"🎂", title:"Add your baby's birthday.", body:"We'll track your child's real age alongside their progress in the progress report." },
     { emoji:"🌍", title:"Finish Sentences before starting a new language.", body:"Once your child has finished (not just reached) the Sentences stage, they can keep reading books in that language while you begin introducing a new one." },
-    { emoji:"📅", title:"Aim for 9 sessions a day.", body:"Three Reading + three Math + three Knowledge sessions, with 5-minute breaks between each. If that's too much today — no pressure." },
+    { emoji:"📅", title:"Aim for 9 sessions a day.", body:"Three Reading + three Math + three Knowledge sessions. If that's too much today — no pressure." },
+    { emoji:"⏱️", title:"Take 5-minute breaks between sessions.", body:"Even between different subjects. A baby's brain needs a moment to rest between bursts of input. You know your child best — adjust as needed." },
     { emoji:"💛", title:"If a day slips by, no worries.", body:"You're already far ahead just by having this tool in your hand. Consistency over intensity." },
     { emoji:"🎉", title:"Make every session joyous.", body:"This is supposed to be fun. Smile, cheer, be silly. If they're tired or fussy, stop and try again later." },
     { emoji:"🗣️", title:"Native speakers are best.", body:"Whenever possible, have a native speaker read the cards aloud to your baby. If that's not available, you and the app are plenty." },
-    { emoji:"⚡", title:"Move fast — about 1 second per card.", body:"It feels counterintuitive, but babies absorb information much faster than we do. Flip cards quickly so their brain stays engaged." },
+    { emoji:"⚡", title:"Move fast — about 1 second per card.", body:"Each lesson should be under 30 seconds total. It feels counterintuitive, but babies absorb information much faster than we do. Flip cards quickly so their brain stays engaged." },
   ];
 
   const faqs = [
@@ -3213,7 +3491,16 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
                 UC Berkeley Linguistics · Columbia Business School
               </div>
               <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#444",lineHeight:1.6}}>
-                Limitless Babies draws inspiration from several different early-learning methods — but it isn't exactly like any one in particular. It's an intentional blend designed around what actually works for real families raising multilingual babies, shaped by Olivia's years of teaching, raising her own twins Callisto &amp; Elara in 20 languages, and the emerging research on how young brains absorb language, music, and knowledge.
+                Limitless Babies draws inspiration from several different early-learning methods — but it isn't exactly like any one in particular. It's an intentional blend designed around what actually works for real families raising multilingual babies.
+              </div>
+            </div>
+
+            <div style={{padding:"14px 16px",background:"#F6F8FC",borderRadius:14}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:8}}>
+                📇 As close to real flash cards as possible
+              </div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#555",lineHeight:1.6}}>
+                This app is designed to feel as close to holding actual flash cards in your hands as possible — no distracting music, no gimmicks, just the cards. By the time Olivia built this, she had already physically printed <strong>thousands</strong> of cards to keep up with her twins' curriculum across many languages. Limitless Babies exists to save parents time, save money, and save trees. 🌱
               </div>
             </div>
 
@@ -3222,19 +3509,42 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
                 📚 Recommended reading
               </div>
               <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#555",lineHeight:1.55,marginBottom:10}}>
-                Books that pair beautifully with this app — curated companion reading for parents who want to go deeper.
+                Companion books that pair beautifully with this app.
               </div>
               <a href="https://amzn.to/48crb3C" target="_blank" rel="noopener noreferrer"
                 style={{display:"inline-block",background:RED,color:"#fff",borderRadius:50,padding:"8px 16px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,textDecoration:"none"}}>
                 view companion books →
               </a>
-              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",lineHeight:1.4,marginTop:8,fontStyle:"italic"}}>
-                Amazon affiliate link — purchases support ongoing development of this app.
-              </div>
             </div>
 
-            <div style={{padding:"12px 14px",textAlign:"center",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",lineHeight:1.5}}>
-              Developed with the help of Anthropic's Claude.
+            <div style={{padding:"14px 16px",background:"#F6F8FC",borderRadius:14}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:8}}>
+                🎓 Doman courses
+              </div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#555",lineHeight:1.55,marginBottom:10}}>
+                All three Doman courses are highly recommended for the best results with this program. Limitless Babies is not exactly like their cards, but it's an excellent companion.
+              </div>
+              <a href="https://courses.domanlearning.com/a/aff_2094qsd8/external?affcode=606622_n1gt4mbs" target="_blank" rel="noopener noreferrer"
+                style={{display:"inline-block",background:RED,color:"#fff",borderRadius:50,padding:"8px 16px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,textDecoration:"none"}}>
+                explore Doman courses →
+              </a>
+            </div>
+
+            <div style={{padding:"14px 16px",background:"#F6F8FC",borderRadius:14}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:8}}>
+                ✂️ Printed cards from a trusted source
+              </div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#555",lineHeight:1.55,marginBottom:10}}>
+                For parents who want to supplement with more physical cards in additional languages, Olivia's mentor has created thousands of them. Use code <strong>OLIVIA15</strong> for 15% off.
+              </div>
+              <a href="https://earlyeducationmomma.etsy.com/?coupon=OLIVIA15" target="_blank" rel="noopener noreferrer"
+                style={{display:"inline-block",background:RED,color:"#fff",borderRadius:50,padding:"8px 16px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,textDecoration:"none"}}>
+                shop EarlyEducationMomma →
+              </a>
+            </div>
+
+            <div style={{padding:"10px 14px",textAlign:"center",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#bbb",lineHeight:1.5,fontStyle:"italic"}}>
+              Some links are affiliate links — purchases help support ongoing development of this app.
             </div>
           </div>
         )}
@@ -3469,6 +3779,11 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
               ⚙ adjust {language} level
             </button>
           )}
+
+          {/* Branding at bottom — Duolingo-style reminder of app identity */}
+          <div style={{marginTop:22,textAlign:"center",fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:13,color:RED,letterSpacing:.5,opacity:.8}}>
+            Limitless Babies
+          </div>
         </div>
       </div>
     </div>
@@ -3850,22 +4165,27 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, onBack
 
         {frame===1 && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:18,width:"100%",maxWidth:340}}>
-            {/* Family photo lookup: use English canonical (card.original) so
-                photos work regardless of current display language. */}
-            {familyPhotos[card.original || card.word] ? (
-              <img src={familyPhotos[card.original || card.word]} alt=""
-                style={{width:"min(300px,82vw)",height:"min(300px,82vw)",borderRadius:22,boxShadow:"0 8px 32px rgba(0,0,0,.14)",objectFit:"cover"}}/>
-            ) : (
-              <PhotoDisplay
-                emoji={card.emoji}
-                style={{
-                  width:"min(300px,82vw)",
-                  height:"min(300px,82vw)",
-                  borderRadius:22,
-                  boxShadow:"0 8px 32px rgba(0,0,0,.14)"
-                }}
-              />
-            )}
+            {/* Family photo lookup: resolves kinship-specific slots (e.g.
+                "older sister" → sister_older) then falls back to the generic
+                word. Uses card.original (English canonical) so it works
+                regardless of display language. */}
+            {(() => {
+              const photo = lookupFamilyPhoto(familyPhotos, card.original || card.word, card.note);
+              return photo ? (
+                <img src={photo} alt=""
+                  style={{width:"min(300px,82vw)",height:"min(300px,82vw)",borderRadius:22,boxShadow:"0 8px 32px rgba(0,0,0,.14)",objectFit:"cover"}}/>
+              ) : (
+                <PhotoDisplay
+                  emoji={card.emoji}
+                  style={{
+                    width:"min(300px,82vw)",
+                    height:"min(300px,82vw)",
+                    borderRadius:22,
+                    boxShadow:"0 8px 32px rgba(0,0,0,.14)"
+                  }}
+                />
+              );
+            })()}
           </div>
         )}
 
@@ -3999,11 +4319,13 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
   const [idx, setIdx] = useState(0);
   const [autoPlay, setAutoPlay] = useState(false);
   const [visible, setVisible] = useState(true);
+  const [finished, setFinished] = useState(false);
+  const completedRef = useRef(false);
   const advanceTimerRef = useRef(null);
 
   // Play the note + speak its name each time a card appears.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || finished) return;
     const card = cards[idx];
     if (!card) return;
     // Start the tone immediately
@@ -4012,27 +4334,36 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
     if (speechOn) {
       setTimeout(() => { try { speak(card.label, language || "English"); } catch {} }, 50);
     }
-  }, [idx, visible, speechOn, cards, language]);
+  }, [idx, visible, speechOn, cards, language, finished]);
 
   const advance = useCallback(() => {
+    if (finished) return;
     setVisible(false);
     if (advanceTimerRef.current) { clearTimeout(advanceTimerRef.current); advanceTimerRef.current = null; }
     setTimeout(() => {
       if (idx >= cards.length - 1) {
-        onComplete && onComplete();
+        // Only fire onComplete ONCE to avoid double-counting the session
+        if (!completedRef.current) {
+          completedRef.current = true;
+          onComplete && onComplete();
+        }
+        setFinished(true);
       } else {
         setIdx(i => i + 1);
         setVisible(true);
       }
     }, 120);
-  }, [idx, cards.length, onComplete]);
+  }, [idx, cards.length, onComplete, finished]);
 
   // Auto-advance after 1 second — same as Reading
   useEffect(() => {
-    if (!autoPlay || !visible) return;
+    if (!autoPlay || !visible || finished) return;
     advanceTimerRef.current = setTimeout(() => advance(), 1000);
     return () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current); };
-  }, [idx, autoPlay, visible, advance]);
+  }, [idx, autoPlay, visible, advance, finished]);
+
+  // Celebration screen when the session is done
+  if (finished) return <CompleteScreen category="music" sessionNum={sessionNum} onBack={onBack}/>;
 
   if (!cards.length) {
     return (

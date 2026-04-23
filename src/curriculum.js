@@ -327,9 +327,9 @@ export const EXTRA_TRANSLATIONS = {
 
   // Family — primary (most important for babies). "mother"/"father" now in
   // curriculum replacing "mama"/"dada" — make sure these have full coverage.
-  "mother": { Spanish:"madre", French:"mère", German:"mutter", Italian:"madre", Portuguese:"mãe", "Portuguese (Brazil)":"mãe", Russian:"мать", "Chinese (Mandarin)":"妈妈", "Chinese (Cantonese)":"媽媽", Japanese:"おかあさん", Korean:"엄마", Hebrew:"אמא", Arabic:"أم", Hindi:"माँ", Vietnamese:"mẹ", "Vietnamese (Northern)":"mẹ", "Vietnamese (Southern)":"má", Turkish:"anne", Lao:"ແມ່", Thai:"แม่", Indonesian:"ibu", Malay:"ibu", Filipino:"ina", Swahili:"mama", Persian:"مادر", Urdu:"ماں", Bengali:"মা", Tamil:"அம்மா", Telugu:"అమ్మ", Marathi:"आई", Polish:"matka", Dutch:"moeder", Swedish:"mor", Greek:"μητέρα" },
-  "father": { Spanish:"padre", French:"père", German:"vater", Italian:"padre", Portuguese:"pai", "Portuguese (Brazil)":"pai", Russian:"отец", "Chinese (Mandarin)":"爸爸", "Chinese (Cantonese)":"爸爸", Japanese:"おとうさん", Korean:"아빠", Hebrew:"אבא", Arabic:"أب", Hindi:"पिता", Vietnamese:"cha", "Vietnamese (Northern)":"bố", "Vietnamese (Southern)":"ba", Turkish:"baba", Lao:"ພໍ່", Thai:"พ่อ", Indonesian:"ayah", Malay:"ayah", Filipino:"ama", Swahili:"baba", Persian:"پدر", Urdu:"باپ", Bengali:"বাবা", Tamil:"அப்பா", Telugu:"నాన్న", Marathi:"बाबा", Polish:"ojciec", Dutch:"vader", Swedish:"far", Greek:"πατέρας" },
-  "baby":   { Spanish:"bebé", French:"bébé", German:"baby", Italian:"bambino", Portuguese:"bebê", "Portuguese (Brazil)":"bebê", Russian:"малыш", "Chinese (Mandarin)":"宝宝", "Chinese (Cantonese)":"BB", Japanese:"あかちゃん", Korean:"아기", Hebrew:"תינוק", Arabic:"طفل", Hindi:"बच्चा", Vietnamese:"em bé", Turkish:"bebek", Lao:"ລູກ", Thai:"ทารก", Indonesian:"bayi", Malay:"bayi", Filipino:"sanggol", Swahili:"mtoto", Persian:"نوزاد", Urdu:"بچہ", Bengali:"শিশু", Tamil:"குழந்தை", Telugu:"బిడ్డ", Marathi:"बाळ", Polish:"dziecko", Dutch:"baby", Swedish:"bebis", Greek:"μωρό" },
+  "mother": { Spanish:"madre", French:"mère", German:"mutter", Italian:"madre", Portuguese:"mãe", "Portuguese (Brazil)":"mãe", Russian:"мать", "Chinese (Mandarin)":"妈妈", "Chinese (Cantonese)":"媽媽", Japanese:"おかあさん", Korean:"엄마", Hebrew:"אמא", Arabic:"أم", Hindi:"माँ", Vietnamese:"mẹ", "Vietnamese (Northern)":"mẹ", "Vietnamese (Southern)":"má", Turkish:"anne", Lao:"ແມ່", Thai:"แม่", Indonesian:"ibu", Malay:"ibu", Tagalog:"ina", Swahili:"mama", Persian:"مادر", Urdu:"ماں", Bengali:"মা", Tamil:"அம்மா", Telugu:"అమ్మ", Marathi:"आई", Polish:"matka", Dutch:"moeder", Swedish:"mor", Greek:"μητέρα" },
+  "father": { Spanish:"padre", French:"père", German:"vater", Italian:"padre", Portuguese:"pai", "Portuguese (Brazil)":"pai", Russian:"отец", "Chinese (Mandarin)":"爸爸", "Chinese (Cantonese)":"爸爸", Japanese:"おとうさん", Korean:"아빠", Hebrew:"אבא", Arabic:"أب", Hindi:"पिता", Vietnamese:"cha", "Vietnamese (Northern)":"bố", "Vietnamese (Southern)":"ba", Turkish:"baba", Lao:"ພໍ່", Thai:"พ่อ", Indonesian:"ayah", Malay:"ayah", Tagalog:"ama", Swahili:"baba", Persian:"پدر", Urdu:"باپ", Bengali:"বাবা", Tamil:"அப்பா", Telugu:"నాన్న", Marathi:"बाबा", Polish:"ojciec", Dutch:"vader", Swedish:"far", Greek:"πατέρας" },
+  "baby":   { Spanish:"bebé", French:"bébé", German:"baby", Italian:"bambino", Portuguese:"bebê", "Portuguese (Brazil)":"bebê", Russian:"малыш", "Chinese (Mandarin)":"宝宝", "Chinese (Cantonese)":"BB", Japanese:"あかちゃん", Korean:"아기", Hebrew:"תינוק", Arabic:"طفل", Hindi:"बच्चा", Vietnamese:"em bé", Turkish:"bebek", Lao:"ລູກ", Thai:"ทารก", Indonesian:"bayi", Malay:"bayi", Tagalog:"sanggol", Swahili:"mtoto", Persian:"نوزاد", Urdu:"بچہ", Bengali:"শিশু", Tamil:"குழந்தை", Telugu:"బిడ్డ", Marathi:"बाळ", Polish:"dziecko", Dutch:"baby", Swedish:"bebis", Greek:"μωρό" },
   "mama":   { Spanish:"mamá", French:"maman", German:"mama", Italian:"mamma", Portuguese:"mamãe", "Portuguese (Brazil)":"mamãe", Russian:"мама", "Chinese (Mandarin)":"妈妈", "Chinese (Cantonese)":"媽媽", Japanese:"ママ", Korean:"엄마", Hebrew:"אמא", Arabic:"ماما", Hindi:"मम्मी", Vietnamese:"mẹ", Turkish:"anne", Lao:"ແມ່" },
   "dada":   { Spanish:"papá", French:"papa", German:"papa", Italian:"papà", Portuguese:"papai", "Portuguese (Brazil)":"papai", Russian:"папа", "Chinese (Mandarin)":"爸爸", "Chinese (Cantonese)":"爸爸", Japanese:"パパ", Korean:"아빠", Hebrew:"אבא", Arabic:"بابا", Hindi:"पापा", Vietnamese:"bố", Turkish:"baba", Lao:"ພໍ່" },
 
@@ -929,14 +929,14 @@ export const KNOWLEDGE_SET_TRANSLATIONS = {
 // has been exposed to more words is showing vocabulary typical of that level.
 
 export const CEFR_MILESTONES = [
-  { max: 50,    level: "Pre-A1",              description: "Building first words" },
-  { max: 500,   level: "A1 — Beginner",        description: "Survival vocabulary (basic nouns, pronouns, common verbs)" },
-  { max: 1000,  level: "A2 — Elementary",     description: "Everyday vocabulary (family, home, shopping, work)" },
-  { max: 2000,  level: "B1 — Intermediate",   description: "Familiar topics (travel, interests, opinions)" },
-  { max: 4000,  level: "B2 — Upper Intermediate", description: "Complex topics (current events, abstract ideas)" },
-  { max: 8000,  level: "C1 — Advanced",       description: "Fluent expression, nuanced meaning" },
-  { max: 16000, level: "C2 — Proficient",     description: "Near-native vocabulary and understanding" },
-  { max: Infinity, level: "Beyond C2 — Graduate", description: "Expert-level vocabulary" },
+  { max: 50,    babyLabel: "Babbling",          level: "Pre-A1",                 description: "Building first words" },
+  { max: 500,   babyLabel: "First words",       level: "A1 — Beginner",           description: "Survival vocabulary (basic nouns, pronouns, common verbs)" },
+  { max: 1000,  babyLabel: "Short phrases",     level: "A2 — Elementary",        description: "Everyday vocabulary (family, home, shopping, work)" },
+  { max: 2000,  babyLabel: "First sentences",   level: "B1 — Intermediate",      description: "Familiar topics (travel, interests, opinions)" },
+  { max: 4000,  babyLabel: "Storytime ready",   level: "B2 — Upper Intermediate",description: "Complex topics (current events, abstract ideas)" },
+  { max: 8000,  babyLabel: "Chatting fluently", level: "C1 — Advanced",          description: "Fluent expression, nuanced meaning" },
+  { max: 16000, babyLabel: "Near-native",       level: "C2 — Proficient",        description: "Near-native vocabulary and understanding" },
+  { max: Infinity, babyLabel: "Limitless",      level: "Beyond C2 — Graduate",   description: "Expert-level vocabulary" },
 ];
 
 export function cefrForVocabCount(count) {
@@ -982,7 +982,7 @@ const KINSHIP_LANGUAGES = [
   "Thai",
   "Indonesian",
   "Malay",
-  "Filipino",
+  "Tagalog",
 ];
 
 export { KINSHIP_LANGUAGES };
@@ -1032,7 +1032,7 @@ export const KINSHIP_VARIANTS = {
                     { word: "adik perempuan",  note: "younger sister", emoji: "👧" }],
     "Malay":       [{ word: "kakak",   note: "older sister",   emoji: "👩" },
                     { word: "adik perempuan", note: "younger sister", emoji: "👧" }],
-    "Filipino":    [{ word: "ate",     note: "older sister",   emoji: "👩" },
+    "Tagalog":    [{ word: "ate",     note: "older sister",   emoji: "👩" },
                     { word: "bunso",   note: "younger sister (youngest)", emoji: "👧" }],
   },
 
@@ -1070,7 +1070,7 @@ export const KINSHIP_VARIANTS = {
                     { word: "adik laki-laki",  note: "younger brother", emoji: "👦" }],
     "Malay":       [{ word: "abang",   note: "older brother",   emoji: "👨" },
                     { word: "adik lelaki", note: "younger brother", emoji: "👦" }],
-    "Filipino":    [{ word: "kuya",    note: "older brother",   emoji: "👨" },
+    "Tagalog":    [{ word: "kuya",    note: "older brother",   emoji: "👨" },
                     { word: "bunso",   note: "youngest brother", emoji: "👦" }],
   },
 
@@ -1263,6 +1263,50 @@ export function countUniqueWordsExposed(history) {
   // Rough: each session exposes ~5 new words averaged over the rolling window
   // (since sets 1,2,3 includes 5 old + 5 old + 5 new = 5 truly new)
   return Math.round(sessionsCompleted * 5 / 3);
+}
+
+// Per-language version of countUniqueWordsExposed. Filters the history to
+// only count sessions completed in the specified language, then applies the
+// same "5 new words per session, averaged across the rolling window" formula.
+// Returns 0 if the child has never done a word session in this language.
+export function countUniqueWordsExposedInLanguage(history, language) {
+  if (!history || !language) return 0;
+  let sessionsCompleted = 0;
+  Object.values(history).forEach(day => {
+    Object.entries(day).forEach(([k, count]) => {
+      // Keys look like "reading:English", "couplets:Spanish", etc.
+      const [cat, lang] = k.split(":");
+      if (lang !== language) return;
+      if (cat === "reading" || cat === "couplets" || cat === "sentences") {
+        sessionsCompleted += count;
+      }
+    });
+  });
+  return Math.round(sessionsCompleted * 5 / 3);
+}
+
+// Returns the list of languages the child has done at least one word session
+// in, sorted by total vocab exposure descending. Useful for the progress
+// screen to know which languages to show.
+export function languagesWithVocabProgress(history) {
+  if (!history) return [];
+  const sessionsByLang = {};
+  Object.values(history).forEach(day => {
+    Object.entries(day).forEach(([k, count]) => {
+      const [cat, lang] = k.split(":");
+      if (!lang) return;
+      if (cat === "reading" || cat === "couplets" || cat === "sentences") {
+        sessionsByLang[lang] = (sessionsByLang[lang] || 0) + count;
+      }
+    });
+  });
+  return Object.entries(sessionsByLang)
+    .map(([lang, sessions]) => ({
+      language: lang,
+      vocab: Math.round(sessions * 5 / 3),
+    }))
+    .filter(e => e.vocab > 0)
+    .sort((a, b) => b.vocab - a.vocab);
 }
 // ── DOMAN-STYLE CURRICULUM (generated) ────────────────────────────────────
 // Parent-controlled: parent picks current month + set index per child.
