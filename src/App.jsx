@@ -25,7 +25,7 @@ const LANGUAGES = [
   "Malayalam","Maltese","Maori","Marathi","Mongolian","Myanmar","Nepali",
   "Norwegian","Pashto","Persian","Polish","Portuguese","Portuguese (Brazil)","Punjabi","Romanian",
   "Russian","Samoan","Scottish Gaelic","Serbian","Sesotho","Shona","Sinhala",
-  "Slovak","Slovenian","Somali","Spanish","Swahili","Swedish","Tajik","Tamil",
+  "Slovak","Slovenian","Somali","Spanish","Swahili","Swedish","Taiwanese","Tajik","Tamil",
   "Telugu","Thai","Turkish","Ukrainian","Urdu","Uzbek","Vietnamese","Vietnamese (Northern)","Vietnamese (Southern)","Chinese (Shanghainese)","Chinese (Toisanese)","Chinese (Teochew)","Welsh",
   "Xhosa","Yiddish","Yoruba","Zulu"
 ];
@@ -132,6 +132,25 @@ function getAudioCtx() {
   if (!Ctx) return null;
   try { _audioCtx = new Ctx(); } catch { return null; }
   return _audioCtx;
+}
+
+// Synchronously unlock audio in response to a user gesture. Must be called
+// from inside an event handler (click/touchstart), NOT from useEffect.
+// iOS Safari is strict about this — AudioContext has to be created and
+// resumed DURING the gesture or playback stays silent forever.
+function unlockAudioSync() {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume();
+    // Play a near-silent tick to fully unlock on iOS
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.001);
+  } catch {}
 }
 
 // Play a single note with a soft piano-ish timbre using additive synthesis.
@@ -385,6 +404,7 @@ const SPEECH_LANG = {
   "Chinese (Shanghainese)":"wuu-CN",
   "Chinese (Toisanese)":"zh-TW",
   "Chinese (Teochew)":"nan-TW",
+  Taiwanese:"nan-TW",
 };
 
 // Flag emoji per language, used as visual cue in the header. For languages
@@ -395,6 +415,7 @@ const LANGUAGE_FLAGS = {
   Portuguese:"🇵🇹", "Portuguese (Brazil)":"🇧🇷", Russian:"🇷🇺",
   "Chinese (Mandarin)":"🇨🇳", "Chinese (Cantonese)":"🇭🇰",
   "Chinese (Shanghainese)":"🇨🇳", "Chinese (Toisanese)":"🇨🇳", "Chinese (Teochew)":"🇨🇳",
+  Taiwanese:"🇹🇼",
   Japanese:"🇯🇵", Korean:"🇰🇷", Hebrew:"🇮🇱", Arabic:"🇸🇦", Hindi:"🇮🇳",
   Vietnamese:"🇻🇳", "Vietnamese (Northern)":"🇻🇳", "Vietnamese (Southern)":"🇻🇳",
   Thai:"🇹🇭", Turkish:"🇹🇷", Greek:"🇬🇷", Polish:"🇵🇱", Dutch:"🇳🇱",
@@ -1318,12 +1339,37 @@ async function translateWords(words, lang) {
   const useKinship = KINSHIP_LANGUAGES.includes(lang);
   const result = [];
 
+  // Some languages are dialects that share their written form with a "parent"
+  // language. E.g. Taiwanese and Cantonese both use traditional Chinese
+  // characters; Teochew / Shanghainese / Toisanese are typically written using
+  // simplified Chinese (Mandarin). Vietnamese dialects use standard Vietnamese
+  // script. For these dialects we fall back to the parent language's
+  // translations when a direct translation is not available.
+  //
+  // Speech/pronunciation is a separate concern; users who want native
+  // pronunciation of dialects can use the upcoming custom-recording feature.
+  const writtenFallback = {
+    "Taiwanese":             "Chinese (Cantonese)",   // traditional characters
+    "Chinese (Teochew)":     "Chinese (Mandarin)",     // simplified
+    "Chinese (Shanghainese)":"Chinese (Mandarin)",     // simplified
+    "Chinese (Toisanese)":   "Chinese (Mandarin)",     // simplified
+    "Vietnamese (Northern)": "Vietnamese",
+    "Vietnamese (Southern)": "Vietnamese",
+  }[lang];
+
+  // Effective lookup language: try direct first, then fallback
+  const lookupLangs = writtenFallback ? [lang, writtenFallback] : [lang];
+  const kinshipLookupLang = useKinship ? lang : (KINSHIP_LANGUAGES.includes(writtenFallback) ? writtenFallback : null);
+
   for (const w of words) {
     const key = w.word?.toLowerCase();
 
-    // Check if this word has kinship variants for this language
-    if (useKinship && KINSHIP_VARIANTS[key]?.[lang]) {
-      const variants = KINSHIP_VARIANTS[key][lang];
+    // Check if this word has kinship variants for this language (or fallback)
+    const kinshipLang = [lang, writtenFallback].find(
+      l => l && KINSHIP_VARIANTS[key]?.[l]
+    );
+    if (kinshipLang) {
+      const variants = KINSHIP_VARIANTS[key][kinshipLang];
       for (const v of variants) {
         result.push({
           ...w,
@@ -1340,12 +1386,7 @@ async function translateWords(words, lang) {
       continue;
     }
 
-    // Regular translation path
-    // Try the word as-is, then try several plural-to-singular fallbacks so
-    // "grapes" finds "grape", "berries" finds "berry", "tomatoes" finds "tomato".
-    // IMPORTANT: try BOTH -s and -es strips (not just one) — "grapes" needs
-    // "grape" (strip -s), but "tomatoes" needs "tomato" (strip -es). Earlier
-    // logic used else-if and missed the "grape" case.
+    // Regular translation path — try every lookup language in order
     const lookups = [key];
     if (key && key.length > 2) {
       if (key.endsWith("ies")) lookups.push(key.slice(0, -3) + "y");
@@ -1354,9 +1395,11 @@ async function translateWords(words, lang) {
       if (key.endsWith("es"))  lookups.push(key.slice(0, -2));
     }
     let hit = null;
-    for (const lk of lookups) {
-      hit = CORE_TRANSLATIONS[lk]?.[lang] || EXTRA_TRANSLATIONS[lk]?.[lang];
-      if (hit) break;
+    outer: for (const ll of lookupLangs) {
+      for (const lk of lookups) {
+        hit = CORE_TRANSLATIONS[lk]?.[ll] || EXTRA_TRANSLATIONS[lk]?.[ll];
+        if (hit) break outer;
+      }
     }
     if (hit) {
       result.push({ ...w, word: hit, original: w.word });
@@ -4175,9 +4218,11 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
             })}
           </div>
 
-          {/* Per-language settings button — scoped to whichever language is
-              currently active. Tapping opens the LanguageLevelSheet. */}
-          {onAdjustLevel && (
+          {/* Per-language settings button — temporarily hidden from the home
+              screen. The mechanism (LanguageLevelSheet) still exists and can
+              be re-exposed when we have a better UX for customization. For
+              now, parents can adjust via the profile editor if needed. */}
+          {false && onAdjustLevel && (
             <button onClick={onAdjustLevel}
               style={{marginTop:18,display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%",background:"transparent",border:"1px dashed #ddd",borderRadius:50,padding:"9px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#888"}}>
               ⚙ adjust {language} level
@@ -4327,22 +4372,62 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
     todaySubtitle = `Currently on Month ${pos.month}, Set ${pos.setIdx + 1}`;
 
   } else if (category === "math") {
-    // Flat-stage list: use MATH_STAGES order.
-    title = "Math";
-    emoji = "🔢";
-    const currentStageId = langPos.math || "dots";
-    const currentIdx = MATH_STAGES.findIndex(s => s.id === currentStageId);
-    MATH_STAGES.forEach((s, i) => {
-      items.push({
-        id: s.id,
-        name: s.label,
-        desc: s.desc,
-        emoji: s.isEq ? "🧮" : (s.showDots ? "🔴" : "🔢"),
-        done: i < currentIdx,
-        current: i === currentIdx,
+    const specificStage = MATH_STAGES.find(s => s.id === stageId);
+    if (specificStage && !specificStage.isEq) {
+      // EXPANDED VIEW: show the daily rolling windows within this stage.
+      // Doman method shifts the window by 2 each day, starting at 0–10.
+      title = specificStage.label;
+      emoji = specificStage.showDots ? "🔴" : "🔢";
+      const currentStageIdx = MATH_STAGES.findIndex(s => s.id === (langPos.math || "dots"));
+      const thisStageIdx = MATH_STAGES.findIndex(s => s.id === stageId);
+      const isChildOnThisStage = thisStageIdx === currentStageIdx;
+      // Child's absolute day in this language (1 if never used)
+      const childAbsDay = getDayNumberForLanguage(activeChild?.id, lang);
+      const currentOffsetDay = Math.max(1, childAbsDay - specificStage.unlockDay + 1);
+      // Show 20 windows — standard Doman rolling-window progression per stage
+      const WINDOWS_PER_STAGE = 20;
+      for (let offsetDay = 1; offsetDay <= WINDOWS_PER_STAGE; offsetDay++) {
+        const lo = (offsetDay - 1) * 2;
+        const hi = lo + 10;
+        const isCurrent = isChildOnThisStage && offsetDay === currentOffsetDay;
+        const isDone = thisStageIdx < currentStageIdx
+          ? true  // whole stage is past — all windows done
+          : (isChildOnThisStage && offsetDay < currentOffsetDay);
+        items.push({
+          id: `${stageId}-w${offsetDay}`,
+          name: `${lo}–${hi}`,
+          desc: `Day ${offsetDay}`,
+          emoji: specificStage.showDots ? "🔴" : "🔢",
+          done: isDone,
+          current: isCurrent,
+        });
+      }
+      if (thisStageIdx < currentStageIdx) {
+        todaySubtitle = `${specificStage.label} — finished, moved on to ${MATH_STAGES[currentStageIdx]?.label || "next stage"}`;
+      } else if (isChildOnThisStage) {
+        todaySubtitle = `Currently on day ${currentOffsetDay} · ${(currentOffsetDay-1)*2}–${(currentOffsetDay-1)*2+10}`;
+      } else {
+        todaySubtitle = `Coming up after ${MATH_STAGES[currentStageIdx]?.label || "earlier stages"}`;
+      }
+    } else {
+      // FLAT LIST: all math stages (shown when user opens an equation stage
+      // or general math roadmap).
+      title = specificStage ? specificStage.label : "Math";
+      emoji = "🔢";
+      const currentStageId = langPos.math || "dots";
+      const currentIdx = MATH_STAGES.findIndex(s => s.id === currentStageId);
+      MATH_STAGES.forEach((s, i) => {
+        items.push({
+          id: s.id,
+          name: s.label,
+          desc: s.desc,
+          emoji: s.isEq ? "🧮" : (s.showDots ? "🔴" : "🔢"),
+          done: i < currentIdx,
+          current: i === currentIdx,
+        });
       });
-    });
-    todaySubtitle = `Currently on ${MATH_STAGES[currentIdx]?.label || "Dots"}`;
+      todaySubtitle = `Currently on ${MATH_STAGES[currentIdx]?.label || "Dots"}`;
+    }
 
   } else if (category === "music") {
     title = "Music";
@@ -4446,7 +4531,7 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
         </div>
 
         <div style={{marginTop:18,padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",lineHeight:1.5,textAlign:"center"}}>
-          To change where your child is, tap <strong>⚙ adjust {language || "English"} level</strong> on the home screen.
+          Your child progresses naturally as they complete each session. In a few months, we'll add a fun Doman-style check-in to help fine-tune where they are.
         </div>
       </div>
     </div>
@@ -5137,7 +5222,7 @@ function RhythmNotation({ pattern, timeSignature }) {
 
   return (
     <svg viewBox={`0 0 ${totalWidth} ${totalHeight}`}
-      style={{ width: "100%", maxWidth: Math.min(totalWidth * 2, 520), height: "auto", display: "block" }}
+      style={{ width: "100%", maxWidth: Math.min(totalWidth * 2, 520), height: "auto", display: "block", margin: "0 auto" }}
       xmlns="http://www.w3.org/2000/svg">
       {elements}
     </svg>
@@ -5231,19 +5316,19 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
       <SessionHeader onBack={onBack} index={idx} total={patterns.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px",cursor:"pointer"}}
-        onClick={()=>advance()}>
+        onClick={()=>{ unlockAudioSync(); advance(); }}>
         {/* Stage label at top */}
         <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.5,textTransform:"uppercase",marginBottom:16}}>
           {label}
         </div>
-        {/* Pattern notation — large */}
+        {/* Pattern notation — centered horizontally, large */}
         {visible && (
           <>
-            <div style={{width:"100%",maxWidth:560,padding:"0 20px",marginBottom:20}}>
+            <div style={{width:"100%",maxWidth:560,padding:"0 20px",marginBottom:20,display:"flex",justifyContent:"center"}}>
               <RhythmNotation pattern={pattern} timeSignature={timeSignature}/>
             </div>
             <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:RED,textAlign:"center",userSelect:"none"}}>
-              {pattern.label}
+              {(pattern.label || "").toLowerCase()}
             </div>
           </>
         )}
@@ -5321,7 +5406,7 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
       <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px",cursor:"pointer"}}
-        onClick={()=>advance()}>
+        onClick={()=>{ unlockAudioSync(); advance(); }}>
         {/* Scale label at top */}
         <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.5,textTransform:"uppercase",marginBottom:16}}>
           {label}
@@ -5534,6 +5619,20 @@ export default function App() {
   useEffect(() => {
     const t = setTimeout(() => setShowSplash(false), 1000);
     return () => clearTimeout(t);
+  }, []);
+
+  // Global audio warmup — unlock WebAudio on the very first tap anywhere in
+  // the app. iOS Safari blocks audio until a user gesture creates and
+  // resumes the AudioContext synchronously, so we hook both click and
+  // touchstart with a { once: true } handler that only fires one time.
+  useEffect(() => {
+    const warmup = () => { try { unlockAudioSync(); } catch {} };
+    document.addEventListener("click",      warmup, { once: true, capture: true });
+    document.addEventListener("touchstart", warmup, { once: true, capture: true });
+    return () => {
+      document.removeEventListener("click",      warmup, { capture: true });
+      document.removeEventListener("touchstart", warmup, { capture: true });
+    };
   }, []);
 
   // Compute active child + its data
