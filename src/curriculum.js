@@ -944,6 +944,40 @@ export function cefrForVocabCount(count) {
   return CEFR_MILESTONES[CEFR_MILESTONES.length - 1];
 }
 
+// ── GENDERED CARD RESOLUTION ─────────────────────────────────────────────────
+// Some languages require different forms based on the speaker's gender.
+// In Korean, a girl calls her older brother "오빠" but a boy calls him "형".
+// In Portuguese, a girl says "obrigada" (thanks) but a boy says "obrigado".
+//
+// Cards that require gender filtering have optional fields:
+//   - womanWord / manWord:  gender-specific forms
+//   - bothWord:             fallback to show both forms (for "prefer not to say")
+//
+// Gender values:
+//   "girl"   → use womanWord
+//   "boy"    → use manWord
+//   "prefer" → use bothWord (default fallback if bothWord not set: word)
+//
+// Returns a NEW card object with resolved `word` — does not mutate input.
+// Cards without gendered fields pass through unchanged.
+export function applyGenderToCard(card, gender) {
+  if (!card) return card;
+  // No gender-specific fields → no change
+  if (!card.womanWord && !card.manWord && !card.bothWord) return card;
+  const g = gender || "prefer";
+  if (g === "girl" && card.womanWord) return { ...card, word: card.womanWord };
+  if (g === "boy"  && card.manWord)   return { ...card, word: card.manWord };
+  // "prefer" or missing form → use bothWord if set, else leave card.word as-is
+  if (card.bothWord) return { ...card, word: card.bothWord };
+  return card;
+}
+
+// Apply gender filter to an array of cards. Safe on any array.
+export function applyGenderToCards(cards, gender) {
+  if (!cards || !Array.isArray(cards)) return cards;
+  return cards.map(c => applyGenderToCard(c, gender));
+}
+
 // ── DAY-BASED SELECTION ──────────────────────────────────────────────────────
 // Given the current day number, return the 3 rolling sets to use.
 // Day 1: sets 0-2, Day 2: sets 1-3, etc.
@@ -1004,7 +1038,7 @@ export const KINSHIP_VARIANTS = {
                             { word: "妹妹",   note: "younger sister", emoji: "👧" }],
     "Chinese (Cantonese)": [{ word: "家姐",   note: "older sister",   emoji: "👩" },
                             { word: "妹妹",   note: "younger sister", emoji: "👧" }],
-    "Korean":              [{ word: "언니/누나", note: "older sister (언니 for girls, 누나 for boys)", emoji: "👩" },
+    "Korean":              [{ word: "언니", womanWord: "언니", manWord: "누나", bothWord: "언니/누나", note: "older sister (언니 for girls, 누나 for boys)", emoji: "👩" },
                             { word: "여동생",  note: "younger sister", emoji: "👧" }],
     "Japanese":            [{ word: "お姉ちゃん", note: "older sister",   emoji: "👩" },
                             { word: "いもうと", note: "younger sister", emoji: "👧" }],
@@ -1042,7 +1076,7 @@ export const KINSHIP_VARIANTS = {
                             { word: "弟弟",   note: "younger brother", emoji: "👦" }],
     "Chinese (Cantonese)": [{ word: "哥哥",   note: "older brother",   emoji: "👨" },
                             { word: "細佬",   note: "younger brother", emoji: "👦" }],
-    "Korean":              [{ word: "오빠/형", note: "older brother (오빠 for girls, 형 for boys)", emoji: "👨" },
+    "Korean":              [{ word: "오빠", womanWord: "오빠", manWord: "형", bothWord: "오빠/형", note: "older brother (오빠 for girls, 형 for boys)", emoji: "👨" },
                             { word: "남동생",  note: "younger brother", emoji: "👦" }],
     "Japanese":            [{ word: "お兄ちゃん", note: "older brother",   emoji: "👨" },
                             { word: "おとうと", note: "younger brother", emoji: "👦" }],

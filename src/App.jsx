@@ -5,6 +5,7 @@ import {
   cefrForVocabCount, getRollingSets, buildDeckFromSets,
   countUniqueWordsExposed, countUniqueWordsExposedInLanguage,
   languagesWithVocabProgress,
+  applyGenderToCards,
   KINSHIP_VARIANTS, KINSHIP_LANGUAGES,
   KNOWLEDGE_SET_TRANSLATIONS,
   WORDS_BY_MONTH, COUPLETS_BY_MONTH, SENTENCES_BY_MONTH, KNOWLEDGE_BY_MONTH
@@ -206,6 +207,144 @@ function getMusicContent(child, language, sessionNum) {
     return { stageId: scale.id, scale, sessionType: "shuffled", notes: shuffle(scale.majorNotes), label: scale.majorLabel + " (shuffled)" };
   }
   return { stageId: scale.id, scale, sessionType: "major", notes: scale.majorNotes, label: scale.majorLabel };
+}
+
+// ── RHYTHM: NOTE-VALUE TRAINING ──────────────────────────────────────────────
+// Children see rhythm patterns in proper musical notation while the app plays
+// them. Unlike pitch (which teaches absolute frequency), rhythm training here
+// is about "shape bias" — teaching the association between what notes LOOK
+// LIKE and how they sound. Same flash-card format as Reading.
+//
+// Progression mirrors how music is traditionally taught:
+//   Stage 1 — Basic Beats (single note values)
+//   Stage 2 — 2/4 Time (patterns within 2-beat measures)
+//   Stage 3 — 4/4 Time
+//   Stage 4 — 3/4 Time
+//   Stage 5 — 6/8 Time
+//
+// "Sight Reading" (combining pitch + rhythm on a staff) is planned as a
+// future 3rd section under Music.
+
+// Note-type definitions. `beats` = duration in quarter-note units.
+const NOTE_TYPE_META = {
+  "whole":          { beats: 4,    filled: false, stem: false, flags: 0 },
+  "half":           { beats: 2,    filled: false, stem: true,  flags: 0 },
+  "dotted-half":    { beats: 3,    filled: false, stem: true,  flags: 0, dotted: true },
+  "quarter":        { beats: 1,    filled: true,  stem: true,  flags: 0 },
+  "dotted-quarter": { beats: 1.5,  filled: true,  stem: true,  flags: 0, dotted: true },
+  "eighth":         { beats: 0.5,  filled: true,  stem: true,  flags: 1 },
+  "sixteenth":      { beats: 0.25, filled: true,  stem: true,  flags: 2 },
+};
+
+const RHYTHM_STAGES = [
+  {
+    id: "basic-beats",
+    weekNum: 1,
+    label: "Basic Beats",
+    desc: "Introducing each note value · one card per type",
+    patterns: [
+      { id: "basic-quarter",        label: "Quarter note",    notes: [{ type: "quarter" }] },
+      { id: "basic-half",           label: "Half note",       notes: [{ type: "half" }] },
+      { id: "basic-dotted-half",    label: "Dotted half",     notes: [{ type: "dotted-half" }] },
+      { id: "basic-whole",          label: "Whole note",      notes: [{ type: "whole" }] },
+      { id: "basic-eighth",         label: "Eighth notes",    notes: [{ type: "eighth" }, { type: "eighth" }], beamed: true },
+      { id: "basic-sixteenth",      label: "Sixteenth notes", notes: [{ type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }], beamed: true },
+      { id: "basic-triplet",        label: "Eighth triplet",  notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamed: true, triplet: true },
+      { id: "basic-dotted-quarter", label: "Dotted quarter",  notes: [{ type: "dotted-quarter" }] },
+    ],
+  },
+  {
+    id: "time-2-4",
+    weekNum: 2,
+    label: "2/4 Time",
+    timeSignature: "2/4",
+    desc: "Patterns in 2-beat measures",
+    patterns: [
+      { id: "24-qq",   label: "Quarter, Quarter",        notes: [{ type: "quarter" }, { type: "quarter" }] },
+      { id: "24-h",    label: "Half",                     notes: [{ type: "half" }] },
+      { id: "24-qee",  label: "Quarter, Two eighths",    notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[1, 2]] },
+      { id: "24-eeq",  label: "Two eighths, Quarter",    notes: [{ type: "eighth" }, { type: "eighth" }, { type: "quarter" }], beamGroups: [[0, 1]] },
+      { id: "24-eeee", label: "Four eighths",             notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[0, 1], [2, 3]] },
+      { id: "24-dqe",  label: "Dotted quarter, Eighth", notes: [{ type: "dotted-quarter" }, { type: "eighth" }] },
+    ],
+  },
+  {
+    id: "time-4-4",
+    weekNum: 3,
+    label: "4/4 Time",
+    timeSignature: "4/4",
+    desc: "Patterns in 4-beat measures",
+    patterns: [
+      { id: "44-qqqq", label: "Four quarters",           notes: [{ type: "quarter" }, { type: "quarter" }, { type: "quarter" }, { type: "quarter" }] },
+      { id: "44-hh",   label: "Two halves",               notes: [{ type: "half" }, { type: "half" }] },
+      { id: "44-w",    label: "Whole note",               notes: [{ type: "whole" }] },
+      { id: "44-qqh",  label: "Quarter, Quarter, Half", notes: [{ type: "quarter" }, { type: "quarter" }, { type: "half" }] },
+      { id: "44-dhq",  label: "Dotted half, Quarter",   notes: [{ type: "dotted-half" }, { type: "quarter" }] },
+      { id: "44-mixed",label: "Quarters + eighths",     notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }, { type: "quarter" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[1, 2], [4, 5]] },
+    ],
+  },
+  {
+    id: "time-3-4",
+    weekNum: 4,
+    label: "3/4 Time",
+    timeSignature: "3/4",
+    desc: "Waltz time · 3-beat measures",
+    patterns: [
+      { id: "34-qqq",  label: "Three quarters",          notes: [{ type: "quarter" }, { type: "quarter" }, { type: "quarter" }] },
+      { id: "34-dh",   label: "Dotted half",              notes: [{ type: "dotted-half" }] },
+      { id: "34-hq",   label: "Half, Quarter",           notes: [{ type: "half" }, { type: "quarter" }] },
+      { id: "34-qh",   label: "Quarter, Half",           notes: [{ type: "quarter" }, { type: "half" }] },
+      { id: "34-qeeq", label: "Quarter, Eighths, Quarter", notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }, { type: "quarter" }], beamGroups: [[1, 2]] },
+    ],
+  },
+  {
+    id: "time-6-8",
+    weekNum: 5,
+    label: "6/8 Time",
+    timeSignature: "6/8",
+    desc: "Compound meter · 6 eighths in groups of 3",
+    patterns: [
+      { id: "68-six",  label: "Six eighths",              notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[0, 1, 2], [3, 4, 5]] },
+      { id: "68-twodq",label: "Two dotted quarters",     notes: [{ type: "dotted-quarter" }, { type: "dotted-quarter" }] },
+      { id: "68-qeqe", label: "Quarter-eighth twice",    notes: [{ type: "quarter" }, { type: "eighth" }, { type: "quarter" }, { type: "eighth" }] },
+      { id: "68-dh",   label: "Dotted half",              notes: [{ type: "dotted-half" }] },
+    ],
+  },
+];
+
+// Resolve rhythm content for a child. Session 1 = patterns in order,
+// sessions 2 and 3 = shuffled.
+function getRhythmContent(child, language, sessionNum) {
+  const lang = language || "English";
+  const allPos = migratePosition(child?.position);
+  const stageId = allPos[lang]?.rhythm || RHYTHM_STAGES[0].id;
+  const stage = RHYTHM_STAGES.find(s => s.id === stageId) || RHYTHM_STAGES[0];
+  const patterns = sessionNum === 1 ? stage.patterns : shuffle(stage.patterns);
+  return { stageId: stage.id, stage, patterns, label: stage.label };
+}
+
+// Play a rhythm pattern by stepping through its notes at a given tempo.
+// Uses a single-pitch tone (C4) so the DURATION is what differentiates the
+// note values. Tempo default = 80 BPM (comfortable for baby-attention spans).
+// Returns a function that cancels playback if called.
+function playRhythm(pattern, bpm = 80) {
+  const beatMs = 60000 / bpm;
+  const timers = [];
+  let delay = 0;
+  const isTriplet = pattern.triplet;
+  // In a triplet, 3 eighths fit in 2 eighths' worth of time (one beat).
+  // So each triplet note is ~(beatMs / 3) instead of (beatMs / 2).
+  for (const note of pattern.notes) {
+    const meta = NOTE_TYPE_META[note.type];
+    if (!meta) continue;
+    const noteBeats = isTriplet ? (2 / 3) * meta.beats : meta.beats;
+    const noteMs = noteBeats * beatMs;
+    // Play the tone at ~95% of its duration so there's a tiny gap between notes
+    const playMs = Math.max(100, noteMs * 0.95);
+    timers.push(setTimeout(() => { try { playTone("C4", playMs); } catch {} }, delay));
+    delay += noteMs;
+  }
+  return () => timers.forEach(t => clearTimeout(t));
 }
 
 const RED   = "#E8192C";
@@ -835,7 +974,10 @@ function compressImageFile(file) {
       const img = new Image();
       img.onerror = () => reject(new Error("Could not decode image"));
       img.onload = () => {
-        const maxW = 600;
+        // Reduced from 600×0.8 to 400×0.7 — cuts storage ~3× without
+        // visible quality loss at the photo display size (300px). Important
+        // for families uploading many kinship variants (twin × 23 slots).
+        const maxW = 400;
         const scale = Math.min(1, maxW / img.width);
         const w = Math.round(img.width * scale);
         const h = Math.round(img.height * scale);
@@ -843,7 +985,7 @@ function compressImageFile(file) {
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", 0.8));
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
       };
       img.src = e.target.result;
     };
@@ -1126,6 +1268,10 @@ async function translateWords(words, lang) {
           emoji: v.emoji || w.emoji,
           note: v.note,                // "older sister", "paternal grandma", etc.
           original: w.word,
+          // Preserve gender-specific forms so applyGenderToCard can filter later
+          ...(v.womanWord && { womanWord: v.womanWord }),
+          ...(v.manWord   && { manWord:   v.manWord }),
+          ...(v.bothWord  && { bothWord:  v.bothWord }),
         });
       }
       continue;
@@ -2011,7 +2157,10 @@ function LoadingScreen({ message }) {
 // Shown for 3s on app launch. Big centered logo, no text, no spinner.
 function SplashScreen() {
   return (
-    <div style={{minHeight:"100vh",background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",padding:32}}>
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32,gap:18}}>
+      <h1 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:32,color:RED,margin:0,letterSpacing:-0.5,animation:"lbSplashFade 1s ease-out forwards"}}>
+        Limitless Babies
+      </h1>
       <img src={LOGO_SRC} alt="Limitless Babies" style={{width:200,height:"auto",objectFit:"contain",display:"block",animation:"lbSplashFade 1s ease-out forwards"}}/>
       <style>{`
         @keyframes lbSplashFade {
@@ -2453,6 +2602,38 @@ function MathStagePicker({ selected, onSelect, onClose }) {
 // ── CHILD AVATAR PICKER ──────────────────────────────────────────────────────
 
 const CHILD_EMOJIS = ["👶","🧒","👧","👦","🐣","🐥","🦊","🐻","🐨","🐼","🦁","🐰","🦄","🦋","🌸","⭐","🌟","🌈","🍎","🧚"];
+
+// ── CLASSES (ENROLLMENT) ─────────────────────────────────────────────────────
+// Parents enroll their child in specific "classes" during profile creation.
+// Only enrolled classes appear on the home screen. When a child finishes an
+// entire class, they can graduate — shows a 🎓 badge and celebrates completion.
+//
+// Default for new children: all classes enrolled (parent can uncheck).
+// Default for existing children (backward compat): all classes enrolled.
+const AVAILABLE_CLASSES = [
+  { id:"reading",       label:"Reading",         emoji:"📖", desc:"Words, phrases, and stories" },
+  { id:"math",          label:"Math",            emoji:"🔢", desc:"Quantities and equations" },
+  { id:"knowledge",     label:"Knowledge",       emoji:"🌍", desc:"Facts about the world" },
+  { id:"music-pitch",   label:"Music · Pitch",   emoji:"🎹", desc:"Perfect pitch training" },
+  { id:"music-rhythm",  label:"Music · Rhythm",  emoji:"🥁", desc:"Note values and time signatures" },
+];
+
+// Helper: given a child, returns the array of class ids they're enrolled in.
+// Falls back to all classes if the field is missing (existing users).
+function getEnrolledClasses(child) {
+  if (!child) return AVAILABLE_CLASSES.map(c => c.id);
+  if (!Array.isArray(child.enrolledClasses)) return AVAILABLE_CLASSES.map(c => c.id);
+  return child.enrolledClasses;
+}
+
+function isClassEnrolled(child, classId) {
+  return getEnrolledClasses(child).includes(classId);
+}
+
+function isClassGraduated(child, classId) {
+  if (!child || !Array.isArray(child.graduatedClasses)) return false;
+  return child.graduatedClasses.includes(classId);
+}
 
 // ── ONBOARDING IMPORT (paste family code during setup) ───────────────────────
 
@@ -2903,6 +3084,25 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
   const [emoji, setEmoji] = useState(child?.emoji || CHILD_EMOJIS[0]);
   const [langs, setLangs] = useState(child?.languages || ["English"]);
   const [birthdate, setBirthdate] = useState(child?.birthdate || "");
+  // Gender is stored on the child profile. Used to select the correct
+  // gendered form of cards in languages that require it (Portuguese thank-you,
+  // Korean kinship address terms, etc.). "prefer" = prefer not to say.
+  const [gender, setGender] = useState(child?.gender || "prefer");
+  // Enrolled classes — default all for backward compat. Parent can toggle.
+  const [enrolledClasses, setEnrolledClasses] = useState(
+    Array.isArray(child?.enrolledClasses) ? child.enrolledClasses : AVAILABLE_CLASSES.map(c => c.id)
+  );
+  const [graduatedClasses, setGraduatedClasses] = useState(
+    Array.isArray(child?.graduatedClasses) ? child.graduatedClasses : []
+  );
+  const toggleClass = (id) => {
+    setEnrolledClasses(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    // If they un-enroll a class, also remove any graduation
+    setGraduatedClasses(prev => prev.filter(x => x !== id));
+  };
+  const toggleGraduated = (id) => {
+    setGraduatedClasses(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [familyPhotos, setFamilyPhotosState] = useState(() => child?.id ? getFamilyPhotos(child.id) : {});
   const [photoError, setPhotoError] = useState("");
@@ -2970,7 +3170,13 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
     try {
       const dataUrl = await compressImageFile(file);
       const ok = setFamilyPhoto(child.id, word, dataUrl);
-      if (!ok) { setPhotoError("Storage full — try a smaller photo or remove one."); return; }
+      if (!ok) {
+        // Try to give actionable info: count current photos and tell them
+        const photos = getFamilyPhotos(child.id);
+        const count = Object.values(photos || {}).filter(Boolean).length;
+        setPhotoError(`Storage full (${count} photos already uploaded). Tap × on photos you don't need, then try again. Photos are now ~3× smaller so you should fit many more going forward.`);
+        return;
+      }
       setFamilyPhotosState(getFamilyPhotos(child.id));
     } catch (e) {
       setPhotoError("Could not read that photo: " + e.message);
@@ -3001,6 +3207,64 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
         <p style={{fontFamily:"Nunito,sans-serif",fontSize:10,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:14,lineHeight:1.4}}>
           Used to show your child's real age alongside their progress (e.g., "148 words at 16 months").
         </p>
+
+        <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Gender</label>
+        <div style={{display:"flex",gap:6,marginBottom:6}}>
+          {[
+            { id:"girl",    label:"Girl",    emoji:"👧" },
+            { id:"boy",     label:"Boy",     emoji:"👦" },
+            { id:"prefer",  label:"Prefer not to say", emoji:"🤗" },
+          ].map(g => (
+            <button key={g.id} type="button" onClick={()=>setGender(g.id)}
+              style={{flex:1,padding:"10px 8px",borderRadius:12,border:`2px solid ${gender===g.id?RED:"#eee"}`,background:gender===g.id?"#FFF0F1":"#fff",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:gender===g.id?RED:"#666"}}>
+              <span style={{fontSize:18}}>{g.emoji}</span>
+              <span style={{lineHeight:1.1,textAlign:"center"}}>{g.label}</span>
+            </button>
+          ))}
+        </div>
+        <p style={{fontFamily:"Nunito,sans-serif",fontSize:10,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:14,lineHeight:1.4}}>
+          Used only for languages where words differ by speaker gender (e.g., Portuguese <em>obrigada/obrigado</em>, Korean <em>오빠/형</em>). If you prefer not to say, we show both forms.
+        </p>
+
+        {/* ── CLASSES ─────────────────────────────────────────────────────── */}
+        <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>
+          Classes ({enrolledClasses.length})
+        </label>
+        <p style={{fontFamily:"Nunito,sans-serif",fontSize:10,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:10,lineHeight:1.4}}>
+          Choose which classes {name || "this child"} is taking. Only enrolled classes appear on the home screen. You can add or remove classes anytime.
+        </p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          {AVAILABLE_CLASSES.map(c => {
+            const isEnrolled = enrolledClasses.includes(c.id);
+            const isGraduated = graduatedClasses.includes(c.id);
+            return (
+              <div key={c.id}
+                style={{position:"relative",padding:"10px 12px",borderRadius:14,border:`2px solid ${isEnrolled?RED:"#eee"}`,background:isEnrolled?"#FFF8F8":"#fafafa"}}>
+                <button type="button" onClick={()=>toggleClass(c.id)}
+                  style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",width:"100%",display:"flex",alignItems:"flex-start",gap:8}}>
+                  <span style={{fontSize:22,lineHeight:1.1,filter:isEnrolled?"none":"grayscale(1)",opacity:isEnrolled?1:.5}}>{c.emoji}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:12,color:isEnrolled?"#111":"#999",lineHeight:1.15}}>
+                      {c.label} {isGraduated && <span style={{fontSize:11}}>🎓</span>}
+                    </div>
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#aaa",marginTop:2,lineHeight:1.3}}>
+                      {c.desc}
+                    </div>
+                  </div>
+                  <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${isEnrolled?RED:"#ccc"}`,background:isEnrolled?RED:"#fff",flexShrink:0,marginTop:2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#fff",fontWeight:900,lineHeight:1}}>
+                    {isEnrolled ? "✓" : ""}
+                  </div>
+                </button>
+                {isEnrolled && (
+                  <button type="button" onClick={()=>toggleGraduated(c.id)}
+                    style={{marginTop:6,width:"100%",background:isGraduated?RED:"#fff",border:`1px solid ${isGraduated?RED:"#ddd"}`,borderRadius:50,padding:"4px 10px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:isGraduated?"#fff":"#666",letterSpacing:.3}}>
+                    {isGraduated ? "🎓 Graduated!" : "mark as graduated"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Avatar</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
@@ -3163,6 +3427,9 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
               id: child?.id || newChildId(),
               name: name.trim(), emoji, languages: langs.length ? langs : ["English"],
               birthdate: birthdate || null,
+              gender: gender || "prefer",
+              enrolledClasses: enrolledClasses && enrolledClasses.length > 0 ? enrolledClasses : AVAILABLE_CLASSES.map(c => c.id),
+              graduatedClasses: graduatedClasses || [],
               // Preserve whatever position data already exists — position is
               // now edited from the home screen per-language, not here.
               position: child?.position,
@@ -3184,7 +3451,7 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
 // Sheet for picking a specific set within a category. Shows month tabs + a scrollable list
 // of set names so parent can tap their child's current position.
 function PositionPicker({ category, current, onSelect, onClear, onClose }) {
-  const isFlatStages = category.type === "math" || category.type === "music";
+  const isFlatStages = category.type === "math" || category.type === "music" || category.type === "rhythm";
 
   // Flat-stage list (math, music): stages are an array of {id,label,desc}, current is a stageId string
   if (isFlatStages) {
@@ -3303,6 +3570,7 @@ function LanguageLevelSheet({ child, language, onSave, onClose }) {
     knowledge: initial.knowledge !== undefined ? initial.knowledge : { month: 1, setIdx: 0 },
     math:      initial.math      !== undefined ? initial.math      : "dots",
     music:     initial.music     !== undefined ? initial.music     : "c-major",
+    rhythm:    initial.rhythm    !== undefined ? initial.rhythm    : "basic-beats",
   });
   const [editingCat, setEditingCat] = useState(null);
 
@@ -3313,13 +3581,21 @@ function LanguageLevelSheet({ child, language, onSave, onClose }) {
     desc: `${s.majorLabel} + ${s.minorLabel} · 3 sessions a day`,
   }));
 
+  // Build a rhythm stages array for PositionPicker.
+  const rhythmStages = RHYTHM_STAGES.map(s => ({
+    id: s.id,
+    label: `Week ${s.weekNum} — ${s.label}`,
+    desc: s.desc,
+  }));
+
   const categories = [
-    { key:"words",     type:"sets", label:"Single Words",  data:WORDS_BY_MONTH,     startsMonth:1, endsMonth:3 },
-    { key:"couplets",  type:"sets", label:"Couplets",      data:COUPLETS_BY_MONTH,  startsMonth:2, endsMonth:2 },
-    { key:"sentences", type:"sets", label:"Sentences",     data:SENTENCES_BY_MONTH, startsMonth:3, endsMonth:3 },
-    { key:"knowledge", type:"sets", label:"Knowledge",     data:KNOWLEDGE_BY_MONTH, startsMonth:1, endsMonth:3 },
-    { key:"math",      type:"math", label:"Math",          stages:MATH_STAGES },
-    { key:"music",     type:"music",label:"Music",         stages:musicStages },
+    { key:"words",     type:"sets",  label:"Single Words",  data:WORDS_BY_MONTH,     startsMonth:1, endsMonth:3 },
+    { key:"couplets",  type:"sets",  label:"Couplets",      data:COUPLETS_BY_MONTH,  startsMonth:2, endsMonth:2 },
+    { key:"sentences", type:"sets",  label:"Sentences",     data:SENTENCES_BY_MONTH, startsMonth:3, endsMonth:3 },
+    { key:"knowledge", type:"sets",  label:"Knowledge",     data:KNOWLEDGE_BY_MONTH, startsMonth:1, endsMonth:3 },
+    { key:"math",      type:"math",  label:"Math",          stages:MATH_STAGES },
+    { key:"music",     type:"music", label:"Music · Pitch", stages:musicStages },
+    { key:"rhythm",    type:"rhythm",label:"Music · Rhythm",stages:rhythmStages },
   ];
 
   return (
@@ -3543,6 +3819,41 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
               </a>
             </div>
 
+            <div style={{padding:"14px 16px",background:"#F6F8FC",borderRadius:14}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:8}}>
+                💬 Join the community
+              </div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#555",lineHeight:1.55,marginBottom:12}}>
+                Connect with other parents raising limitless babies — share wins, ask questions, swap tips.
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <a href="https://chat.whatsapp.com/EULbVlmidPHE7Reypj9gbv" target="_blank" rel="noopener noreferrer"
+                  style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid #eee",borderRadius:50,padding:"10px 14px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#25D366",textDecoration:"none"}}>
+                  <span style={{fontSize:18}}>💚</span>
+                  <span style={{flex:1}}>WhatsApp community chat</span>
+                  <span style={{color:"#ccc",fontSize:14}}>›</span>
+                </a>
+                <a href="https://instagram.com/limitlessbabies" target="_blank" rel="noopener noreferrer"
+                  style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid #eee",borderRadius:50,padding:"10px 14px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#E1306C",textDecoration:"none"}}>
+                  <span style={{fontSize:18}}>📸</span>
+                  <span style={{flex:1}}>@limitlessbabies on Instagram</span>
+                  <span style={{color:"#ccc",fontSize:14}}>›</span>
+                </a>
+                <a href="https://www.tiktok.com/@limitlessbabies" target="_blank" rel="noopener noreferrer"
+                  style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid #eee",borderRadius:50,padding:"10px 14px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#111",textDecoration:"none"}}>
+                  <span style={{fontSize:18}}>🎵</span>
+                  <span style={{flex:1}}>@limitlessbabies on TikTok</span>
+                  <span style={{color:"#ccc",fontSize:14}}>›</span>
+                </a>
+                <a href="https://youtube.com/@limitlessbabies" target="_blank" rel="noopener noreferrer"
+                  style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid #eee",borderRadius:50,padding:"10px 14px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#FF0000",textDecoration:"none"}}>
+                  <span style={{fontSize:18}}>▶️</span>
+                  <span style={{flex:1}}>@limitlessbabies on YouTube</span>
+                  <span style={{color:"#ccc",fontSize:14}}>›</span>
+                </a>
+              </div>
+            </div>
+
             <div style={{padding:"10px 14px",textAlign:"center",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#bbb",lineHeight:1.5,fontStyle:"italic"}}>
               Some links are affiliate links — purchases help support ongoing development of this app.
             </div>
@@ -3595,12 +3906,22 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
     return () => clearInterval(t);
   }, []);
 
-  const categoryMeta = [
-    { id:"reading",   label:"Reading",   emoji:"📖", color:"#FFF0F1", statusKey:"reading",      desc:"Words, phrases, and stories" },
-    { id:"math",      label:"Math",      emoji:"🔢", color:"#F0F8FF", statusKey:"math",         desc:"Quantities and equations" },
-    { id:"knowledge", label:"Knowledge", emoji:"🌍", color:"#F0FFF4", statusKey:"encyclopedia", desc:"Facts about the world" },
-    { id:"music",     label:"Music",     emoji:"🎵", color:"#FDF4FF", statusKey:"music",        desc:"Perfect pitch training" },
+  const allCategoryMeta = [
+    { id:"reading",   label:"Reading",   emoji:"📖", color:"#FFF0F1", statusKey:"reading",      desc:"Words, phrases, and stories", classIds:["reading"] },
+    { id:"math",      label:"Math",      emoji:"🔢", color:"#F0F8FF", statusKey:"math",         desc:"Quantities and equations",     classIds:["math"] },
+    { id:"knowledge", label:"Knowledge", emoji:"🌍", color:"#F0FFF4", statusKey:"encyclopedia", desc:"Facts about the world",         classIds:["knowledge"] },
+    { id:"music",     label:"Music",     emoji:"🎵", color:"#FDF4FF", statusKey:"music",        desc:"Perfect pitch training",        classIds:["music-pitch","music-rhythm"] },
   ];
+
+  // Only show categories where the child is enrolled in at least one of the
+  // related classes. Music tile appears if either pitch or rhythm is enrolled.
+  const categoryMeta = allCategoryMeta
+    .filter(c => c.classIds.some(cid => isClassEnrolled(activeChild, cid)))
+    .map(c => ({
+      ...c,
+      // A category is "graduated" only if ALL related classes are graduated
+      graduated: c.classIds.every(cid => isClassGraduated(activeChild, cid)),
+    }));
 
   // Compute per-category status: ready, cooldown (with seconds), or done (all 3 sessions completed)
   const categoryStatuses = categoryMeta.map(c => {
@@ -3753,16 +4074,20 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
             {categoryStatuses.map(c => {
               const isDone = c.state === "done";
               const isCooldown = c.state === "cooldown";
+              const isGraduated = c.graduated;
               return (
                 <button key={c.id} onClick={()=>onSelectCategory(c.id)}
-                  style={{background:isDone?"#f7f7f7":c.color,border:"2px solid transparent",borderRadius:20,padding:"16px 18px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",boxShadow:"0 3px 12px rgba(0,0,0,.04)",transition:"all .15s",opacity:isDone?0.7:1}}
+                  style={{background:isDone?"#f7f7f7":c.color,border:"2px solid transparent",borderRadius:20,padding:"16px 18px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",boxShadow:"0 3px 12px rgba(0,0,0,.04)",transition:"all .15s",opacity:isGraduated?0.88:(isDone?0.7:1),position:"relative"}}
                   onMouseEnter={e=>{e.currentTarget.style.borderColor=RED;}}
                   onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";}}>
                   <span style={{fontSize:36}}>{c.emoji}</span>
                   <div style={{textAlign:"left",flex:1}}>
-                    <div style={{fontSize:20,color:"#111",fontFamily:"'Fredoka One','Baloo 2',cursive",lineHeight:1}}>{c.label}</div>
-                    <div style={{fontSize:11,color:isDone?"#3E8E41":isCooldown?"#B8860B":"#888",fontFamily:"Nunito,sans-serif",fontWeight:800,marginTop:4}}>
-                      {isDone ? "✓ Done for today" : isCooldown ? `Ready in ${formatMMSS(c.secondsUntilReady)}` : `Session ${c.sessionNum} of 3 ready`}
+                    <div style={{fontSize:20,color:"#111",fontFamily:"'Fredoka One','Baloo 2',cursive",lineHeight:1,display:"flex",alignItems:"center",gap:6}}>
+                      {c.label}
+                      {isGraduated && <span style={{fontSize:14}}>🎓</span>}
+                    </div>
+                    <div style={{fontSize:11,color:isGraduated?RED:(isDone?"#3E8E41":isCooldown?"#B8860B":"#888"),fontFamily:"Nunito,sans-serif",fontWeight:800,marginTop:4}}>
+                      {isGraduated ? "Graduated!" : (isDone ? "✓ Done for today" : isCooldown ? `Ready in ${formatMMSS(c.secondsUntilReady)}` : `Session ${c.sessionNum} of 3 ready`)}
                     </div>
                   </div>
                   <span style={{fontSize:18,color:"#ccc"}}>›</span>
@@ -3779,11 +4104,6 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
               ⚙ adjust {language} level
             </button>
           )}
-
-          {/* Branding at bottom — Duolingo-style reminder of app identity */}
-          <div style={{marginTop:22,textAlign:"center",fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:13,color:RED,letterSpacing:.5,opacity:.8}}>
-            Limitless Babies
-          </div>
         </div>
       </div>
     </div>
@@ -3794,7 +4114,267 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
 // Shown after tapping a home-screen category. Displays today's lesson plan +
 // the full roadmap of unlocked/upcoming stages.
 
-function CategoryMenu({ category, activeChild, language, words, couplets, sentences, knowledge, onSelect, onBack }) {
+// ── ROADMAP VIEW ─────────────────────────────────────────────────────────────
+// Shows the child's curriculum path for a specific sub-category (e.g. Single
+// Words, Couplets, Math, Music). Each set/stage is shown with one of three
+// statuses: ✓ done, ● current, ○ upcoming. Parents can see at a glance what's
+// been covered and what's coming up next — especially useful for multilingual
+// families tracking progress per language.
+// ── MUSIC SUB-MENU ───────────────────────────────────────────────────────────
+// When the parent taps the Music tile on the home screen, they land here.
+// Three sub-categories: Pitch (existing), Rhythm (new), and Sight Reading
+// (coming soon). Each leads to its own roadmap.
+function MusicMenu({ activeChild, onOpenPitch, onOpenRhythm, onBack }) {
+  const pitchEnrolled  = isClassEnrolled(activeChild, "music-pitch");
+  const rhythmEnrolled = isClassEnrolled(activeChild, "music-rhythm");
+  const pitchGraduated  = isClassGraduated(activeChild, "music-pitch");
+  const rhythmGraduated = isClassGraduated(activeChild, "music-rhythm");
+  const items = [
+    { id:"pitch",  label:"Pitch",        emoji:"🎹", desc:"Perfect pitch training · circle of fifths",    color:"#FDF4FF", available:pitchEnrolled,  graduated:pitchGraduated,  onSelect:onOpenPitch },
+    { id:"rhythm", label:"Rhythm",       emoji:"🥁", desc:"Note values and time signatures",                color:"#FFF4E6", available:rhythmEnrolled, graduated:rhythmGraduated, onSelect:onOpenRhythm },
+    { id:"sight",  label:"Sight Reading",emoji:"👀", desc:"Combines pitch + rhythm on a staff",             color:"#F4FFF0", available:false, graduated:false, onSelect:null },
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
+        <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:20,color:"#111",margin:0}}>🎵 Music</h2>
+        <div style={{width:38}}/>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"20px 20px 32px"}}>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#888",lineHeight:1.5,marginTop:0,marginBottom:18,textAlign:"center"}}>
+          Choose a music section. Each has its own roadmap.
+        </p>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {items.map(it => {
+            // Three states: enrolled & available, not enrolled (hidden/disabled), coming soon
+            // For pitch/rhythm: if not enrolled, show a disabled tile with "not enrolled" hint
+            const isUnavailable = !it.available;
+            const isComingSoon = it.id === "sight";
+            const isNotEnrolled = !isComingSoon && isUnavailable;
+            const content = (
+              <div style={{display:"flex",alignItems:"center",gap:14}}>
+                <span style={{fontSize:38,filter:it.available?"none":"grayscale(1)"}}>{it.emoji}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:17,color:it.available?"#111":"#999",lineHeight:1.1,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                    {it.label}
+                    {it.graduated && <span style={{fontSize:14}}>🎓</span>}
+                    {isComingSoon && <span style={{fontSize:10,color:"#999",fontFamily:"Nunito,sans-serif",fontWeight:800,letterSpacing:.4,textTransform:"uppercase"}}>coming soon</span>}
+                    {isNotEnrolled && <span style={{fontSize:10,color:"#999",fontFamily:"Nunito,sans-serif",fontWeight:800,letterSpacing:.4,textTransform:"uppercase"}}>not enrolled</span>}
+                  </div>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.4}}>
+                    {isNotEnrolled ? "Enroll in this class via your child's profile" : it.desc}
+                  </div>
+                </div>
+                {it.available && <span style={{fontSize:18,color:"#ccc"}}>›</span>}
+              </div>
+            );
+            return (
+              <button key={it.id}
+                onClick={it.available ? it.onSelect : undefined}
+                disabled={!it.available}
+                style={{background:it.available?it.color:"#fafafa",border:`2px solid ${it.available?"#f0f0f0":"#eee"}`,borderRadius:18,padding:"16px 18px",cursor:it.available?"pointer":"not-allowed",textAlign:"left",opacity:it.available?1:0.6}}>
+                {content}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RoadmapView({ stageId, category, activeChild, language, onBack, onStart }) {
+  const lang = language || "English";
+  const langPos = migratePosition(activeChild?.position)[lang] || {};
+
+  // Build the list of "items" (sets or stages) and identify the current one.
+  let title = "";
+  let emoji = "";
+  let items = [];    // each: { id, name, desc?, emoji?, done, current }
+  let todaySubtitle = "";
+
+  if (stageId === "reading" || stageId === "couplets" || stageId === "sentences") {
+    // Set-based: months 1–3, each with an array of sets.
+    const byMonth = stageId === "reading" ? WORDS_BY_MONTH
+                  : stageId === "couplets" ? COUPLETS_BY_MONTH
+                  : SENTENCES_BY_MONTH;
+    title = stageId === "reading" ? "Single Words" : stageId === "couplets" ? "Couplets" : "Sentences";
+    emoji = stageId === "reading" ? "📖" : stageId === "couplets" ? "📝" : "✍️";
+    const posKey = stageId === "reading" ? "words" : stageId;
+    const pos = langPos[posKey] || { month: 1, setIdx: 0 };
+
+    // Walk months 1–3 and flatten into a linear list with done/current flags
+    for (let m = 1; m <= 3; m++) {
+      const monthSets = byMonth[m];
+      if (!monthSets) continue;
+      monthSets.forEach((s, i) => {
+        const isCurrent = (m === pos.month) && (i === pos.setIdx);
+        const isDone = (m < pos.month) || (m === pos.month && i < pos.setIdx);
+        items.push({
+          id: s.id,
+          name: s.name,
+          desc: `Month ${m} · ${s.items.length} words`,
+          emoji: "📚",
+          done: isDone,
+          current: isCurrent,
+        });
+      });
+    }
+    todaySubtitle = `Currently on Month ${pos.month}, Set ${pos.setIdx + 1}`;
+
+  } else if (stageId === "knowledge" || stageId === "encyclopedia") {
+    title = "Knowledge";
+    emoji = "🌍";
+    const pos = langPos.knowledge || { month: 1, setIdx: 0 };
+    for (let m = 1; m <= 3; m++) {
+      const monthSets = KNOWLEDGE_BY_MONTH[m];
+      if (!monthSets) continue;
+      monthSets.forEach((s, i) => {
+        const isCurrent = (m === pos.month) && (i === pos.setIdx);
+        const isDone = (m < pos.month) || (m === pos.month && i < pos.setIdx);
+        items.push({
+          id: s.id,
+          name: s.name,
+          desc: `Month ${m} · ${s.items.length} cards`,
+          emoji: "🌍",
+          done: isDone,
+          current: isCurrent,
+        });
+      });
+    }
+    todaySubtitle = `Currently on Month ${pos.month}, Set ${pos.setIdx + 1}`;
+
+  } else if (category === "math") {
+    // Flat-stage list: use MATH_STAGES order.
+    title = "Math";
+    emoji = "🔢";
+    const currentStageId = langPos.math || "dots";
+    const currentIdx = MATH_STAGES.findIndex(s => s.id === currentStageId);
+    MATH_STAGES.forEach((s, i) => {
+      items.push({
+        id: s.id,
+        name: s.label,
+        desc: s.desc,
+        emoji: s.isEq ? "🧮" : (s.showDots ? "🔴" : "🔢"),
+        done: i < currentIdx,
+        current: i === currentIdx,
+      });
+    });
+    todaySubtitle = `Currently on ${MATH_STAGES[currentIdx]?.label || "Dots"}`;
+
+  } else if (category === "music") {
+    title = "Music";
+    emoji = "🎵";
+    const currentScaleId = langPos.music || "c-major";
+    const currentIdx = MUSIC_SCALES.findIndex(s => s.id === currentScaleId);
+    MUSIC_SCALES.forEach((s, i) => {
+      items.push({
+        id: s.id,
+        name: `Week ${s.weekNum} — ${s.majorLabel}`,
+        desc: `${s.majorLabel} + ${s.minorLabel}`,
+        emoji: "🎵",
+        done: i < currentIdx,
+        current: i === currentIdx,
+      });
+    });
+    todaySubtitle = `Currently on Week ${MUSIC_SCALES[currentIdx]?.weekNum || 1}`;
+
+  } else if (category === "rhythm") {
+    title = "Rhythm";
+    emoji = "🥁";
+    const currentRhythmId = langPos.rhythm || "basic-beats";
+    const currentIdx = RHYTHM_STAGES.findIndex(s => s.id === currentRhythmId);
+    RHYTHM_STAGES.forEach((s, i) => {
+      items.push({
+        id: s.id,
+        name: `Week ${s.weekNum} — ${s.label}`,
+        desc: s.desc,
+        emoji: "🥁",
+        done: i < currentIdx,
+        current: i === currentIdx,
+      });
+    });
+    todaySubtitle = `Currently on ${RHYTHM_STAGES[currentIdx]?.label || "Basic Beats"}`;
+  }
+
+  const doneCount = items.filter(i => i.done).length;
+  const totalCount = items.length;
+  const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
+        <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:20,color:"#111",margin:0}}>{emoji} {title}</h2>
+        <div style={{width:38}}/>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"20px 20px 32px"}}>
+        {/* Summary card with progress bar + start-lesson button */}
+        <div style={{background:"linear-gradient(135deg,#FFF0F1 0%,#FFE4E6 100%)",border:`2px solid ${RED}`,borderRadius:22,padding:"18px 20px",marginBottom:22}}>
+          <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:RED,textTransform:"uppercase",letterSpacing:.8,marginBottom:6}}>your roadmap in {language || "English"}</div>
+          <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",lineHeight:1.1,marginBottom:4}}>{title}</div>
+          <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#666",lineHeight:1.4,marginBottom:12}}>{todaySubtitle}</div>
+          {/* Progress bar */}
+          <div style={{height:8,borderRadius:50,background:"rgba(255,255,255,.6)",overflow:"hidden",marginBottom:6}}>
+            <div style={{height:"100%",width:`${progressPct}%`,background:RED,borderRadius:50,transition:"width .3s"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#888",marginBottom:12}}>
+            <span>{doneCount} / {totalCount} complete</span>
+            <span>{progressPct}%</span>
+          </div>
+          {onStart && (
+            <button onClick={onStart}
+              style={{width:"100%",background:RED,border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
+              start today's session →
+            </button>
+          )}
+        </div>
+
+        {/* Roadmap list */}
+        <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>curriculum path</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {items.map((item, idx) => {
+            const statusColor = item.done ? "#8FBC8F" : item.current ? RED : "#ccc";
+            const statusIcon  = item.done ? "✓"       : item.current ? "●" : "○";
+            return (
+              <div key={`${item.id}-${idx}`}
+                style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:item.current?"#FFF0F1":"#fff",border:`${item.current?2:1}px solid ${item.current?RED:"#eee"}`,borderRadius:12}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:item.done?"#E8F5E9":item.current?"#FFF0F1":"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:statusColor,flexShrink:0,border:item.current?`2px solid ${RED}`:"none"}}>
+                  {statusIcon}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:item.done?"#888":item.current?"#111":"#444",textDecoration:item.done?"line-through":"none",textDecorationColor:"#aaa",lineHeight:1.3}}>
+                    {item.name}
+                  </div>
+                  {item.desc && (
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",marginTop:2,lineHeight:1.3}}>
+                      {item.desc}
+                    </div>
+                  )}
+                </div>
+                {item.current && (
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:RED,textTransform:"uppercase",letterSpacing:.5,flexShrink:0}}>
+                    now
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{marginTop:18,padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",lineHeight:1.5,textAlign:"center"}}>
+          To change where your child is, tap <strong>⚙ adjust {language || "English"} level</strong> on the home screen.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CategoryMenu({ category, activeChild, language, words, couplets, sentences, knowledge, onSelect, onOpenRoadmap, onBack }) {
   const lang = language || "English";
   // Per-language day — a language the child has never touched unlocks stages
   // based on its own day count, not on how long they've used a different language.
@@ -3907,8 +4487,16 @@ function CategoryMenu({ category, activeChild, language, words, couplets, senten
               {stages.map(s => {
                 const unlocked = isUnlocked(s);
                 const isToday = s.id === todayStage.id;
+                // Tapping a stage opens the roadmap view for that stage.
+                // For categories with only this one stage (knowledge), this
+                // is the only way to see the set-level progression.
+                const handleTap = () => {
+                  if (!unlocked) return;
+                  if (onOpenRoadmap) onOpenRoadmap(s.id);
+                  else onSelect(s.id);
+                };
                 return (
-                  <button key={s.id} onClick={()=>unlocked && onSelect(s.id)} disabled={!unlocked}
+                  <button key={s.id} onClick={handleTap} disabled={!unlocked}
                     style={{background:isToday?"#FFF0F1":"#fff",border:`2px solid ${isToday?RED:"#f0f0f0"}`,borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,cursor:unlocked?"pointer":"not-allowed",opacity:unlocked?1:0.55,textAlign:"left"}}>
                     <span style={{fontSize:28,filter:unlocked?"none":"grayscale(1)"}}>{s.emoji}</span>
                     <div style={{flex:1,minWidth:0}}>
@@ -3924,7 +4512,21 @@ function CategoryMenu({ category, activeChild, language, words, couplets, senten
                 );
               })}
             </div>
+            <div style={{marginTop:14,padding:"10px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#888",lineHeight:1.5,textAlign:"center"}}>
+              Tap any stage to see the roadmap · the button at the top starts today's session.
+            </div>
           </>
+        )}
+        {stages.length === 1 && onOpenRoadmap && (
+          <button onClick={()=>onOpenRoadmap(stages[0].id)}
+            style={{width:"100%",background:"#fff",border:"2px solid #eee",borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",textAlign:"left"}}>
+            <span style={{fontSize:24}}>🗺️</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111"}}>View roadmap</div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#aaa",marginTop:2,lineHeight:1.35}}>See what's done and what's coming up</div>
+            </div>
+            <span style={{fontSize:16,color:"#ccc"}}>›</span>
+          </button>
         )}
       </div>
     </div>
@@ -4029,7 +4631,7 @@ function ProgressBar({ index, total }) {
 
 // ── READING SESSION (3-frame Doman: word → photo → word → next) ───────────────
 
-function ReadingSession({ childId, words, language, speechOn, sessionNum, onBack, onComplete }) {
+function ReadingSession({ childId, words, language, speechOn, sessionNum, gender, onBack, onComplete }) {
   const familyPhotos = useMemo(() => childId ? getFamilyPhotos(childId) : {}, [childId]);
   const isPhonePortrait = useIsPhonePortrait();
   const [orientationDismissed, setOrientationDismissed] = useState(false);
@@ -4065,20 +4667,20 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, onBack
       return out;
     };
 
-    if (language==="English") { setCards(buildCards(words)); return; }
+    if (language==="English") { setCards(buildCards(applyGenderToCards(words, gender))); return; }
     const run = async ()=>{
       setTranslating(true);
       try {
         const t = await translateWords(words, language);
-        setCards(buildCards(t));
+        setCards(buildCards(applyGenderToCards(t, gender)));
       } catch(e) {
         setTransError(`${language}: ${e.message}`);
-        setCards(buildCards(words));
+        setCards(buildCards(applyGenderToCards(words, gender)));
       }
       setTranslating(false);
     };
     run();
-  },[language, words, sessionNum]);
+  },[language, words, sessionNum, gender]);
 
   useEffect(()=>{
     if (!speechOn || !visible || translating) return;
@@ -4312,6 +4914,267 @@ function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComp
 // Flash-card-style perfect pitch training. Each card is one note: the app plays
 // the tone + shows the note name + speaks it. Auto-advances after ~1 second,
 // same cadence as Reading sessions.
+// ── RHYTHM NOTATION RENDERER ─────────────────────────────────────────────────
+// Renders musical notation for a rhythm pattern as SVG. Supports:
+//   - Single noteheads (filled for quarter/eighth/sixteenth; open for half/whole)
+//   - Stems (up-stems on the right side of the notehead)
+//   - Flags (for unbeamed eighth/sixteenth)
+//   - Beams (horizontal bars connecting stems of grouped notes)
+//   - Augmentation dots (for dotted notes)
+//   - Triplet bracket with "3" label
+//   - Time signature at the start of the measure
+//
+// Kept deliberately simple — a real music engraving engine would be overkill.
+function RhythmNotation({ pattern, timeSignature }) {
+  if (!pattern || !pattern.notes || pattern.notes.length === 0) return null;
+
+  // Layout constants
+  const NOTEHEAD_W = 13;
+  const NOTEHEAD_H = 10;
+  const STEM_H = 40;
+  const STEM_W = 2;
+  const DOT_R = 2.5;
+  const NOTE_Y = 50;            // baseline y for notehead center
+  const STEM_TOP = NOTE_Y - STEM_H;
+  const NOTE_SPACING = 36;      // horizontal distance between notes
+  const PADDING_L = timeSignature ? 50 : 20;
+  const PADDING_R = 20;
+
+  const noteCount = pattern.notes.length;
+  const totalWidth = PADDING_L + noteCount * NOTE_SPACING + PADDING_R;
+  const totalHeight = pattern.triplet ? 90 : 80;
+
+  // Compute x position for each note
+  const xPositions = pattern.notes.map((_, i) => PADDING_L + i * NOTE_SPACING + NOTE_SPACING / 2);
+
+  // Determine which notes are in beam groups
+  // beamGroups: [[0,1],[2,3]]  OR beamed: true (all notes in one group)
+  const beamGroups = pattern.beamGroups
+    ? pattern.beamGroups
+    : (pattern.beamed ? [pattern.notes.map((_, i) => i)] : []);
+
+  // Flatten: which indices are in ANY beam group?
+  const indicesInBeam = new Set();
+  beamGroups.forEach(group => group.forEach(i => indicesInBeam.add(i)));
+
+  const elements = [];
+
+  // Time signature
+  if (timeSignature) {
+    const [num, den] = timeSignature.split("/");
+    elements.push(
+      <text key="ts-n" x={26} y={NOTE_Y - 8} textAnchor="middle" fontFamily="'Fredoka One',sans-serif" fontSize={20} fill="#111" fontWeight="bold">{num}</text>,
+      <text key="ts-d" x={26} y={NOTE_Y + 15} textAnchor="middle" fontFamily="'Fredoka One',sans-serif" fontSize={20} fill="#111" fontWeight="bold">{den}</text>
+    );
+  }
+
+  // Draw each note
+  pattern.notes.forEach((note, i) => {
+    const meta = NOTE_TYPE_META[note.type];
+    if (!meta) return;
+    const x = xPositions[i];
+    const y = NOTE_Y;
+
+    // Notehead — tilted ellipse
+    elements.push(
+      <ellipse key={`nh-${i}`}
+        cx={x} cy={y} rx={NOTEHEAD_W / 2} ry={NOTEHEAD_H / 2}
+        transform={`rotate(-18 ${x} ${y})`}
+        fill={meta.filled ? "#111" : "#fff"}
+        stroke="#111" strokeWidth={meta.filled ? 0 : 2}
+      />
+    );
+
+    // Stem — positioned to the right of the notehead, going upward
+    if (meta.stem) {
+      const stemX = x + NOTEHEAD_W / 2 - 1;
+      elements.push(
+        <line key={`st-${i}`}
+          x1={stemX} y1={y - 2}
+          x2={stemX} y2={STEM_TOP}
+          stroke="#111" strokeWidth={STEM_W}
+        />
+      );
+
+      // Flag on unbeamed eighth/sixteenth
+      if (meta.flags > 0 && !indicesInBeam.has(i)) {
+        for (let f = 0; f < meta.flags; f++) {
+          const flagY = STEM_TOP + f * 9;
+          elements.push(
+            <path key={`fl-${i}-${f}`}
+              d={`M ${stemX} ${flagY} Q ${stemX + 12} ${flagY + 5}, ${stemX + 8} ${flagY + 16}`}
+              fill="none" stroke="#111" strokeWidth={2.5} strokeLinecap="round"
+            />
+          );
+        }
+      }
+    }
+
+    // Augmentation dot (to the right of notehead)
+    if (meta.dotted) {
+      elements.push(
+        <circle key={`dt-${i}`}
+          cx={x + NOTEHEAD_W / 2 + 7} cy={y - 3}
+          r={DOT_R} fill="#111"
+        />
+      );
+    }
+  });
+
+  // Draw beams connecting stems of grouped notes
+  beamGroups.forEach((group, gi) => {
+    if (group.length < 2) return;
+    const firstI = group[0];
+    const lastI = group[group.length - 1];
+    const x1 = xPositions[firstI] + NOTEHEAD_W / 2 - 1;
+    const x2 = xPositions[lastI]  + NOTEHEAD_W / 2 - 1;
+    // How many beams? Look at the first note's type (all notes in a beam group
+    // should have the same flag count in these curricula)
+    const meta = NOTE_TYPE_META[pattern.notes[firstI].type];
+    const beamCount = meta?.flags || 1;
+    for (let b = 0; b < beamCount; b++) {
+      const yTop = STEM_TOP + b * 7;
+      elements.push(
+        <rect key={`bm-${gi}-${b}`}
+          x={x1 - 1} y={yTop}
+          width={x2 - x1 + 2} height={5}
+          fill="#111"
+        />
+      );
+    }
+  });
+
+  // Triplet bracket + "3"
+  if (pattern.triplet) {
+    const first = xPositions[0];
+    const last = xPositions[xPositions.length - 1];
+    const midX = (first + last) / 2;
+    const bracketY = STEM_TOP - 16;
+    elements.push(
+      <text key="tri-label" x={midX} y={bracketY - 2} textAnchor="middle"
+        fontFamily="'Fredoka One',sans-serif" fontSize={14} fill="#111" fontWeight="bold">3</text>
+    );
+  }
+
+  return (
+    <svg viewBox={`0 0 ${totalWidth} ${totalHeight}`}
+      style={{ width: "100%", maxWidth: Math.min(totalWidth * 2, 520), height: "auto", display: "block" }}
+      xmlns="http://www.w3.org/2000/svg">
+      {elements}
+    </svg>
+  );
+}
+
+// ── RHYTHM SESSION ───────────────────────────────────────────────────────────
+// Flash-card session for rhythm. Shows musical notation while playing the
+// rhythm. Manual-advance by default (parent controls pace). Celebrates at end.
+function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComplete }) {
+  const { patterns, label, stage } = content || { patterns: [], label: "", stage: null };
+  const timeSignature = stage?.timeSignature;
+
+  const [idx, setIdx] = useState(0);
+  const [autoPlay, setAutoPlay] = useState(false);
+  const [visible, setVisible] = useState(true);
+  const [finished, setFinished] = useState(false);
+  const completedRef = useRef(false);
+  const advanceTimerRef = useRef(null);
+  const cancelPlayRef = useRef(null);
+
+  // Play the rhythm + speak its label when a card appears.
+  useEffect(() => {
+    if (!visible || finished) return;
+    const pattern = patterns[idx];
+    if (!pattern) return;
+    try {
+      if (cancelPlayRef.current) cancelPlayRef.current();
+      cancelPlayRef.current = playRhythm(pattern, 80);
+    } catch {}
+    if (speechOn) {
+      // Speak the label in English (rhythm terminology is English by default)
+      setTimeout(() => { try { speak(pattern.label, "English"); } catch {} }, 100);
+    }
+    return () => {
+      if (cancelPlayRef.current) { try { cancelPlayRef.current(); } catch {} }
+    };
+  }, [idx, visible, speechOn, patterns, finished]);
+
+  const advance = useCallback(() => {
+    if (finished) return;
+    if (cancelPlayRef.current) { try { cancelPlayRef.current(); } catch {} cancelPlayRef.current = null; }
+    setVisible(false);
+    if (advanceTimerRef.current) { clearTimeout(advanceTimerRef.current); advanceTimerRef.current = null; }
+    setTimeout(() => {
+      if (idx >= patterns.length - 1) {
+        if (!completedRef.current) {
+          completedRef.current = true;
+          onComplete && onComplete();
+        }
+        setFinished(true);
+      } else {
+        setIdx(i => i + 1);
+        setVisible(true);
+      }
+    }, 120);
+  }, [idx, patterns.length, onComplete, finished]);
+
+  // Auto-advance — longer delay than pitch since rhythms need to finish
+  useEffect(() => {
+    if (!autoPlay || !visible || finished) return;
+    // Compute the length of the current pattern so auto-advance waits
+    // until after it finishes playing.
+    const pattern = patterns[idx];
+    if (!pattern) return;
+    let totalBeats = 0;
+    for (const n of pattern.notes) {
+      const m = NOTE_TYPE_META[n.type];
+      if (m) totalBeats += m.beats;
+    }
+    if (pattern.triplet) totalBeats = totalBeats * (2 / 3);
+    const beatMs = 60000 / 80;
+    const patternMs = totalBeats * beatMs;
+    advanceTimerRef.current = setTimeout(() => advance(), patternMs + 400);
+    return () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current); };
+  }, [idx, autoPlay, visible, advance, finished, patterns]);
+
+  if (finished) return <CompleteScreen category="rhythm" sessionNum={sessionNum} onBack={onBack}/>;
+
+  if (!patterns.length) {
+    return (
+      <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,color:"#888"}}>No rhythm patterns yet.</p>
+        <button onClick={onBack} style={{marginTop:14,background:RED,border:"none",borderRadius:50,padding:"10px 20px",color:"#fff",fontFamily:"Nunito,sans-serif",fontWeight:800,cursor:"pointer"}}>back</button>
+      </div>
+    );
+  }
+
+  const pattern = patterns[idx];
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
+      <SessionHeader onBack={onBack} index={idx} total={patterns.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px",cursor:"pointer"}}
+        onClick={()=>advance()}>
+        {/* Stage label at top */}
+        <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.5,textTransform:"uppercase",marginBottom:16}}>
+          {label}
+        </div>
+        {/* Pattern notation — large */}
+        {visible && (
+          <>
+            <div style={{width:"100%",maxWidth:560,padding:"0 20px",marginBottom:20}}>
+              <RhythmNotation pattern={pattern} timeSignature={timeSignature}/>
+            </div>
+            <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:RED,textAlign:"center",userSelect:"none"}}>
+              {pattern.label}
+            </div>
+          </>
+        )}
+        <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>tap to advance →</p>
+      </div>
+      <ProgressBar index={idx} total={patterns.length}/>
+    </div>
+  );
+}
+
 function MusicSession({ content, language, speechOn, sessionNum, onBack, onComplete }) {
   const { notes, label } = content || { notes: [], label: "" };
   const cards = notes.map(n => ({ note: n, label: noteDisplayLabel(n) }));
@@ -4746,20 +5609,24 @@ export default function App() {
     window.location.reload();
   };
 
-  // Parent taps one of the 3 big tiles on the home screen → open category menu
+  // Parent taps one of the 4 big tiles on the home screen → open category menu
   const handleSelectCategory = (category) => {
-    // Music goes directly into a session (no sub-menu, single stage per week)
+    // Music now has sub-sections (Pitch, Rhythm, Sight Reading). Show the
+    // sub-menu first; user picks Pitch or Rhythm which leads to its own
+    // roadmap.
     if (category === "music") {
       if (!activeChildId) return;
-      const status = getSessionStatus(activeChildId, "music", language);
-      setSessionStatus(status);
-      setMode("music");
+      setMode("menu:music");
       return;
     }
     setMode(`menu:${category}`);
   };
 
   // Parent taps a specific stage from inside a category menu → start session
+  const handleOpenRoadmap = (stageId) => {
+    setMode(`roadmap:${stageId}`);
+  };
+
   const handleStartSession = (stageId) => {
     if (!activeChildId) return;
     // For math, the stageId IS the stage (e.g., "dots", "add-dots", "numerals")
@@ -4773,6 +5640,15 @@ export default function App() {
       sessionCategory = "math";
       setMathStage(stageId);
       try { localStorage.setItem("lb-math", stageId); } catch {}
+    }
+    // Rhythm stages share one "rhythm" session quota per day
+    if (RHYTHM_STAGES.find(s => s.id === stageId)) {
+      sessionCategory = "rhythm";
+      // Normalize mode to "rhythm" (not the specific stage id) so render logic below is simple
+      const status = getSessionStatus(activeChildId, sessionCategory, language);
+      setSessionStatus(status);
+      setMode("rhythm");
+      return;
     }
 
     const status = getSessionStatus(activeChildId, sessionCategory, language);
@@ -4791,7 +5667,9 @@ export default function App() {
     } else if (mode === "encyclopedia") {
       returnTo = "menu:knowledge";
     } else if (mode === "music") {
-      returnTo = null;  // music has no sub-menu, go straight home
+      returnTo = "menu:music";  // back to music sub-menu
+    } else if (mode === "rhythm") {
+      returnTo = "menu:music";  // back to music sub-menu
     }
     setMode(returnTo);
     setSessionStatus(null);
@@ -4855,18 +5733,43 @@ export default function App() {
       <style>{baseStyles}</style>
       {mode===null       && <HomeScreen activeChild={activeChild} activeChildId={activeChildId} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)} onAdjustLevel={()=>setShowLangLevel(true)} onOpenWelcome={()=>setShowWelcome(true)} onEditActiveChild={()=>activeChild && setEditingChild(activeChild)}/>}
 
-      {mode==="menu:reading"   && <CategoryMenu category="reading"   activeChild={activeChild} language={language} words={dailyWords} couplets={dailyCouplets} sentences={dailySentences} onSelect={handleStartSession} onBack={handleBackToHome}/>}
-      {mode==="menu:math"      && <CategoryMenu category="math"      activeChild={activeChild} language={language} onSelect={handleStartSession} onBack={handleBackToHome}/>}
-      {mode==="menu:knowledge" && <CategoryMenu category="knowledge" activeChild={activeChild} language={language} knowledge={dailyKnow} onSelect={handleStartSession} onBack={handleBackToHome}/>}
+      {mode==="menu:reading"   && <CategoryMenu category="reading"   activeChild={activeChild} language={language} words={dailyWords} couplets={dailyCouplets} sentences={dailySentences} onSelect={handleStartSession} onOpenRoadmap={handleOpenRoadmap} onBack={handleBackToHome}/>}
+      {mode==="menu:math"      && <CategoryMenu category="math"      activeChild={activeChild} language={language} onSelect={handleStartSession} onOpenRoadmap={handleOpenRoadmap} onBack={handleBackToHome}/>}
+      {mode==="menu:knowledge" && <CategoryMenu category="knowledge" activeChild={activeChild} language={language} knowledge={dailyKnow} onSelect={handleStartSession} onOpenRoadmap={handleOpenRoadmap} onBack={handleBackToHome}/>}
+      {mode==="menu:music"     && <MusicMenu activeChild={activeChild} onOpenPitch={()=>setMode("roadmap:music")} onOpenRhythm={()=>setMode("roadmap:basic-beats")} onBack={handleBackToHome}/>}
+
+      {mode.startsWith && mode.startsWith("roadmap:") && (() => {
+        // Extract stage id from mode string, e.g. "roadmap:reading" → "reading"
+        const stageId = mode.slice("roadmap:".length);
+        // Determine which CategoryMenu to return to (reading / math / knowledge / music)
+        let parentCategory = "reading";
+        if (MATH_STAGES.find(s=>s.id===stageId)) parentCategory = "math";
+        else if (stageId === "encyclopedia" || stageId === "knowledge") parentCategory = "knowledge";
+        else if (MUSIC_SCALES.find(s=>s.id===stageId) || stageId === "music") parentCategory = "music";
+        else if (RHYTHM_STAGES.find(s=>s.id===stageId) || stageId === "rhythm") parentCategory = "rhythm";
+        return <RoadmapView
+          stageId={stageId}
+          category={parentCategory}
+          activeChild={activeChild}
+          language={language}
+          onBack={() => {
+            // Both Pitch and Rhythm roadmaps return to the Music sub-menu
+            if (parentCategory === "music" || parentCategory === "rhythm") setMode("menu:music");
+            else setMode(`menu:${parentCategory}`);
+          }}
+          onStart={() => handleStartSession(stageId)}
+        />;
+      })()}
 
       {mode==="progress" && <ProgressScreen child={activeChild} onBack={handleBackToHome}/>}
-      {mode==="reading"  && sessionStatus && <ReadingSession childId={activeChildId} words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
-      {mode==="couplets" && sessionStatus && <ReadingSession childId={activeChildId} words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
-      {mode==="sentences"&& sessionStatus && <ReadingSession childId={activeChildId} words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
+      {mode==="reading"  && sessionStatus && <ReadingSession childId={activeChildId} words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
+      {mode==="couplets" && sessionStatus && <ReadingSession childId={activeChildId} words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
+      {mode==="sentences"&& sessionStatus && <ReadingSession childId={activeChildId} words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
       {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("book")}/>}
       {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
       {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
       {mode==="music" && sessionStatus && activeChild && <MusicSession content={getMusicContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("music")}/>}
+      {mode==="rhythm" && sessionStatus && activeChild && <RhythmSession content={getRhythmContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("rhythm")}/>}
 
       {showLang && activeChild && (
         <ChildLanguagePicker
