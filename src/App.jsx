@@ -1137,6 +1137,69 @@ function getHistory(childId) {
   } catch { return {}; }
 }
 
+// When a parent jumps a child's level forward via "adjust level", assume the
+// child has been exposed to the cards up to that new position and backfill
+// the session-completion history accordingly. This way the progress report
+// (CEFR / word counts / per-language progress) reflects the parent's intent.
+//
+// Strategy: for each set skipped forward, credit 3 completed sessions (the
+// standard daily cadence). The exposure-count formula elsewhere converts
+// sessions → words (5 new words averaged per session across the rolling
+// window of 3). We backfill into a special "retroactive" day-key so it
+// doesn't pollute today's session status/cooldowns.
+function backfillHistoryForPositionJump(childId, language, oldPos, newPos) {
+  if (!childId || !language || !newPos) return;
+  // Compute how many sets moved forward. Handles words/couplets/sentences/knowledge
+  // (sets-based categories). For math/music/rhythm (flat stages), we don't backfill
+  // because the exposure-count formula doesn't care about those.
+  const countSets = (start, end, maxMonths = 3) => {
+    if (!start || !end) return 0;
+    let n = 0;
+    for (let m = (start.month || 1); m <= maxMonths; m++) {
+      // If same month as start, count from start.setIdx, else from 0
+      const fromIdx = (m === (start.month || 1)) ? (start.setIdx || 0) : 0;
+      // If same month as end, count up to end.setIdx, else we'd need the month's
+      // set count — but we don't have that here. Use a safe upper bound of 10.
+      const toIdx = (m === (end.month || 1)) ? (end.setIdx || 0) : 10;
+      if (m < (end.month || 1)) n += (10 - fromIdx); // whole-month skip
+      else if (m === (end.month || 1)) n += Math.max(0, toIdx - fromIdx);
+    }
+    return n;
+  };
+
+  // Each category maps to a session key used in history (e.g. "reading:English")
+  const mapping = [
+    { posKey: "words",     sessionKey: "reading" },
+    { posKey: "couplets",  sessionKey: "couplets" },
+    { posKey: "sentences", sessionKey: "sentences" },
+    { posKey: "knowledge", sessionKey: "encyclopedia" },
+  ];
+
+  let hist = getHistory(childId);
+  // Use a synthetic "retroactive" day-key so real session tracking isn't affected
+  const RETRO_KEY = "retro-level-adjust";
+  if (!hist[RETRO_KEY]) hist[RETRO_KEY] = {};
+
+  let wroteAny = false;
+  for (const { posKey, sessionKey } of mapping) {
+    const oldP = oldPos?.[posKey];
+    const newP = newPos?.[posKey];
+    if (!newP) continue; // didn't set this category
+    const setsAdvanced = countSets(oldP || { month: 1, setIdx: 0 }, newP);
+    if (setsAdvanced <= 0) continue;
+    // 3 sessions per set assumed
+    const sessionsToCredit = setsAdvanced * 3;
+    const key = `${sessionKey}:${language}`;
+    const existing = hist[RETRO_KEY][key] || 0;
+    hist[RETRO_KEY][key] = existing + sessionsToCredit;
+    wroteAny = true;
+  }
+
+  if (wroteAny) {
+    try { localStorage.setItem(`lb-history-${childId}`, JSON.stringify(hist)); } catch {}
+  }
+}
+
 // ── AGE HELPERS ───────────────────────────────────────────────────────────────
 // Given a YYYY-MM-DD birthdate string and an optional reference date, compute
 // the child's age. Returns null if birthdate missing/invalid. Returns a small
@@ -2157,12 +2220,12 @@ function LoadingScreen({ message }) {
 // Shown for 3s on app launch. Big centered logo, no text, no spinner.
 function SplashScreen() {
   return (
-    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32,gap:18}}>
-      <h1 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:32,color:RED,margin:0,letterSpacing:-0.5,animation:"lbSplashFade 1s ease-out forwards"}}>
-        Limitless Babies
-      </h1>
-      <img src={LOGO_SRC} alt="Limitless Babies" style={{width:200,height:"auto",objectFit:"contain",display:"block",animation:"lbSplashFade 1s ease-out forwards"}}/>
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32,gap:22}}>
+      {/* Load the same fonts that flash cards use so splash text matches.
+          Kept here at splash-time so parents don't see a font flash when
+          the app transitions to the home screen. */}
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Fredoka+One&family=Nunito:wght@700;800;900&display=swap');
         @keyframes lbSplashFade {
           0% { opacity: 0; transform: scale(0.9); }
           20% { opacity: 1; transform: scale(1); }
@@ -2170,6 +2233,10 @@ function SplashScreen() {
           100% { opacity: 0.85; transform: scale(1); }
         }
       `}</style>
+      <h1 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:44,color:RED,margin:0,letterSpacing:-1,lineHeight:1.1,textAlign:"center",animation:"lbSplashFade 1s ease-out forwards"}}>
+        Limitless Babies
+      </h1>
+      <img src={LOGO_SRC} alt="Limitless Babies" style={{width:200,height:"auto",objectFit:"contain",display:"block",animation:"lbSplashFade 1s ease-out forwards"}}/>
     </div>
   );
 }
@@ -2681,6 +2748,7 @@ function Onboarding({ onDone }) {
   const [step, setStep] = useState(0); // 0=welcome, 1=first child, 2=ask about another
   const [children, setChildren] = useState([]);
   const [name, setName] = useState("");
+  const [birthdate, setBirthdate] = useState("");
   const [emoji, setEmoji] = useState(CHILD_EMOJIS[0]);
   const [langs, setLangs] = useState(["English"]);
   const [showLangPicker, setShowLangPicker] = useState(false);
@@ -2691,12 +2759,13 @@ function Onboarding({ onDone }) {
       id: newChildId(),
       name: name.trim(),
       emoji,
+      birthdate: birthdate || null,
       languages: langs.length ? langs : ["English"],
       createdAt: Date.now(),
     };
     const next = [...children, child];
     setChildren(next);
-    setName(""); setEmoji(CHILD_EMOJIS[next.length % CHILD_EMOJIS.length]); setLangs(["English"]);
+    setName(""); setBirthdate(""); setEmoji(CHILD_EMOJIS[next.length % CHILD_EMOJIS.length]); setLangs(["English"]);
     setStep(2);
   };
 
@@ -2746,6 +2815,16 @@ function Onboarding({ onDone }) {
             <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g., Lily"
               style={{width:"100%",padding:"13px 16px",borderRadius:14,border:"2px solid #eee",fontSize:16,fontFamily:"Nunito,sans-serif",fontWeight:700,outline:"none",boxSizing:"border-box"}}
               onFocus={e=>e.target.style.borderColor=RED} onBlur={e=>e.target.style.borderColor="#eee"}/>
+          </div>
+
+          <div style={{width:"100%",maxWidth:360,marginTop:18}}>
+            <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Birthdate</label>
+            <input type="date" value={birthdate} onChange={e=>setBirthdate(e.target.value)} max={new Date().toISOString().slice(0,10)}
+              style={{width:"100%",padding:"13px 16px",borderRadius:14,border:"2px solid #eee",fontSize:16,fontFamily:"Nunito,sans-serif",fontWeight:700,outline:"none",boxSizing:"border-box",color:birthdate?"#111":"#999"}}
+              onFocus={e=>e.target.style.borderColor=RED} onBlur={e=>e.target.style.borderColor="#eee"}/>
+            <p style={{fontFamily:"Nunito,sans-serif",fontSize:10,color:"#aaa",fontWeight:700,marginTop:6,lineHeight:1.4}}>
+              Optional — used to track age-based milestones in the progress report.
+            </p>
           </div>
 
           <div style={{width:"100%",maxWidth:360,marginTop:18}}>
@@ -3678,7 +3757,7 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
 
   const tips = [
     { emoji:"✨", title:"Babies are truly limitless.", body:"Start from any age — the earlier the better, but it's never too late." },
-    { emoji:"🎂", title:"Add your baby's birthday.", body:"We'll track your child's real age alongside their progress in the progress report." },
+    { emoji:"👨‍👩‍👧", title:"Upload family photos.", body:"In your child's profile, add photos of mom, dad, siblings, grandparents, and more. Your baby will see familiar faces when learning family words — so they can learn to recognize and name each person." },
     { emoji:"🌍", title:"Finish Sentences before starting a new language.", body:"Once your child has finished (not just reached) the Sentences stage, they can keep reading books in that language while you begin introducing a new one." },
     { emoji:"📅", title:"Aim for 9 sessions a day.", body:"Three Reading + three Math + three Knowledge sessions. If that's too much today — no pressure." },
     { emoji:"⏱️", title:"Take 5-minute breaks between sessions.", body:"Even between different subjects. A baby's brain needs a moment to rest between bursts of input. You know your child best — adjust as needed." },
@@ -5738,7 +5817,7 @@ export default function App() {
       {mode==="menu:knowledge" && <CategoryMenu category="knowledge" activeChild={activeChild} language={language} knowledge={dailyKnow} onSelect={handleStartSession} onOpenRoadmap={handleOpenRoadmap} onBack={handleBackToHome}/>}
       {mode==="menu:music"     && <MusicMenu activeChild={activeChild} onOpenPitch={()=>setMode("roadmap:music")} onOpenRhythm={()=>setMode("roadmap:basic-beats")} onBack={handleBackToHome}/>}
 
-      {mode.startsWith && mode.startsWith("roadmap:") && (() => {
+      {typeof mode === "string" && mode.startsWith("roadmap:") && (() => {
         // Extract stage id from mode string, e.g. "roadmap:reading" → "reading"
         const stageId = mode.slice("roadmap:".length);
         // Determine which CategoryMenu to return to (reading / math / knowledge / music)
@@ -5831,10 +5910,18 @@ export default function App() {
             const kids = loadChildren();
             const i = kids.findIndex(c => c.id === activeChild.id);
             if (i >= 0) {
+              const oldPos = migratePosition(kids[i].position)[language] || {};
               kids[i].position = migratePosition(kids[i].position);
               kids[i].position[language] = newPosForLang;
               saveChildren(kids);
               setChildren(kids);
+              // Auto-update progress: if the parent advanced the child's level,
+              // assume they've been exposed to the cards up to that point and
+              // backfill history with completed sessions so progress reports
+              // reflect that.
+              try {
+                backfillHistoryForPositionJump(activeChild.id, language, oldPos, newPosForLang);
+              } catch (e) { /* non-critical */ }
             }
             setShowLangLevel(false);
           }}
