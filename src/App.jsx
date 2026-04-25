@@ -159,54 +159,71 @@ function unlockAudioSync() {
 function playTone(noteName, durationMs = 900) {
   const ctx = getAudioCtx();
   if (!ctx) return;
-  if (ctx.state === "suspended") { try { ctx.resume(); } catch {} }
-  const freq = noteToFrequency(noteName);
-  const now = ctx.currentTime;
-  const durS = durationMs / 1000;
-  const releaseS = 0.35;
-  const attackS = 0.008;
-  const decayS = 0.15;
-  const sustainEnd = Math.max(attackS + decayS + 0.05, durS - releaseS);
 
-  // Master envelope
-  const master = ctx.createGain();
-  master.gain.setValueAtTime(0, now);
-  master.gain.linearRampToValueAtTime(0.32, now + attackS);
-  master.gain.exponentialRampToValueAtTime(0.15, now + attackS + decayS);
-  master.gain.setValueAtTime(0.15, now + sustainEnd);
-  master.gain.exponentialRampToValueAtTime(0.0001, now + sustainEnd + releaseS);
-  master.connect(ctx.destination);
+  // Helper that does the actual scheduling, called after we're confident
+  // the context is running. Uses ctx.currentTime AT THE MOMENT it runs,
+  // so events are scheduled relative to "now," not a stale captured value.
+  const schedule = () => {
+    if (ctx.state !== "running") return; // bail if still suspended
+    const freq = noteToFrequency(noteName);
+    const now = ctx.currentTime;
+    const durS = durationMs / 1000;
+    const releaseS = 0.35;
+    const attackS = 0.008;
+    const decayS = 0.15;
+    const sustainEnd = Math.max(attackS + decayS + 0.05, durS - releaseS);
 
-  // Low-pass filter for warmth
-  const filter = ctx.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.setValueAtTime(3500, now);
-  filter.Q.value = 0.5;
-  filter.connect(master);
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0, now);
+    master.gain.linearRampToValueAtTime(0.32, now + attackS);
+    master.gain.exponentialRampToValueAtTime(0.15, now + attackS + decayS);
+    master.gain.setValueAtTime(0.15, now + sustainEnd);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + sustainEnd + releaseS);
+    master.connect(ctx.destination);
 
-  // Fundamental — triangle wave (warm, flute-like without harshness)
-  const osc1 = ctx.createOscillator();
-  osc1.type = "triangle";
-  osc1.frequency.value = freq;
-  const g1 = ctx.createGain(); g1.gain.value = 0.7;
-  osc1.connect(g1); g1.connect(filter);
-  osc1.start(now); osc1.stop(now + sustainEnd + releaseS + 0.1);
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(3500, now);
+    filter.Q.value = 0.5;
+    filter.connect(master);
 
-  // Octave overtone — sine (adds bell-like richness)
-  const osc2 = ctx.createOscillator();
-  osc2.type = "sine";
-  osc2.frequency.value = freq * 2;
-  const g2 = ctx.createGain(); g2.gain.value = 0.22;
-  osc2.connect(g2); g2.connect(filter);
-  osc2.start(now); osc2.stop(now + sustainEnd + releaseS + 0.1);
+    const osc1 = ctx.createOscillator();
+    osc1.type = "triangle";
+    osc1.frequency.value = freq;
+    const g1 = ctx.createGain(); g1.gain.value = 0.7;
+    osc1.connect(g1); g1.connect(filter);
+    osc1.start(now); osc1.stop(now + sustainEnd + releaseS + 0.1);
 
-  // Perfect fifth — sine (body)
-  const osc3 = ctx.createOscillator();
-  osc3.type = "sine";
-  osc3.frequency.value = freq * 1.5;
-  const g3 = ctx.createGain(); g3.gain.value = 0.1;
-  osc3.connect(g3); g3.connect(filter);
-  osc3.start(now); osc3.stop(now + sustainEnd + releaseS + 0.1);
+    const osc2 = ctx.createOscillator();
+    osc2.type = "sine";
+    osc2.frequency.value = freq * 2;
+    const g2 = ctx.createGain(); g2.gain.value = 0.22;
+    osc2.connect(g2); g2.connect(filter);
+    osc2.start(now); osc2.stop(now + sustainEnd + releaseS + 0.1);
+
+    const osc3 = ctx.createOscillator();
+    osc3.type = "sine";
+    osc3.frequency.value = freq * 1.5;
+    const g3 = ctx.createGain(); g3.gain.value = 0.1;
+    osc3.connect(g3); g3.connect(filter);
+    osc3.start(now); osc3.stop(now + sustainEnd + releaseS + 0.1);
+  };
+
+  // If suspended, resume() returns a Promise on modern browsers (especially
+  // iOS Safari). We must wait for resume to complete before scheduling
+  // events — otherwise events get scheduled against a frozen ctx.currentTime
+  // and never play once the context wakes up.
+  if (ctx.state === "suspended") {
+    const p = ctx.resume();
+    if (p && typeof p.then === "function") {
+      p.then(schedule).catch(() => {});
+    } else {
+      // Older browsers may resume synchronously
+      schedule();
+    }
+  } else {
+    schedule();
+  }
 }
 
 // Resolve the "today" music content for a child in a given language.
@@ -2721,11 +2738,10 @@ const CHILD_EMOJIS = ["👶","🧒","👧","👦","🐣","🐥","🦊","🐻","�
 // Default for new children: all classes enrolled (parent can uncheck).
 // Default for existing children (backward compat): all classes enrolled.
 const AVAILABLE_CLASSES = [
-  { id:"reading",       label:"Reading",         emoji:"📖", desc:"Words, phrases, and stories" },
-  { id:"math",          label:"Math",            emoji:"🔢", desc:"Quantities and equations" },
-  { id:"knowledge",     label:"Knowledge",       emoji:"🌍", desc:"Facts about the world" },
-  { id:"music-pitch",   label:"Music · Pitch",   emoji:"🎹", desc:"Perfect pitch training" },
-  { id:"music-rhythm",  label:"Music · Rhythm",  emoji:"🥁", desc:"Note values and time signatures" },
+  { id:"reading",   label:"Reading",   emoji:"📖", desc:"Words, phrases, and stories" },
+  { id:"math",      label:"Math",      emoji:"🔢", desc:"Quantities and equations" },
+  { id:"knowledge", label:"Knowledge", emoji:"🌍", desc:"Facts about the world" },
+  { id:"music",     label:"Music",     emoji:"🎵", desc:"Perfect pitch + rhythm training" },
 ];
 
 // Helper: given a child, returns the array of class ids they're enrolled in.
@@ -2740,9 +2756,61 @@ function isClassEnrolled(child, classId) {
   return getEnrolledClasses(child).includes(classId);
 }
 
+// Auto-detect whether a class is fully complete based on the child's actual
+// progress, NOT a manual toggle. A class graduates when the child has
+// reached the END of the curriculum across ALL languages they're enrolled in
+// for that class. This reflects the Doman philosophy: graduation is a real
+// achievement, not a self-declared one.
+//
+// `child.position[language][category]` shape:
+//   words/knowledge: { month, setIdx } — month 3 final set = complete
+//   math: stageId — "eq-both" = complete
+//   music: scaleId — last MUSIC_SCALES entry = complete
+//   rhythm: stageId — last RHYTHM_STAGES entry = complete
+//
+// For "music" class (combined pitch + rhythm): both must be at final stage.
+function isClassFullyComplete(child, classId) {
+  if (!child) return false;
+  const langs = child.languages || ["English"];
+  const pos = (typeof migratePosition === "function") ? migratePosition(child.position) : (child.position || {});
+
+  // Helper: is a particular language complete for a particular class?
+  const langComplete = (lang, cls) => {
+    const lp = pos[lang] || {};
+    if (cls === "reading") {
+      // Reading covers words/couplets/sentences. Final set = month 3 final set.
+      // Finding the exact final setIdx requires WORDS_BY_MONTH[3].length-1, but
+      // we use a safer threshold: month 3 AND setIdx >= 3 (covers the typical
+      // 4-set-per-month curriculum, conservative).
+      const w = lp.words || lp.reading;
+      if (!w) return false;
+      return (w.month >= 3) && (w.setIdx >= 3);
+    }
+    if (cls === "math") {
+      return (lp.math === "eq-both");
+    }
+    if (cls === "knowledge") {
+      const k = lp.knowledge;
+      if (!k) return false;
+      return (k.month >= 3) && (k.setIdx >= 3);
+    }
+    if (cls === "music") {
+      // Combined: both pitch AND rhythm must be at final stage
+      const lastScale  = MUSIC_SCALES[MUSIC_SCALES.length - 1]?.id;
+      const lastRhythm = RHYTHM_STAGES[RHYTHM_STAGES.length - 1]?.id;
+      return lp.music === lastScale && lp.rhythm === lastRhythm;
+    }
+    return false;
+  };
+
+  // ALL languages must be complete for the child to graduate the class
+  return langs.every(lang => langComplete(lang, classId));
+}
+
 function isClassGraduated(child, classId) {
-  if (!child || !Array.isArray(child.graduatedClasses)) return false;
-  return child.graduatedClasses.includes(classId);
+  // Graduation is now auto-detected from progress, not stored as a flag.
+  // We keep the function name + signature so existing call sites still work.
+  return isClassFullyComplete(child, classId);
 }
 
 // ── ONBOARDING IMPORT (paste family code during setup) ───────────────────────
@@ -3214,16 +3282,8 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
   const [enrolledClasses, setEnrolledClasses] = useState(
     Array.isArray(child?.enrolledClasses) ? child.enrolledClasses : AVAILABLE_CLASSES.map(c => c.id)
   );
-  const [graduatedClasses, setGraduatedClasses] = useState(
-    Array.isArray(child?.graduatedClasses) ? child.graduatedClasses : []
-  );
   const toggleClass = (id) => {
     setEnrolledClasses(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-    // If they un-enroll a class, also remove any graduation
-    setGraduatedClasses(prev => prev.filter(x => x !== id));
-  };
-  const toggleGraduated = (id) => {
-    setGraduatedClasses(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [familyPhotos, setFamilyPhotosState] = useState(() => child?.id ? getFamilyPhotos(child.id) : {});
@@ -3358,7 +3418,9 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
           {AVAILABLE_CLASSES.map(c => {
             const isEnrolled = enrolledClasses.includes(c.id);
-            const isGraduated = graduatedClasses.includes(c.id);
+            // Auto-detect: pass current child state into the helper. We pass
+            // the live `enrolledClasses` so changes are reflected immediately.
+            const isGraduated = isClassFullyComplete({ ...child, languages: child?.languages || langs, position: child?.position }, c.id);
             return (
               <div key={c.id}
                 style={{position:"relative",padding:"10px 12px",borderRadius:14,border:`2px solid ${isEnrolled?RED:"#eee"}`,background:isEnrolled?"#FFF8F8":"#fafafa"}}>
@@ -3377,11 +3439,10 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
                     {isEnrolled ? "✓" : ""}
                   </div>
                 </button>
-                {isEnrolled && (
-                  <button type="button" onClick={()=>toggleGraduated(c.id)}
-                    style={{marginTop:6,width:"100%",background:isGraduated?RED:"#fff",border:`1px solid ${isGraduated?RED:"#ddd"}`,borderRadius:50,padding:"4px 10px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:isGraduated?"#fff":"#666",letterSpacing:.3}}>
-                    {isGraduated ? "🎓 Graduated!" : "mark as graduated"}
-                  </button>
+                {isEnrolled && isGraduated && (
+                  <div style={{marginTop:6,width:"100%",background:RED,border:`1px solid ${RED}`,borderRadius:50,padding:"4px 10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#fff",letterSpacing:.3,textAlign:"center"}}>
+                    🎓 Graduated!
+                  </div>
                 )}
               </div>
             );
@@ -3551,7 +3612,6 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
               birthdate: birthdate || null,
               gender: gender || "prefer",
               enrolledClasses: enrolledClasses && enrolledClasses.length > 0 ? enrolledClasses : AVAILABLE_CLASSES.map(c => c.id),
-              graduatedClasses: graduatedClasses || [],
               // Preserve whatever position data already exists — position is
               // now edited from the home screen per-language, not here.
               position: child?.position,
@@ -4032,7 +4092,7 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
     { id:"reading",   label:"Reading",   emoji:"📖", color:"#FFF0F1", statusKey:"reading",      desc:"Words, phrases, and stories", classIds:["reading"] },
     { id:"math",      label:"Math",      emoji:"🔢", color:"#F0F8FF", statusKey:"math",         desc:"Quantities and equations",     classIds:["math"] },
     { id:"knowledge", label:"Knowledge", emoji:"🌍", color:"#F0FFF4", statusKey:"encyclopedia", desc:"Facts about the world",         classIds:["knowledge"] },
-    { id:"music",     label:"Music",     emoji:"🎵", color:"#FDF4FF", statusKey:"music",        desc:"Perfect pitch training",        classIds:["music-pitch","music-rhythm"] },
+    { id:"music",     label:"Music",     emoji:"🎵", color:"#FDF4FF", statusKey:"music",        desc:"Perfect pitch + rhythm training",        classIds:["music"] },
   ];
 
   // Only show categories where the child is enrolled in at least one of the
@@ -4249,13 +4309,11 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
 // Three sub-categories: Pitch (existing), Rhythm (new), and Sight Reading
 // (coming soon). Each leads to its own roadmap.
 function MusicMenu({ activeChild, onOpenPitch, onOpenRhythm, onBack }) {
-  const pitchEnrolled  = isClassEnrolled(activeChild, "music-pitch");
-  const rhythmEnrolled = isClassEnrolled(activeChild, "music-rhythm");
-  const pitchGraduated  = isClassGraduated(activeChild, "music-pitch");
-  const rhythmGraduated = isClassGraduated(activeChild, "music-rhythm");
+  const musicEnrolled = isClassEnrolled(activeChild, "music");
+  const musicGraduated = isClassGraduated(activeChild, "music");
   const items = [
-    { id:"pitch",  label:"Pitch",        emoji:"🎹", desc:"Perfect pitch training · circle of fifths",    color:"#FDF4FF", available:pitchEnrolled,  graduated:pitchGraduated,  onSelect:onOpenPitch },
-    { id:"rhythm", label:"Rhythm",       emoji:"🥁", desc:"Note values and time signatures",                color:"#FFF4E6", available:rhythmEnrolled, graduated:rhythmGraduated, onSelect:onOpenRhythm },
+    { id:"pitch",  label:"Pitch",        emoji:"🎹", desc:"Perfect pitch training · circle of fifths",    color:"#FDF4FF", available:musicEnrolled,  graduated:musicGraduated,  onSelect:onOpenPitch },
+    { id:"rhythm", label:"Rhythm",       emoji:"🥁", desc:"Note values and time signatures",                color:"#FFF4E6", available:musicEnrolled,  graduated:musicGraduated,  onSelect:onOpenRhythm },
     { id:"sight",  label:"Sight Reading",emoji:"👀", desc:"Combines pitch + rhythm on a staff",             color:"#F4FFF0", available:false, graduated:false, onSelect:null },
   ];
 
@@ -5240,13 +5298,14 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
   const [autoPlay, setAutoPlay] = useState(false);
   const [visible, setVisible] = useState(true);
   const [finished, setFinished] = useState(false);
+  const [started, setStarted] = useState(false);
   const completedRef = useRef(false);
   const advanceTimerRef = useRef(null);
   const cancelPlayRef = useRef(null);
 
-  // Play the rhythm + speak its label when a card appears.
+  // Play the rhythm + speak its label when a card appears (after first tap).
   useEffect(() => {
-    if (!visible || finished) return;
+    if (!visible || finished || !started) return;
     const pattern = patterns[idx];
     if (!pattern) return;
     try {
@@ -5254,13 +5313,12 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
       cancelPlayRef.current = playRhythm(pattern, 80);
     } catch {}
     if (speechOn) {
-      // Speak the label in English (rhythm terminology is English by default)
       setTimeout(() => { try { speak(pattern.label, "English"); } catch {} }, 100);
     }
     return () => {
       if (cancelPlayRef.current) { try { cancelPlayRef.current(); } catch {} }
     };
-  }, [idx, visible, speechOn, patterns, finished]);
+  }, [idx, visible, speechOn, patterns, finished, started]);
 
   const advance = useCallback(() => {
     if (finished) return;
@@ -5281,11 +5339,8 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
     }, 120);
   }, [idx, patterns.length, onComplete, finished]);
 
-  // Auto-advance — longer delay than pitch since rhythms need to finish
   useEffect(() => {
-    if (!autoPlay || !visible || finished) return;
-    // Compute the length of the current pattern so auto-advance waits
-    // until after it finishes playing.
+    if (!autoPlay || !visible || finished || !started) return;
     const pattern = patterns[idx];
     if (!pattern) return;
     let totalBeats = 0;
@@ -5298,7 +5353,7 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
     const patternMs = totalBeats * beatMs;
     advanceTimerRef.current = setTimeout(() => advance(), patternMs + 400);
     return () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current); };
-  }, [idx, autoPlay, visible, advance, finished, patterns]);
+  }, [idx, autoPlay, visible, advance, finished, patterns, started]);
 
   if (finished) return <CompleteScreen category="rhythm" sessionNum={sessionNum} onBack={onBack}/>;
 
@@ -5312,11 +5367,28 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
   }
 
   const pattern = patterns[idx];
+  // First tap = start (unlocks audio AND plays first pattern); subsequent taps = advance
+  const handleTap = () => {
+    if (!started) {
+      unlockAudioSync();
+      try {
+        if (cancelPlayRef.current) cancelPlayRef.current();
+        cancelPlayRef.current = playRhythm(pattern, 80);
+      } catch {}
+      if (speechOn) {
+        setTimeout(() => { try { speak(pattern.label, "English"); } catch {} }, 100);
+      }
+      setStarted(true);
+      return;
+    }
+    advance();
+  };
+
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
       <SessionHeader onBack={onBack} index={idx} total={patterns.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px",cursor:"pointer"}}
-        onClick={()=>{ unlockAudioSync(); advance(); }}>
+        onClick={handleTap}>
         {/* Stage label at top */}
         <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.5,textTransform:"uppercase",marginBottom:16}}>
           {label}
@@ -5332,7 +5404,9 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
             </div>
           </>
         )}
-        <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>tap to advance →</p>
+        <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
+          {started ? "tap to advance →" : "tap to begin · 🔊"}
+        </p>
       </div>
       <ProgressBar index={idx} total={patterns.length}/>
     </div>
@@ -5347,21 +5421,25 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
   const [autoPlay, setAutoPlay] = useState(false);
   const [visible, setVisible] = useState(true);
   const [finished, setFinished] = useState(false);
+  // `started` requires an explicit user tap before any audio plays. iOS Safari
+  // and modern browsers refuse to play audio scheduled outside a user gesture,
+  // so we gate the first tone behind a tap. Once started, subsequent tones
+  // in the same session play freely from useEffect.
+  const [started, setStarted] = useState(false);
   const completedRef = useRef(false);
   const advanceTimerRef = useRef(null);
 
-  // Play the note + speak its name each time a card appears.
+  // Play the note + speak its name each time a card appears — but only AFTER
+  // the user has tapped to start (so audio context is unlocked).
   useEffect(() => {
-    if (!visible || finished) return;
+    if (!visible || finished || !started) return;
     const card = cards[idx];
     if (!card) return;
-    // Start the tone immediately
     try { playTone(card.note, 900); } catch {}
-    // Speak the letter name shortly after — gives parent a verbal anchor too
     if (speechOn) {
       setTimeout(() => { try { speak(card.label, language || "English"); } catch {} }, 50);
     }
-  }, [idx, visible, speechOn, cards, language, finished]);
+  }, [idx, visible, speechOn, cards, language, finished, started]);
 
   const advance = useCallback(() => {
     if (finished) return;
@@ -5369,7 +5447,6 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
     if (advanceTimerRef.current) { clearTimeout(advanceTimerRef.current); advanceTimerRef.current = null; }
     setTimeout(() => {
       if (idx >= cards.length - 1) {
-        // Only fire onComplete ONCE to avoid double-counting the session
         if (!completedRef.current) {
           completedRef.current = true;
           onComplete && onComplete();
@@ -5382,14 +5459,12 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
     }, 120);
   }, [idx, cards.length, onComplete, finished]);
 
-  // Auto-advance after 1 second — same as Reading
   useEffect(() => {
-    if (!autoPlay || !visible || finished) return;
+    if (!autoPlay || !visible || finished || !started) return;
     advanceTimerRef.current = setTimeout(() => advance(), 1000);
     return () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current); };
-  }, [idx, autoPlay, visible, advance, finished]);
+  }, [idx, autoPlay, visible, advance, finished, started]);
 
-  // Celebration screen when the session is done
   if (finished) return <CompleteScreen category="music" sessionNum={sessionNum} onBack={onBack}/>;
 
   if (!cards.length) {
@@ -5402,11 +5477,26 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
   }
 
   const card = cards[idx];
+  // First tap = start (unlocks audio AND plays first note); subsequent taps = advance
+  const handleTap = () => {
+    if (!started) {
+      // Synchronously unlock audio context and play first note INSIDE the gesture
+      unlockAudioSync();
+      try { playTone(card.note, 900); } catch {}
+      if (speechOn) {
+        setTimeout(() => { try { speak(card.label, language || "English"); } catch {} }, 50);
+      }
+      setStarted(true);
+      return;
+    }
+    advance();
+  };
+
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
       <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px",cursor:"pointer"}}
-        onClick={()=>{ unlockAudioSync(); advance(); }}>
+        onClick={handleTap}>
         {/* Scale label at top */}
         <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.5,textTransform:"uppercase",marginBottom:16}}>
           {label}
@@ -5416,7 +5506,9 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
             {card.label}
           </div>
         )}
-        <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>tap to advance →</p>
+        <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
+          {started ? "tap to advance →" : "tap to begin · 🔊"}
+        </p>
       </div>
       <ProgressBar index={idx} total={cards.length}/>
     </div>
