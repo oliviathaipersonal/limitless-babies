@@ -2565,6 +2565,43 @@ function ProgressScreen({ child, onBack }) {
               );
             })()}
 
+            {/* ── GRADUATIONS ─────────────────────────────────────────────────
+                Show all the classes the child has graduated, with the
+                language(s) they graduated in. Only renders when there is at
+                least one graduation to celebrate. */}
+            {(() => {
+              const graduations = AVAILABLE_CLASSES
+                .map(c => ({
+                  classMeta: c,
+                  langs: getGraduatedLanguages(child, c.id),
+                }))
+                .filter(g => g.langs.length > 0);
+              if (graduations.length === 0) return null;
+              return (
+                <div style={{marginBottom:22}}>
+                  <h3 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>
+                    🎓 graduations
+                  </h3>
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {graduations.map(({ classMeta, langs }) => (
+                      <div key={classMeta.id}
+                        style={{display:"flex",alignItems:"center",gap:12,background:"linear-gradient(135deg,#FFF0F1 0%,#FFE4E6 100%)",border:`2px solid ${RED}`,borderRadius:14,padding:"12px 14px"}}>
+                        <span style={{fontSize:24}}>{classMeta.emoji}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:RED,lineHeight:1.1}}>
+                            {classMeta.label} 🎓
+                          </div>
+                          <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#666",marginTop:3,lineHeight:1.4}}>
+                            Graduated in {langs.join(", ")}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div style={{marginBottom:22}}>
               <h3 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>today</h3>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -2744,58 +2781,84 @@ const AVAILABLE_CLASSES = [
   { id:"music",     label:"Music",     emoji:"🎵", desc:"Perfect pitch + rhythm training" },
 ];
 
-// Helper: given a child, returns the array of class ids they're enrolled in.
-// Falls back to all classes if the field is missing (existing users).
+// Enrollment data model — child.enrolledClasses can be either:
+//   1. New format: { classId: [language, ...] } — per-language enrollment
+//   2. Old format: [classId, ...] — applies to ALL the child's languages
+//   3. Missing — defaults to all classes for all languages
+// Helpers below normalize all three to the new format internally.
+
+// Returns the enrollment as an object: { classId: [language, ...] }
+function getEnrollmentMap(child) {
+  if (!child) {
+    // No child — return all classes for English only
+    const map = {};
+    AVAILABLE_CLASSES.forEach(c => { map[c.id] = ["English"]; });
+    return map;
+  }
+  const langs = child.languages || ["English"];
+  const ec = child.enrolledClasses;
+  // New format: object
+  if (ec && typeof ec === "object" && !Array.isArray(ec)) {
+    return ec;
+  }
+  // Old format: array of class ids — applies to all child's languages
+  if (Array.isArray(ec)) {
+    const map = {};
+    ec.forEach(cid => { map[cid] = [...langs]; });
+    return map;
+  }
+  // Missing — default all classes to all child's languages
+  const map = {};
+  AVAILABLE_CLASSES.forEach(c => { map[c.id] = [...langs]; });
+  return map;
+}
+
+// Returns the array of class ids the child has at least ONE language enrolled in.
 function getEnrolledClasses(child) {
-  if (!child) return AVAILABLE_CLASSES.map(c => c.id);
-  if (!Array.isArray(child.enrolledClasses)) return AVAILABLE_CLASSES.map(c => c.id);
-  return child.enrolledClasses;
+  const map = getEnrollmentMap(child);
+  return AVAILABLE_CLASSES.map(c => c.id).filter(cid => (map[cid] || []).length > 0);
 }
 
-function isClassEnrolled(child, classId) {
-  return getEnrolledClasses(child).includes(classId);
+// Returns true if the child is enrolled in this class for ANY language
+// (when no language is given) or for the specific language given.
+function isClassEnrolled(child, classId, language) {
+  const map = getEnrollmentMap(child);
+  const langs = map[classId] || [];
+  if (language) return langs.includes(language);
+  return langs.length > 0;
 }
 
-// Auto-detect whether a class is fully complete based on the child's actual
-// progress, NOT a manual toggle. A class graduates when the child has
-// reached the END of the curriculum across ALL languages they're enrolled in
-// for that class. This reflects the Doman philosophy: graduation is a real
-// achievement, not a self-declared one.
-//
-// `child.position[language][category]` shape:
-//   words/knowledge: { month, setIdx } — month 3 final set = complete
-//   math: stageId — "eq-both" = complete
-//   music: scaleId — last MUSIC_SCALES entry = complete
-//   rhythm: stageId — last RHYTHM_STAGES entry = complete
-//
-// For "music" class (combined pitch + rhythm): both must be at final stage.
+// Returns the languages the child is enrolled in for this class.
+function getClassLanguages(child, classId) {
+  const map = getEnrollmentMap(child);
+  return map[classId] || [];
+}
+
+// Auto-detect whether a class is fully complete based on actual progress.
+// Per user decision: "graduated" once ANY ONE enrolled language reaches the
+// end of the curriculum for that class. This makes graduation an attainable
+// celebration in multilingual families (the strict "all languages must be
+// done" version was discouraging).
 function isClassFullyComplete(child, classId) {
   if (!child) return false;
-  const langs = child.languages || ["English"];
+  const enrolledLangs = getClassLanguages(child, classId);
+  if (enrolledLangs.length === 0) return false;
   const pos = (typeof migratePosition === "function") ? migratePosition(child.position) : (child.position || {});
 
-  // Helper: is a particular language complete for a particular class?
   const langComplete = (lang, cls) => {
     const lp = pos[lang] || {};
     if (cls === "reading") {
-      // Reading covers words/couplets/sentences. Final set = month 3 final set.
-      // Finding the exact final setIdx requires WORDS_BY_MONTH[3].length-1, but
-      // we use a safer threshold: month 3 AND setIdx >= 3 (covers the typical
-      // 4-set-per-month curriculum, conservative).
       const w = lp.words || lp.reading;
       if (!w) return false;
       return (w.month >= 3) && (w.setIdx >= 3);
     }
-    if (cls === "math") {
-      return (lp.math === "eq-both");
-    }
+    if (cls === "math") return (lp.math === "eq-both");
     if (cls === "knowledge") {
       const k = lp.knowledge;
       if (!k) return false;
       return (k.month >= 3) && (k.setIdx >= 3);
     }
     if (cls === "music") {
-      // Combined: both pitch AND rhythm must be at final stage
       const lastScale  = MUSIC_SCALES[MUSIC_SCALES.length - 1]?.id;
       const lastRhythm = RHYTHM_STAGES[RHYTHM_STAGES.length - 1]?.id;
       return lp.music === lastScale && lp.rhythm === lastRhythm;
@@ -2803,8 +2866,34 @@ function isClassFullyComplete(child, classId) {
     return false;
   };
 
-  // ALL languages must be complete for the child to graduate the class
-  return langs.every(lang => langComplete(lang, classId));
+  // ANY one enrolled language complete = graduated
+  return enrolledLangs.some(lang => langComplete(lang, classId));
+}
+
+// Returns the language(s) in which the child has graduated this class.
+// Used by the progress screen to show "🎓 Graduated in English"
+function getGraduatedLanguages(child, classId) {
+  if (!child) return [];
+  const enrolledLangs = getClassLanguages(child, classId);
+  const pos = (typeof migratePosition === "function") ? migratePosition(child.position) : (child.position || {});
+  return enrolledLangs.filter(lang => {
+    const lp = pos[lang] || {};
+    if (classId === "reading") {
+      const w = lp.words || lp.reading;
+      return w && w.month >= 3 && w.setIdx >= 3;
+    }
+    if (classId === "math") return lp.math === "eq-both";
+    if (classId === "knowledge") {
+      const k = lp.knowledge;
+      return k && k.month >= 3 && k.setIdx >= 3;
+    }
+    if (classId === "music") {
+      const lastScale  = MUSIC_SCALES[MUSIC_SCALES.length - 1]?.id;
+      const lastRhythm = RHYTHM_STAGES[RHYTHM_STAGES.length - 1]?.id;
+      return lp.music === lastScale && lp.rhythm === lastRhythm;
+    }
+    return false;
+  });
 }
 
 function isClassGraduated(child, classId) {
@@ -3269,7 +3358,207 @@ function FamilySharingSheet({ onImported, onClose }) {
 
 // ── CHILD EDITOR SHEET (add new or edit existing) ────────────────────────────
 
-function ChildEditor({ child, onSave, onDelete, onClose }) {
+// ── CLASS ENROLLMENTS SHEET ──────────────────────────────────────────────────
+// Per-language class enrollment UI (Option A from design discussion).
+// Each class is a row that can be expanded to show language-chip toggles.
+// Music applies to all languages uniformly (pitch/rhythm aren't language-
+// specific) so it shows a special note instead of a language picker.
+function ClassEnrollmentsSheet({ child, onSave, onClose }) {
+  const langs = child?.languages || ["English"];
+  // Initialize editable state from current enrollment, normalized to the
+  // new object format. Backward-compat handled by getEnrollmentMap.
+  const [enrollment, setEnrollment] = useState(() => {
+    const map = getEnrollmentMap(child);
+    // Make a deep copy so we don't mutate the source
+    const copy = {};
+    AVAILABLE_CLASSES.forEach(c => {
+      copy[c.id] = Array.isArray(map[c.id]) ? [...map[c.id]] : [];
+    });
+    return copy;
+  });
+  // Track which class rows are expanded. Default: any class with mixed
+  // enrollment (some langs in, some out) is expanded so parents see the
+  // detail right away.
+  const [expanded, setExpanded] = useState(() => {
+    const init = {};
+    AVAILABLE_CLASSES.forEach(c => {
+      const enrolledLangs = enrollment[c.id] || [];
+      const isMixed = enrolledLangs.length > 0 && enrolledLangs.length < langs.length;
+      init[c.id] = isMixed;
+    });
+    return init;
+  });
+
+  const toggleExpand = (cid) => setExpanded(p => ({ ...p, [cid]: !p[cid] }));
+
+  // Toggle a single language for a class.
+  const toggleLang = (cid, lang) => {
+    setEnrollment(prev => {
+      const cur = new Set(prev[cid] || []);
+      if (cur.has(lang)) cur.delete(lang); else cur.add(lang);
+      return { ...prev, [cid]: Array.from(cur) };
+    });
+  };
+
+  // "All" / "None" quick toggle for a class — sets to all child's languages, or empty.
+  const toggleAll = (cid) => {
+    setEnrollment(prev => {
+      const cur = prev[cid] || [];
+      const allOn = cur.length === langs.length;
+      return { ...prev, [cid]: allOn ? [] : [...langs] };
+    });
+  };
+
+  // Music is special — it doesn't actually depend on the language being
+  // taught (pitch/rhythm are language-agnostic). We treat enrollment as
+  // a single on/off, internally storing all of child's languages or none.
+  const isMusicOn = (enrollment.music || []).length > 0;
+  const toggleMusic = () => {
+    setEnrollment(prev => ({
+      ...prev,
+      music: isMusicOn ? [] : [...langs],
+    }));
+  };
+
+  const save = () => {
+    // Auto-default: if music is on but child had no languages, make sure
+    // it's stored with the child's languages so it appears on home.
+    onSave(enrollment);
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
+        <button onClick={onClose} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:20,color:"#111",margin:0}}>🎒 Class Enrollments</h2>
+        <div style={{width:38}}/>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"20px 20px 24px"}}>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#666",lineHeight:1.55,marginTop:0,marginBottom:14}}>
+          Choose which classes <strong>{child?.name || "your child"}</strong> is taking, and in which languages. For example, you could enroll them in <em>Reading</em> in 3 languages but <em>Knowledge</em> only in English. Tap a class to customize languages.
+        </p>
+
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {AVAILABLE_CLASSES.map(c => {
+            const enrolledLangs = enrollment[c.id] || [];
+            const isOn = enrolledLangs.length > 0;
+            const isExpanded = !!expanded[c.id];
+            const isMusic = c.id === "music";
+
+            // Subtitle text varies by state
+            let subtitle;
+            if (isMusic) {
+              subtitle = isOn ? "Enabled · pitch + rhythm" : "Not enrolled";
+            } else if (!isOn) {
+              subtitle = "Not enrolled";
+            } else if (enrolledLangs.length === langs.length) {
+              subtitle = `All ${langs.length} ${langs.length === 1 ? "language" : "languages"}`;
+            } else {
+              subtitle = `${enrolledLangs.length} of ${langs.length} languages: ${enrolledLangs.join(", ")}`;
+            }
+
+            return (
+              <div key={c.id}
+                style={{borderRadius:16,border:`2px solid ${isOn?RED:"#eee"}`,background:isOn?"#FFF8F8":"#fafafa",overflow:"hidden"}}>
+                <button type="button"
+                  onClick={() => isMusic ? toggleMusic() : (isOn ? toggleExpand(c.id) : toggleAll(c.id))}
+                  style={{width:"100%",background:"none",border:"none",padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,textAlign:"left"}}>
+                  <span style={{fontSize:30,filter:isOn?"none":"grayscale(1)",opacity:isOn?1:.5}}>{c.emoji}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:isOn?"#111":"#999",lineHeight:1.15}}>
+                      {c.label}
+                    </div>
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.4}}>
+                      {subtitle}
+                    </div>
+                  </div>
+                  {/* Master toggle pill */}
+                  <div style={{
+                    width:36,height:22,borderRadius:50,background:isOn?RED:"#ddd",
+                    position:"relative",flexShrink:0,transition:"background .2s",
+                  }}>
+                    <div style={{
+                      position:"absolute",top:2,left:isOn?16:2,
+                      width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left .2s",
+                      boxShadow:"0 1px 3px rgba(0,0,0,.2)",
+                    }}/>
+                  </div>
+                </button>
+
+                {/* Expanded language chips (only for non-music, when on) */}
+                {!isMusic && isOn && isExpanded && (
+                  <div style={{padding:"4px 16px 14px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#888",letterSpacing:.4,textTransform:"uppercase"}}>
+                        Which languages?
+                      </div>
+                      <button type="button" onClick={() => toggleAll(c.id)}
+                        style={{background:"none",border:"none",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:RED,cursor:"pointer",padding:"2px 4px"}}>
+                        {enrolledLangs.length === langs.length ? "deselect all" : "select all"}
+                      </button>
+                    </div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                      {langs.map(lang => {
+                        const on = enrolledLangs.includes(lang);
+                        return (
+                          <button key={lang} type="button" onClick={() => toggleLang(c.id, lang)}
+                            style={{
+                              background:on?RED:"#fff",
+                              color:on?"#fff":"#666",
+                              border:`1.5px solid ${on?RED:"#ddd"}`,
+                              borderRadius:50,padding:"6px 12px",cursor:"pointer",
+                              fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,
+                              display:"flex",alignItems:"center",gap:5,
+                            }}>
+                            {LANGUAGE_FLAGS[lang] && <span>{LANGUAGE_FLAGS[lang]}</span>}
+                            <span>{lang}</span>
+                            {on && <span style={{fontSize:10,opacity:.85}}>✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {enrolledLangs.length === 0 && (
+                      <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:RED,marginTop:8,marginBottom:0}}>
+                        No languages selected — this class is effectively off.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Music: special explainer when on */}
+                {isMusic && isOn && (
+                  <div style={{padding:"4px 16px 14px"}}>
+                    <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",lineHeight:1.5,margin:0}}>
+                      🎵 Music isn't language-specific — pitch and rhythm training apply across all languages your child is learning.
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{marginTop:16,padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",lineHeight:1.55}}>
+          💡 On the home screen, only the classes enrolled for your child's currently active language will appear. So if Knowledge is English-only, switching to another language will hide that tile.
+        </div>
+      </div>
+
+      <div style={{padding:"12px 18px 18px",borderTop:"1px solid #f0f0f0",display:"flex",gap:10}}>
+        <button onClick={onClose}
+          style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+          cancel
+        </button>
+        <button onClick={save}
+          style={{flex:1,background:RED,border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
+          save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments }) {
   const [name, setName] = useState(child?.name || "");
   const [emoji, setEmoji] = useState(child?.emoji || CHILD_EMOJIS[0]);
   const [langs, setLangs] = useState(child?.languages || ["English"]);
@@ -3278,13 +3567,8 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
   // gendered form of cards in languages that require it (Portuguese thank-you,
   // Korean kinship address terms, etc.). "prefer" = prefer not to say.
   const [gender, setGender] = useState(child?.gender || "prefer");
-  // Enrolled classes — default all for backward compat. Parent can toggle.
-  const [enrolledClasses, setEnrolledClasses] = useState(
-    Array.isArray(child?.enrolledClasses) ? child.enrolledClasses : AVAILABLE_CLASSES.map(c => c.id)
-  );
-  const toggleClass = (id) => {
-    setEnrolledClasses(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
+  // Enrollment is managed in its own dedicated screen (ClassEnrollmentsSheet),
+  // not in the profile editor. The link button below opens it.
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [familyPhotos, setFamilyPhotosState] = useState(() => child?.id ? getFamilyPhotos(child.id) : {});
   const [photoError, setPhotoError] = useState("");
@@ -3408,46 +3692,28 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
           Used only for languages where words differ by speaker gender (e.g., Portuguese <em>obrigada/obrigado</em>, Korean <em>오빠/형</em>). If you prefer not to say, we show both forms.
         </p>
 
-        {/* ── CLASSES ─────────────────────────────────────────────────────── */}
-        <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>
-          Classes ({enrolledClasses.length})
-        </label>
-        <p style={{fontFamily:"Nunito,sans-serif",fontSize:10,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:10,lineHeight:1.4}}>
-          Choose which classes {name || "this child"} is taking. Only enrolled classes appear on the home screen. You can add or remove classes anytime.
-        </p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
-          {AVAILABLE_CLASSES.map(c => {
-            const isEnrolled = enrolledClasses.includes(c.id);
-            // Auto-detect: pass current child state into the helper. We pass
-            // the live `enrolledClasses` so changes are reflected immediately.
-            const isGraduated = isClassFullyComplete({ ...child, languages: child?.languages || langs, position: child?.position }, c.id);
-            return (
-              <div key={c.id}
-                style={{position:"relative",padding:"10px 12px",borderRadius:14,border:`2px solid ${isEnrolled?RED:"#eee"}`,background:isEnrolled?"#FFF8F8":"#fafafa"}}>
-                <button type="button" onClick={()=>toggleClass(c.id)}
-                  style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",width:"100%",display:"flex",alignItems:"flex-start",gap:8}}>
-                  <span style={{fontSize:22,lineHeight:1.1,filter:isEnrolled?"none":"grayscale(1)",opacity:isEnrolled?1:.5}}>{c.emoji}</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:12,color:isEnrolled?"#111":"#999",lineHeight:1.15}}>
-                      {c.label} {isGraduated && <span style={{fontSize:11}}>🎓</span>}
-                    </div>
-                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#aaa",marginTop:2,lineHeight:1.3}}>
-                      {c.desc}
-                    </div>
-                  </div>
-                  <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${isEnrolled?RED:"#ccc"}`,background:isEnrolled?RED:"#fff",flexShrink:0,marginTop:2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#fff",fontWeight:900,lineHeight:1}}>
-                    {isEnrolled ? "✓" : ""}
-                  </div>
-                </button>
-                {isEnrolled && isGraduated && (
-                  <div style={{marginTop:6,width:"100%",background:RED,border:`1px solid ${RED}`,borderRadius:50,padding:"4px 10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#fff",letterSpacing:.3,textAlign:"center"}}>
-                    🎓 Graduated!
-                  </div>
-                )}
+        {/* ── CLASS ENROLLMENTS ─────────────────────────────────────────────
+            Moved to its own dedicated screen for per-language management.
+            Profile editor just has a link button summarizing current state. */}
+        {!isNew && (
+          <button type="button" onClick={()=>onOpenEnrollments && onOpenEnrollments()}
+            style={{width:"100%",padding:"14px 16px",marginBottom:14,borderRadius:16,border:"2px solid #f0f0f0",background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:12,textAlign:"left"}}>
+            <span style={{fontSize:26}}>🎒</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",lineHeight:1.15}}>
+                Class enrollments
               </div>
-            );
-          })}
-        </div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.4}}>
+                {(() => {
+                  const map = getEnrollmentMap(child);
+                  const enrolledCount = AVAILABLE_CLASSES.filter(c => (map[c.id]||[]).length > 0).length;
+                  return `${enrolledCount} ${enrolledCount === 1 ? "class" : "classes"} · choose languages per class`;
+                })()}
+              </div>
+            </div>
+            <span style={{fontSize:18,color:"#ccc"}}>›</span>
+          </button>
+        )}
 
         <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Avatar</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
@@ -3611,7 +3877,8 @@ function ChildEditor({ child, onSave, onDelete, onClose }) {
               name: name.trim(), emoji, languages: langs.length ? langs : ["English"],
               birthdate: birthdate || null,
               gender: gender || "prefer",
-              enrolledClasses: enrolledClasses && enrolledClasses.length > 0 ? enrolledClasses : AVAILABLE_CLASSES.map(c => c.id),
+              // Preserve enrollment if it exists (managed via ClassEnrollmentsSheet)
+              enrolledClasses: child?.enrolledClasses,
               // Preserve whatever position data already exists — position is
               // now edited from the home screen per-language, not here.
               position: child?.position,
@@ -4095,13 +4362,21 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
     { id:"music",     label:"Music",     emoji:"🎵", color:"#FDF4FF", statusKey:"music",        desc:"Perfect pitch + rhythm training",        classIds:["music"] },
   ];
 
-  // Only show categories where the child is enrolled in at least one of the
-  // related classes. Music tile appears if either pitch or rhythm is enrolled.
+  // Only show categories where the child is enrolled in this class for the
+  // CURRENT active language. Music is treated specially — it's not really
+  // language-specific, so we show it whenever the child has music enrolled
+  // in any language at all.
   const categoryMeta = allCategoryMeta
-    .filter(c => c.classIds.some(cid => isClassEnrolled(activeChild, cid)))
+    .filter(c => c.classIds.some(cid => {
+      // Music: language-agnostic — show if enrolled at all
+      if (cid === "music") return isClassEnrolled(activeChild, cid);
+      // Other classes: must be enrolled for the CURRENT active language
+      return isClassEnrolled(activeChild, cid, language);
+    }))
     .map(c => ({
       ...c,
-      // A category is "graduated" only if ALL related classes are graduated
+      // Per-language graduation: a category is graduated for THIS language
+      // when the child has finished it in this specific language.
       graduated: c.classIds.every(cid => isClassGraduated(activeChild, cid)),
     }));
 
@@ -5700,6 +5975,7 @@ export default function App() {
     setShowWelcome(false);
   };
   const [editingChild, setEditingChild]   = useState(undefined);
+  const [showEnrollments, setShowEnrollments] = useState(null); // child.id or null
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dailyWords, setDailyWords]   = useState([]);
   const [dailyKnow, setDailyKnow]     = useState([]);
@@ -6088,8 +6364,31 @@ export default function App() {
           onSave={handleSaveChild}
           onDelete={editingChild ? handleDeleteChild : null}
           onClose={()=>setEditingChild(undefined)}
+          onOpenEnrollments={()=>setShowEnrollments(editingChild?.id)}
         />
       )}
+
+      {showEnrollments && (() => {
+        const childForSheet = children.find(c => c.id === showEnrollments);
+        if (!childForSheet) return null;
+        return (
+          <ClassEnrollmentsSheet
+            child={childForSheet}
+            onSave={(newEnrollment) => {
+              // Persist new enrollment back into the child profile
+              const kids = loadChildren();
+              const i = kids.findIndex(c => c.id === childForSheet.id);
+              if (i >= 0) {
+                kids[i].enrolledClasses = newEnrollment;
+                saveChildren(kids);
+                setChildren(kids);
+              }
+              setShowEnrollments(null);
+            }}
+            onClose={() => setShowEnrollments(null)}
+          />
+        );
+      })()}
 
       {showLangLevel && activeChild && (
         <LanguageLevelSheet
