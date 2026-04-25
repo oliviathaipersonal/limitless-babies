@@ -127,6 +127,12 @@ function noteToFrequency(note) {
 // defer creation until the first call to playTone().
 let _audioCtx = null;
 function getAudioCtx() {
+  // Self-heal: if the context was closed (can happen on iOS after backgrounding
+  // or when the OS reclaims audio resources), discard it and make a new one.
+  // A closed AudioContext cannot be reopened — only replaced.
+  if (_audioCtx && _audioCtx.state === "closed") {
+    _audioCtx = null;
+  }
   if (_audioCtx) return _audioCtx;
   const Ctx = (typeof window !== "undefined") && (window.AudioContext || window.webkitAudioContext);
   if (!Ctx) return null;
@@ -3427,7 +3433,7 @@ function ClassEnrollmentsSheet({ child, onSave, onClose }) {
   };
 
   return (
-    <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
+    <Sheet onClose={onClose}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
         <button onClick={onClose} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
         <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:20,color:"#111",margin:0}}>🎒 Class Enrollments</h2>
@@ -3554,7 +3560,7 @@ function ClassEnrollmentsSheet({ child, onSave, onClose }) {
           save
         </button>
       </div>
-    </div>
+    </Sheet>
   );
 }
 
@@ -6003,6 +6009,31 @@ export default function App() {
     };
   }, []);
 
+  // iOS silent-switch workaround. By default, iOS Safari mutes WebAudio
+  // when the device's mute switch is engaged. The fix is to tell iOS that
+  // the page is playing "media" (not just incidental sounds) by keeping a
+  // hidden <audio> element looping a silent track. iOS then treats audio
+  // playback as intentional and respects the volume setting instead of the
+  // mute switch.
+  //
+  // The audio source is a tiny base64-encoded silent WAV.
+  const silentAudioRef = useRef(null);
+  useEffect(() => {
+    const startSilentLoop = () => {
+      try {
+        if (silentAudioRef.current) {
+          silentAudioRef.current.play().catch(() => {});
+        }
+      } catch {}
+    };
+    document.addEventListener("click",      startSilentLoop, { once: true, capture: true });
+    document.addEventListener("touchstart", startSilentLoop, { once: true, capture: true });
+    return () => {
+      document.removeEventListener("click",      startSilentLoop, { capture: true });
+      document.removeEventListener("touchstart", startSilentLoop, { capture: true });
+    };
+  }, []);
+
   // Compute active child + its data
   const activeChild = children.find(c => c.id === activeChildId) || children[0] || null;
   const history = useMemo(()=>activeChild ? getHistory(activeChild.id) : {}, [activeChild, mode]);
@@ -6277,6 +6308,13 @@ export default function App() {
   return (
     <>
       <style>{baseStyles}</style>
+      {/* Hidden silent audio loop — iOS silent-switch workaround. When the
+          mute switch is engaged, iOS mutes WebAudio unless a media element
+          is also playing. This 1-second silent WAV loops in the background
+          to keep "media playing" status active. */}
+      <audio ref={silentAudioRef} loop playsInline preload="auto"
+        src="silent.wav"
+        style={{display:"none"}}/>
       {mode===null       && <HomeScreen activeChild={activeChild} activeChildId={activeChildId} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)} onAdjustLevel={()=>setShowLangLevel(true)} onOpenWelcome={()=>setShowWelcome(true)} onEditActiveChild={()=>activeChild && setEditingChild(activeChild)}/>}
 
       {mode==="menu:reading"   && <CategoryMenu category="reading"   activeChild={activeChild} language={language} words={dailyWords} couplets={dailyCouplets} sentences={dailySentences} onSelect={handleStartSession} onOpenRoadmap={handleOpenRoadmap} onBack={handleBackToHome}/>}
@@ -6358,7 +6396,7 @@ export default function App() {
         />
       )}
 
-      {editingChild !== undefined && (
+      {editingChild !== undefined && !showEnrollments && (
         <ChildEditor
           child={editingChild}
           onSave={handleSaveChild}
@@ -6382,9 +6420,15 @@ export default function App() {
                 kids[i].enrolledClasses = newEnrollment;
                 saveChildren(kids);
                 setChildren(kids);
+                // Update the editingChild reference so when we return to it,
+                // it has the latest enrollment data for its summary subtitle.
+                if (editingChild && editingChild.id === childForSheet.id) {
+                  setEditingChild({ ...editingChild, enrolledClasses: newEnrollment });
+                }
               }
               setShowEnrollments(null);
             }}
+            // Closing returns to ChildEditor (which is still in editingChild state)
             onClose={() => setShowEnrollments(null)}
           />
         );
