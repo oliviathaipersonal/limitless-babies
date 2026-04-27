@@ -166,69 +166,88 @@ function playTone(noteName, durationMs = 900) {
   const ctx = getAudioCtx();
   if (!ctx) return;
 
-  // Helper that does the actual scheduling, called after we're confident
-  // the context is running. Uses ctx.currentTime AT THE MOMENT it runs,
-  // so events are scheduled relative to "now," not a stale captured value.
+  // Try to resume immediately. We are typically called from inside a click
+  // handler, so resume() will succeed synchronously OR start a Promise that
+  // resolves shortly. We schedule events with a small lookahead (~50ms) so
+  // they always land in the future even if currentTime hasn't ticked yet.
+  if (ctx.state === "suspended") {
+    try { ctx.resume(); } catch {}
+  }
+
   const schedule = () => {
-    if (ctx.state !== "running") return; // bail if still suspended
     const freq = noteToFrequency(noteName);
-    const now = ctx.currentTime;
+    // Lookahead: +50ms beyond ctx.currentTime. iOS sometimes has currentTime
+    // not advance until the first event tick, so scheduling at exactly
+    // currentTime can be dropped. A small future offset is safe.
+    const start = ctx.currentTime + 0.05;
     const durS = durationMs / 1000;
-    const releaseS = 0.35;
-    const attackS = 0.008;
-    const decayS = 0.15;
-    const sustainEnd = Math.max(attackS + decayS + 0.05, durS - releaseS);
+    const releaseS = 0.25;
+    const attackS = 0.01;
+    const sustainEnd = Math.max(attackS + 0.05, durS - releaseS);
 
     const master = ctx.createGain();
-    master.gain.setValueAtTime(0, now);
-    master.gain.linearRampToValueAtTime(0.32, now + attackS);
-    master.gain.exponentialRampToValueAtTime(0.15, now + attackS + decayS);
-    master.gain.setValueAtTime(0.15, now + sustainEnd);
-    master.gain.exponentialRampToValueAtTime(0.0001, now + sustainEnd + releaseS);
+    master.gain.setValueAtTime(0.0001, start);
+    master.gain.linearRampToValueAtTime(0.32, start + attackS);
+    master.gain.setValueAtTime(0.32, start + sustainEnd);
+    master.gain.exponentialRampToValueAtTime(0.0001, start + sustainEnd + releaseS);
     master.connect(ctx.destination);
 
     const filter = ctx.createBiquadFilter();
     filter.type = "lowpass";
-    filter.frequency.setValueAtTime(3500, now);
+    filter.frequency.value = 3500;
     filter.Q.value = 0.5;
     filter.connect(master);
 
+    // Fundamental — triangle wave (warm, flute-like)
     const osc1 = ctx.createOscillator();
     osc1.type = "triangle";
     osc1.frequency.value = freq;
     const g1 = ctx.createGain(); g1.gain.value = 0.7;
     osc1.connect(g1); g1.connect(filter);
-    osc1.start(now); osc1.stop(now + sustainEnd + releaseS + 0.1);
+    osc1.start(start); osc1.stop(start + sustainEnd + releaseS + 0.1);
 
+    // Octave overtone — sine
     const osc2 = ctx.createOscillator();
     osc2.type = "sine";
     osc2.frequency.value = freq * 2;
     const g2 = ctx.createGain(); g2.gain.value = 0.22;
     osc2.connect(g2); g2.connect(filter);
-    osc2.start(now); osc2.stop(now + sustainEnd + releaseS + 0.1);
+    osc2.start(start); osc2.stop(start + sustainEnd + releaseS + 0.1);
 
+    // Perfect fifth — sine
     const osc3 = ctx.createOscillator();
     osc3.type = "sine";
     osc3.frequency.value = freq * 1.5;
     const g3 = ctx.createGain(); g3.gain.value = 0.1;
     osc3.connect(g3); g3.connect(filter);
-    osc3.start(now); osc3.stop(now + sustainEnd + releaseS + 0.1);
+    osc3.start(start); osc3.stop(start + sustainEnd + releaseS + 0.1);
   };
 
-  // If suspended, resume() returns a Promise on modern browsers (especially
-  // iOS Safari). We must wait for resume to complete before scheduling
-  // events — otherwise events get scheduled against a frozen ctx.currentTime
-  // and never play once the context wakes up.
-  if (ctx.state === "suspended") {
-    const p = ctx.resume();
-    if (p && typeof p.then === "function") {
-      p.then(schedule).catch(() => {});
-    } else {
-      // Older browsers may resume synchronously
-      schedule();
-    }
-  } else {
+  // If state is "running" right now, schedule immediately. Otherwise wait for
+  // resume() to complete. We also schedule a fallback after 100ms in case
+  // resume's Promise never resolves on this iOS version (some early 14.x
+  // versions had broken Promise returns from resume).
+  if (ctx.state === "running") {
     schedule();
+  } else {
+    let scheduled = false;
+    const tryNow = () => {
+      if (scheduled) return;
+      if (ctx.state === "running") {
+        scheduled = true;
+        schedule();
+      }
+    };
+    // Try via the Promise if it exists
+    try {
+      const p = ctx.resume();
+      if (p && typeof p.then === "function") {
+        p.then(tryNow).catch(() => {});
+      }
+    } catch {}
+    // Fallback timer — if Promise never fires, this catches it
+    setTimeout(tryNow, 100);
+    setTimeout(tryNow, 300);
   }
 }
 
@@ -791,6 +810,32 @@ function saveChildren(children) {
   try { localStorage.setItem("lb-children", JSON.stringify(children)); } catch {}
 }
 
+// ── PREMIUM SUBSCRIPTION (MOCK) ──────────────────────────────────────────────
+// Mock subscription state. In production this will be backed by App Store /
+// Google Play purchase verification. For now it's a localStorage flag toggled
+// by the (mock) "subscribe" button in PremiumUpsell. Free tier is gated to
+// English-only; multilingual is the headline premium feature.
+function getPremium() {
+  try {
+    const raw = localStorage.getItem("lb-premium");
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function setPremium(plan) {
+  // plan: { tier: "single"|"family", interval: "monthly"|"yearly", at: timestamp }
+  // null clears subscription
+  try {
+    if (plan === null) localStorage.removeItem("lb-premium");
+    else localStorage.setItem("lb-premium", JSON.stringify(plan));
+  } catch {}
+}
+
+function isPremium() {
+  return !!getPremium();
+}
+
 function getActiveChildId() {
   try { return localStorage.getItem("lb-active-child") || null; } catch { return null; }
 }
@@ -1172,6 +1217,125 @@ function markSessionComplete(childId, category, language) {
     const dayKey = `${category}:${language}`;
     hist[dk][dayKey] = (hist[dk][dayKey] || 0) + 1;
     localStorage.setItem(histKey, JSON.stringify(hist));
+
+    // Auto-advance the curriculum position when the FINAL session of the day
+    // is completed. Per Doman, the rolling window shifts forward by 1 set
+    // each day. Without this advancement, the child sees the same cards
+    // every day forever — which is what the user reported.
+    if (data.count >= MAX_SESSIONS_PER_DAY) {
+      advancePositionAfterFinalSession(childId, category, language);
+    }
+  } catch {}
+}
+
+// Advance the per-language curriculum position forward by one unit. Called
+// when the child completes the 3rd (final) session of the day for a given
+// (category, language) pair. The unit of advancement varies by category:
+//   reading/couplets/sentences: setIdx += 1, wrapping to next month
+//   knowledge: same as reading
+//   math: day-number-driven; position (stage) only advances when the child
+//     finishes the rolling window cycle of the current stage. We auto-advance
+//     conservatively — only when an explicit unlock day is reached. For now
+//     math doesn't advance here; it advances naturally via the day-number
+//     formula in getDomanWindow().
+//   music/rhythm: weekly cadence; only advance after 7 sessions in a week,
+//     which we approximate as "advance after every 21 sessions completed
+//     (3/day × 7 days)". To keep things simple, we increment a per-language
+//     session counter and roll forward on hitting 21.
+function advancePositionAfterFinalSession(childId, category, language) {
+  try {
+    const kids = JSON.parse(localStorage.getItem("lb-children") || "[]");
+    const idx = kids.findIndex(c => c.id === childId);
+    if (idx < 0) return;
+    const lang = language || "English";
+    if (!kids[idx].position) kids[idx].position = {};
+    if (kids[idx].position && !kids[idx].position[lang] && (kids[idx].position.words || kids[idx].position.math)) {
+      // Old flat format — migrate first
+      const flat = kids[idx].position;
+      kids[idx].position = { English: flat };
+    }
+    if (!kids[idx].position[lang]) kids[idx].position[lang] = {};
+    const langPos = kids[idx].position[lang];
+
+    // Map session category → position key in the data structure
+    const posKeyMap = {
+      reading:      "words",
+      couplets:     "couplets",
+      sentences:    "sentences",
+      encyclopedia: "knowledge",
+    };
+    const posKey = posKeyMap[category];
+
+    if (posKey) {
+      // Sets-based advancement: increment setIdx, wrap to next month if needed
+      const cur = langPos[posKey] || { month: 1, setIdx: 0 };
+      const monthData = (
+        posKey === "words"     ? WORDS_BY_MONTH :
+        posKey === "couplets"  ? COUPLETS_BY_MONTH :
+        posKey === "sentences" ? SENTENCES_BY_MONTH :
+        posKey === "knowledge" ? KNOWLEDGE_BY_MONTH : null
+      );
+      if (!monthData) return;
+
+      const monthSets = monthData[cur.month];
+      // Number of sets in the current month (some months may have null data)
+      const monthLen = monthSets ? monthSets.length : 0;
+      let nextMonth = cur.month;
+      let nextSetIdx = cur.setIdx + 1;
+      // If we've passed the last set in the current month, roll to next month
+      // (skipping months with null data — e.g. couplets only has month 2).
+      if (nextSetIdx >= monthLen) {
+        // Find the next month that has data, up to month 3
+        let m = cur.month + 1;
+        while (m <= 3 && !monthData[m]) m++;
+        if (m > 3) {
+          // Curriculum complete for this category/language. Stay parked at the
+          // final set so progress.isClassFullyComplete trips correctly and the
+          // child can still review.
+          nextMonth = cur.month;
+          nextSetIdx = monthLen - 1;
+        } else {
+          nextMonth = m;
+          nextSetIdx = 0;
+        }
+      }
+      langPos[posKey] = { month: nextMonth, setIdx: nextSetIdx };
+      kids[idx].position[lang] = langPos;
+      localStorage.setItem("lb-children", JSON.stringify(kids));
+      return;
+    }
+
+    if (category === "music" || category === "rhythm") {
+      // Weekly cadence: advance after ~21 sessions (3/day × 7 days).
+      // Track a per-language session counter under a synthetic key.
+      const counterKey = category === "music" ? "_musicSessions" : "_rhythmSessions";
+      const c = (langPos[counterKey] || 0) + 1;
+      langPos[counterKey] = c;
+      if (c >= 21) {
+        // Roll forward to next stage
+        if (category === "music") {
+          const stages = MUSIC_SCALES;
+          const curId = langPos.music || stages[0].id;
+          const i = stages.findIndex(s => s.id === curId);
+          if (i >= 0 && i < stages.length - 1) {
+            langPos.music = stages[i + 1].id;
+            langPos[counterKey] = 0;
+          }
+        } else {
+          const stages = RHYTHM_STAGES;
+          const curId = langPos.rhythm || stages[0].id;
+          const i = stages.findIndex(s => s.id === curId);
+          if (i >= 0 && i < stages.length - 1) {
+            langPos.rhythm = stages[i + 1].id;
+            langPos[counterKey] = 0;
+          }
+        }
+      }
+      kids[idx].position[lang] = langPos;
+      localStorage.setItem("lb-children", JSON.stringify(kids));
+    }
+    // Math: no advance here — getDomanWindow uses the day number, which
+    // advances automatically as the calendar rolls forward.
   } catch {}
 }
 
@@ -2950,29 +3114,64 @@ function OnboardingImport({ onImported, onBack }) {
 
 // ── ONBOARDING (first-time setup) ────────────────────────────────────────────
 
-function Onboarding({ onDone }) {
-  const [step, setStep] = useState(0); // 0=welcome, 1=first child, 2=ask about another
+function Onboarding({ onDone, premium, onPremiumNeeded }) {
+  const [step, setStep] = useState(0); // 0=welcome, 1=child form, 1.5=enroll, 2=photos, 3=all-set
   const [children, setChildren] = useState([]);
   const [name, setName] = useState("");
   const [birthdate, setBirthdate] = useState("");
   const [emoji, setEmoji] = useState(CHILD_EMOJIS[0]);
+  const [gender, setGender] = useState("prefer");
   const [langs, setLangs] = useState(["English"]);
   const [showLangPicker, setShowLangPicker] = useState(false);
+  // Enrollment built during onboarding — defaults to all classes for all languages
+  const [enrollment, setEnrollment] = useState(null);
+  // Family photos uploaded during onboarding for THIS child
+  const [photoUploads, setPhotoUploads] = useState({});
+  const [photoError, setPhotoError] = useState("");
 
-  const addCurrentChild = () => {
+  const handleChildFormDone = () => {
     if (!name.trim()) return;
+    // Default all classes to all selected languages — parents can adjust on next screen
+    const defaultEnroll = {};
+    AVAILABLE_CLASSES.forEach(c => { defaultEnroll[c.id] = [...langs]; });
+    setEnrollment(defaultEnroll);
+    setStep(1.5);
+  };
+
+  const persistChildAndAdvance = () => {
+    if (!name.trim()) return;
+    const id = newChildId();
     const child = {
-      id: newChildId(),
+      id,
       name: name.trim(),
       emoji,
+      gender,
       birthdate: birthdate || null,
       languages: langs.length ? langs : ["English"],
+      enrolledClasses: enrollment || undefined,
       createdAt: Date.now(),
     };
+    // Persist photos to localStorage for this child id
+    try {
+      const photoMap = {};
+      Object.entries(photoUploads).forEach(([slot, dataUrl]) => {
+        if (dataUrl) photoMap[slot] = dataUrl;
+      });
+      if (Object.keys(photoMap).length > 0) {
+        localStorage.setItem(`lb-photos-${id}`, JSON.stringify(photoMap));
+      }
+    } catch {}
     const next = [...children, child];
     setChildren(next);
-    setName(""); setBirthdate(""); setEmoji(CHILD_EMOJIS[next.length % CHILD_EMOJIS.length]); setLangs(["English"]);
-    setStep(2);
+    // Reset for next child
+    setName(""); setBirthdate("");
+    setEmoji(CHILD_EMOJIS[next.length % CHILD_EMOJIS.length]);
+    setGender("prefer");
+    setLangs(["English"]);
+    setEnrollment(null);
+    setPhotoUploads({});
+    setPhotoError("");
+    setStep(3);
   };
 
   const finish = () => {
@@ -3034,6 +3233,26 @@ function Onboarding({ onDone }) {
           </div>
 
           <div style={{width:"100%",maxWidth:360,marginTop:18}}>
+            <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Gender</label>
+            <div style={{display:"flex",gap:6}}>
+              {[
+                { id:"girl",   label:"Girl",   emoji:"👧" },
+                { id:"boy",    label:"Boy",    emoji:"👦" },
+                { id:"prefer", label:"Prefer not to say", emoji:"🤗" },
+              ].map(g => (
+                <button key={g.id} type="button" onClick={()=>setGender(g.id)}
+                  style={{flex:1,padding:"10px 8px",borderRadius:12,border:`2px solid ${gender===g.id?RED:"#eee"}`,background:gender===g.id?"#FFF0F1":"#fff",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:gender===g.id?RED:"#666"}}>
+                  <span style={{fontSize:18}}>{g.emoji}</span>
+                  <span style={{lineHeight:1.1,textAlign:"center"}}>{g.label}</span>
+                </button>
+              ))}
+            </div>
+            <p style={{fontFamily:"Nunito,sans-serif",fontSize:10,color:"#aaa",fontWeight:700,marginTop:6,lineHeight:1.4}}>
+              Used only for languages where words differ by speaker gender (e.g., Korean older sibling: 오빠/형). If you prefer not to say, both forms are shown.
+            </p>
+          </div>
+
+          <div style={{width:"100%",maxWidth:360,marginTop:18}}>
             <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:8,letterSpacing:.5,textTransform:"uppercase"}}>Avatar</label>
             <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
               {CHILD_EMOJIS.map(e=>(
@@ -3069,24 +3288,240 @@ function Onboarding({ onDone }) {
               ←
             </button>
             {children.length > 0 && (
-              <button onClick={()=>setStep(2)}
+              <button onClick={()=>setStep(3)}
                 style={{background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
                 skip
               </button>
             )}
-            <button onClick={addCurrentChild} disabled={!name.trim()}
+            <button onClick={handleChildFormDone} disabled={!name.trim()}
               style={{background:name.trim()?RED:"#ddd",border:"none",borderRadius:50,padding:"12px 26px",cursor:name.trim()?"pointer":"not-allowed",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
-              save {emoji} →
+              next →
             </button>
           </div>
 
           {showLangPicker && (
-            <LanguageMultiPicker selected={langs} onToggle={toggleLang} onClose={()=>setShowLangPicker(false)}/>
+            <LanguageMultiPicker selected={langs} onToggle={toggleLang} onClose={()=>setShowLangPicker(false)} premium={premium} onPremiumNeeded={()=>{ setShowLangPicker(false); onPremiumNeeded && onPremiumNeeded(); }}/>
           )}
         </>
       )}
 
-      {step === 2 && (
+      {step === 1.5 && (
+        <>
+          <p style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",marginTop:18,marginBottom:8,textAlign:"center"}}>
+            Choose {name}'s classes
+          </p>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#888",lineHeight:1.55,textAlign:"center",maxWidth:340,marginBottom:18}}>
+            Pick which classes {name} will take, and in which languages. You can always change this later.
+          </p>
+
+          <div style={{width:"100%",maxWidth:380,display:"flex",flexDirection:"column",gap:10}}>
+            {AVAILABLE_CLASSES.map(c => {
+              const enrolledLangs = (enrollment && enrollment[c.id]) || [];
+              const isOn = enrolledLangs.length > 0;
+              const isMusic = c.id === "music";
+              const subtitle = isMusic
+                ? (isOn ? "Enabled · pitch + rhythm" : "Not enrolled")
+                : (!isOn ? "Not enrolled"
+                   : enrolledLangs.length === langs.length ? `All ${langs.length} ${langs.length === 1 ? "language" : "languages"}`
+                   : `${enrolledLangs.length} of ${langs.length}: ${enrolledLangs.join(", ")}`);
+              return (
+                <div key={c.id} style={{borderRadius:16,border:`2px solid ${isOn?RED:"#eee"}`,background:isOn?"#FFF8F8":"#fafafa",overflow:"hidden"}}>
+                  <button type="button"
+                    onClick={() => {
+                      if (isMusic) {
+                        setEnrollment(prev => ({ ...prev, music: isOn ? [] : [...langs] }));
+                      } else {
+                        // Toggle: if currently all-enrolled, set to none; else set to all
+                        setEnrollment(prev => ({
+                          ...prev,
+                          [c.id]: isOn && enrolledLangs.length === langs.length ? [] : [...langs]
+                        }));
+                      }
+                    }}
+                    style={{width:"100%",background:"none",border:"none",padding:"12px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left"}}>
+                    <span style={{fontSize:26,filter:isOn?"none":"grayscale(1)",opacity:isOn?1:.5}}>{c.emoji}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:isOn?"#111":"#999",lineHeight:1.15}}>{c.label}</div>
+                      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.4}}>{subtitle}</div>
+                    </div>
+                    <div style={{width:34,height:20,borderRadius:50,background:isOn?RED:"#ddd",position:"relative",flexShrink:0}}>
+                      <div style={{position:"absolute",top:2,left:isOn?16:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
+                    </div>
+                  </button>
+
+                  {/* Per-language chips for non-music classes when more than 1 language selected */}
+                  {!isMusic && isOn && langs.length > 1 && (
+                    <div style={{padding:"4px 14px 12px"}}>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                        {langs.map(lang => {
+                          const on = enrolledLangs.includes(lang);
+                          return (
+                            <button key={lang} type="button"
+                              onClick={() => {
+                                setEnrollment(prev => {
+                                  const cur = new Set(prev[c.id] || []);
+                                  if (cur.has(lang)) cur.delete(lang); else cur.add(lang);
+                                  return { ...prev, [c.id]: Array.from(cur) };
+                                });
+                              }}
+                              style={{
+                                background:on?RED:"#fff",
+                                color:on?"#fff":"#666",
+                                border:`1.5px solid ${on?RED:"#ddd"}`,
+                                borderRadius:50,padding:"5px 10px",cursor:"pointer",
+                                fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,
+                                display:"flex",alignItems:"center",gap:4,
+                              }}>
+                              {LANGUAGE_FLAGS[lang] && <span>{LANGUAGE_FLAGS[lang]}</span>}
+                              <span>{lang}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{display:"flex",gap:10,marginTop:24}}>
+            <button onClick={()=>setStep(1)}
+              style={{background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+              ←
+            </button>
+            <button onClick={()=>setStep(2)}
+              style={{background:RED,border:"none",borderRadius:50,padding:"12px 26px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+              next →
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 2 && (() => {
+        // Slots to upload during onboarding — exactly the first set of words
+        // (Family Members) plus any kinship-distinguishing slots if relevant.
+        const baseSlots = [
+          { slot:"mother", label:"Mother",  emoji:"👩" },
+          { slot:"father", label:"Father",  emoji:"👨" },
+          { slot:"sister", label:"Sister",  emoji:"👧" },
+          { slot:"brother",label:"Brother", emoji:"👦" },
+          { slot:"baby",   label:"Baby",    emoji:"👶" },
+        ];
+        // Kinship-aware slots (if a learning language differentiates)
+        const kinshipExtras = [];
+        const usesKinship = (base) => langs.some(l => l !== "English" && KINSHIP_LANGUAGES.includes(l) && KINSHIP_VARIANTS[base]?.[l]);
+        if (usesKinship("sister")) {
+          kinshipExtras.push({ slot:"sister_older",   label:"Older sister",   emoji:"👩" });
+          kinshipExtras.push({ slot:"sister_younger", label:"Younger sister", emoji:"👧" });
+        }
+        if (usesKinship("brother")) {
+          kinshipExtras.push({ slot:"brother_older",   label:"Older brother",   emoji:"👨" });
+          kinshipExtras.push({ slot:"brother_younger", label:"Younger brother", emoji:"👦" });
+        }
+        const allSlots = [...baseSlots, ...kinshipExtras];
+
+        const handlePick = async (slot, file) => {
+          if (!file) return;
+          setPhotoError("");
+          try {
+            const dataUrl = await compressImageFile(file);
+            setPhotoUploads(prev => ({ ...prev, [slot]: dataUrl }));
+          } catch (e) {
+            setPhotoError("Couldn't read that photo — try another.");
+          }
+        };
+
+        const uploadedCount = Object.values(photoUploads).filter(Boolean).length;
+
+        return (
+          <>
+            <p style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",marginTop:18,marginBottom:8,textAlign:"center"}}>
+              Add family photos for {name}
+            </p>
+            <div style={{maxWidth:360,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#666",lineHeight:1.6,textAlign:"center",marginBottom:6}}>
+              The first lesson is <strong>Family Members</strong>! Upload a photo for each word — when {name} sees the card, they'll see a familiar face instead of a generic icon.
+            </div>
+            <div style={{maxWidth:360,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:RED,lineHeight:1.6,textAlign:"center",marginBottom:14}}>
+              💛 This is the magic moment babies LOVE — they're learning to read AND to recognize the people they love at the same time.
+            </div>
+
+            <div style={{width:"100%",maxWidth:360,display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:8,marginBottom:12}}>
+              {baseSlots.map(s => {
+                const photo = photoUploads[s.slot];
+                return (
+                  <div key={s.slot} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                    <label style={{cursor:"pointer",position:"relative",width:"100%",aspectRatio:"1/1",borderRadius:12,overflow:"hidden",background:"#fff",border:photo?`2px solid ${RED}`:"2px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {photo ? (
+                        <img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                      ) : (
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                          <span style={{fontSize:24,opacity:.5}}>{s.emoji}</span>
+                          <span style={{fontSize:18,color:"#ccc"}}>+</span>
+                        </div>
+                      )}
+                      <input type="file" accept="image/*"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handlePick(s.slot, f); e.target.value = ""; }}
+                        style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/>
+                    </label>
+                    <span style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#666"}}>{s.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {kinshipExtras.length > 0 && (
+              <>
+                <div style={{maxWidth:360,padding:"8px 12px",background:"#FFF8F8",border:`1px dashed ${RED}55`,borderRadius:10,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#777",lineHeight:1.5,marginBottom:8}}>
+                  Since {name} is learning languages that distinguish older/younger siblings, you can add specific photos. Optional — the generic photos above will be used otherwise.
+                </div>
+                <div style={{width:"100%",maxWidth:360,display:"grid",gridTemplateColumns:"repeat(2, 1fr)",gap:8,marginBottom:12}}>
+                  {kinshipExtras.map(s => {
+                    const photo = photoUploads[s.slot];
+                    return (
+                      <div key={s.slot} style={{display:"flex",alignItems:"center",gap:8,padding:6,background:"#fff",border:photo?`2px solid ${RED}`:"1px dashed #ddd",borderRadius:10}}>
+                        <label style={{cursor:"pointer",position:"relative",width:42,height:42,borderRadius:8,overflow:"hidden",background:"#fafafa",border:"1px solid #eee",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                          {photo ? <img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <span style={{fontSize:16,opacity:.5}}>{s.emoji}</span>}
+                          <input type="file" accept="image/*"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handlePick(s.slot, f); e.target.value = ""; }}
+                            style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/>
+                        </label>
+                        <span style={{flex:1,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#444",lineHeight:1.2}}>{s.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <div style={{maxWidth:360,padding:"10px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#666",lineHeight:1.55,marginBottom:6}}>
+              📸 You can add more family photos (grandparents, aunts, uncles, etc.) anytime from {name}'s profile. Photos are stored on your device only — they never leave your phone. <strong>If you have multiple kids, photos transfer easily between profiles — no need to upload twice.</strong>
+            </div>
+            <p style={{maxWidth:360,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#999",lineHeight:1.5,textAlign:"center",marginBottom:14,fontStyle:"italic"}}>
+              Families come in all shapes — same-sex parents, single parents, foster families. Upload whoever feels right under "Mother" or "Father" — what matters is that {name} sees their loved ones.
+            </p>
+
+            {photoError && <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:RED,marginBottom:8}}>{photoError}</p>}
+
+            <div style={{display:"flex",gap:10,marginTop:8}}>
+              <button onClick={()=>setStep(1.5)}
+                style={{background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+                ←
+              </button>
+              <button onClick={persistChildAndAdvance}
+                style={{background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+                skip for now
+              </button>
+              <button onClick={persistChildAndAdvance}
+                style={{background:RED,border:"none",borderRadius:50,padding:"12px 26px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+                {uploadedCount > 0 ? `save ${uploadedCount} & continue →` : "continue →"}
+              </button>
+            </div>
+          </>
+        );
+      })()}
+
+      {step === 3 && (
         <>
           <div style={{fontSize:48,marginTop:20}}>{children[children.length-1]?.emoji}</div>
           <p style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",marginTop:8,textAlign:"center"}}>
@@ -3122,26 +3557,48 @@ function Onboarding({ onDone }) {
 
 // ── LANGUAGE MULTI-PICKER (used in onboarding & child settings) ──────────────
 
-function LanguageMultiPicker({ selected, onToggle, onClose }) {
+function LanguageMultiPicker({ selected, onToggle, onClose, premium, onPremiumNeeded }) {
   const [q, setQ] = useState("");
   const filtered = LANGUAGES.filter(l=>l.toLowerCase().includes(q.toLowerCase()));
+  // Wrap toggle so free-tier users can't pick a 2nd language. They can still
+  // remove their existing language to switch to a different single one.
+  const handleTap = (lang) => {
+    const isAdding = !selected.includes(lang);
+    if (isAdding && !premium && selected.length >= 1) {
+      onPremiumNeeded && onPremiumNeeded();
+      return;
+    }
+    onToggle(lang);
+  };
+
   return (
     <Sheet onClose={onClose}>
       <div style={{padding:"22px 22px 14px",borderBottom:"1px solid #f0f0f0"}}>
         <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:"0 0 6px"}}>🌍 Languages</h2>
-        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa",marginBottom:10}}>Tap to add or remove. {selected.length} selected.</p>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa",marginBottom:10}}>
+          {premium ? `Tap to add or remove. ${selected.length} selected.` : `Free tier: 1 language. ${selected.length} selected.`}
+        </p>
+        {!premium && (
+          <div style={{padding:"8px 12px",background:"#FFF8F8",border:`1px dashed ${RED}55`,borderRadius:10,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#777",lineHeight:1.5,marginBottom:10}}>
+            ✨ Want to teach your baby multiple languages? <button onClick={onPremiumNeeded} style={{background:"none",border:"none",padding:0,fontFamily:"inherit",fontWeight:800,fontSize:11,color:RED,cursor:"pointer",textDecoration:"underline"}}>Upgrade to Premium</button> to unlock all 90+.
+          </div>
+        )}
         <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search languages…"
           style={{width:"100%",padding:"10px 14px",borderRadius:12,border:"2px solid #eee",fontSize:15,fontFamily:"Nunito,sans-serif",fontWeight:700,outline:"none",boxSizing:"border-box"}}
           onFocus={e=>e.target.style.borderColor=RED} onBlur={e=>e.target.style.borderColor="#eee"}/>
       </div>
       <div style={{overflowY:"auto",flex:1,paddingBottom:16}}>
-        {filtered.map(lang=>(
-          <button key={lang} onClick={()=>onToggle(lang)}
-            style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",textAlign:"left",padding:"12px 22px",border:"none",background:selected.includes(lang)?"#FFF0F1":"transparent",color:selected.includes(lang)?RED:"#333",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:15,cursor:"pointer",borderLeft:selected.includes(lang)?`4px solid ${RED}`:"4px solid transparent"}}>
-            <span>{lang}</span>
-            <span style={{fontSize:16}}>{selected.includes(lang)?"✓":"+"}</span>
-          </button>
-        ))}
+        {filtered.map(lang=>{
+          const isSelected = selected.includes(lang);
+          const isLockedForFree = !premium && !isSelected && selected.length >= 1;
+          return (
+            <button key={lang} onClick={()=>handleTap(lang)}
+              style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",textAlign:"left",padding:"12px 22px",border:"none",background:isSelected?"#FFF0F1":"transparent",color:isSelected?RED:(isLockedForFree?"#bbb":"#333"),fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:15,cursor:"pointer",borderLeft:isSelected?`4px solid ${RED}`:"4px solid transparent"}}>
+              <span>{lang}</span>
+              <span style={{fontSize:16}}>{isSelected?"✓":(isLockedForFree?"🔒":"+")}</span>
+            </button>
+          );
+        })}
       </div>
       <div style={{padding:"12px 22px 20px",borderTop:"1px solid #f0f0f0"}}>
         <button onClick={onClose} style={{width:"100%",background:RED,border:"none",borderRadius:50,padding:"12px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>done</button>
@@ -3364,7 +3821,363 @@ function FamilySharingSheet({ onImported, onClose }) {
 
 // ── CHILD EDITOR SHEET (add new or edit existing) ────────────────────────────
 
-// ── CLASS ENROLLMENTS SHEET ──────────────────────────────────────────────────
+// ── POST-SESSION AD ──────────────────────────────────────────────────────────
+// Shown to free-tier parents after every session. Pitches premium with a
+// short headline + a soft CTA. Dismissible after 3 seconds (skip button
+// fades in) so we're not blocking parents who really just want to keep going.
+function PostSessionAd({ onUpgrade, onDismiss }) {
+  const [canSkip, setCanSkip] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(3);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      setCanSkip(true);
+      return;
+    }
+    const t = setTimeout(() => setSecondsLeft(s => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [secondsLeft]);
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{background:"#fff",borderRadius:24,padding:"28px 26px",maxWidth:360,width:"100%",boxShadow:"0 16px 48px rgba(0,0,0,.3)",position:"relative"}}>
+        <div style={{position:"absolute",top:10,right:14,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#bbb",letterSpacing:.5,textTransform:"uppercase"}}>Ad</div>
+        <div style={{fontSize:42,textAlign:"center",marginBottom:6}}>✨</div>
+        <h3 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",margin:"0 0 6px",textAlign:"center",lineHeight:1.15}}>
+          Unlock everything with Premium
+        </h3>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#666",lineHeight:1.55,textAlign:"center",margin:"0 0 14px"}}>
+          Multilingual learning, no ads, courses for parents, and an exclusive community — starting at <strong>$9.99/mo</strong>.
+        </p>
+
+        <button onClick={onUpgrade}
+          style={{width:"100%",background:RED,border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
+          see plans →
+        </button>
+
+        <button onClick={canSkip ? onDismiss : undefined}
+          disabled={!canSkip}
+          style={{width:"100%",background:"transparent",border:"none",padding:"10px",marginTop:8,cursor:canSkip?"pointer":"default",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:canSkip?"#888":"#ccc"}}>
+          {canSkip ? "skip" : `skip in ${secondsLeft}s`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+// New top-level destination for premium subscribers. Shows parent-focused
+// content: customize child level, EC potty-training course, crawling course,
+// VIP WhatsApp chat. For free users, the entire screen is grayed out behind
+// a "Premium feature" overlay that pushes them to the upsell.
+function ParentProfile({ premium, onClose, onUpgrade, onAdjustLevel }) {
+  const items = [
+    {
+      id: "level-customize",
+      emoji: "⚙️",
+      title: "Customize child's level",
+      desc: "Skip ahead, repeat sets, or fine-tune the curriculum.",
+      enabled: premium,
+      comingSoon: false,
+      onSelect: onAdjustLevel,
+    },
+    {
+      id: "ec-course",
+      emoji: "🚼",
+      title: "EC Potty-Training Course",
+      desc: "Babies potty trained by the time they walk. Step-by-step elimination communication.",
+      enabled: premium,
+      comingSoon: true,
+    },
+    {
+      id: "crawling-course",
+      emoji: "🐛",
+      title: "Crawling Course",
+      desc: "Activities and milestones to support crawling before 6 months.",
+      enabled: premium,
+      comingSoon: true,
+    },
+    {
+      id: "vip-chat",
+      emoji: "💚",
+      title: "VIP WhatsApp Community",
+      desc: "Exclusive subscriber-only chat with Olivia + the most engaged parents.",
+      enabled: premium,
+      comingSoon: true,
+    },
+  ];
+
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
+        <button onClick={onClose} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:20,color:"#111",margin:0}}>👤 Parent Profile</h2>
+        <div style={{width:38}}/>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"20px 22px",position:"relative"}}>
+        {!premium && (
+          // Gray-out + click-blocker overlay for free users. Tapping anywhere
+          // in the gray area opens the upsell.
+          <div onClick={onUpgrade}
+            style={{position:"absolute",inset:0,background:"rgba(255,255,255,.75)",backdropFilter:"blur(2px)",zIndex:5,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <div style={{background:"#fff",border:`2px solid ${RED}`,borderRadius:20,padding:"24px 28px",boxShadow:"0 8px 32px rgba(0,0,0,.15)",maxWidth:300,textAlign:"center"}}>
+              <div style={{fontSize:36,marginBottom:6}}>✨</div>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:18,color:"#111",lineHeight:1.2,marginBottom:6}}>
+                Premium feature
+              </div>
+              <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#666",lineHeight:1.55,margin:"0 0 14px"}}>
+                Parent profile is part of Limitless Babies Premium — it includes EC training, crawling course, level customization, and the VIP WhatsApp chat.
+              </p>
+              <button onClick={(e)=>{e.stopPropagation(); onUpgrade();}}
+                style={{background:RED,border:"none",borderRadius:50,padding:"10px 20px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#fff"}}>
+                see plans →
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div style={{filter: premium ? "none" : "grayscale(.7)", opacity: premium ? 1 : 0.6}}>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#666",lineHeight:1.55,margin:"0 0 18px",textAlign:"center"}}>
+            {premium
+              ? "Parent-focused content + tools for guiding your child's full development."
+              : "Once you subscribe, this section unlocks."}
+          </p>
+
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {items.map(it => (
+              <button key={it.id}
+                onClick={() => {
+                  if (!premium) return; // overlay handles the click
+                  if (it.comingSoon) return;
+                  it.onSelect && it.onSelect();
+                }}
+                disabled={!premium || it.comingSoon}
+                style={{background:"#fff",border:"2px solid #f0f0f0",borderRadius:16,padding:"14px 16px",cursor:premium && !it.comingSoon ? "pointer" : "default",display:"flex",alignItems:"center",gap:12,textAlign:"left"}}>
+                <span style={{fontSize:30}}>{it.emoji}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",lineHeight:1.15,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                    {it.title}
+                    {it.comingSoon && <span style={{fontSize:9,color:"#999",fontFamily:"Nunito,sans-serif",fontWeight:800,letterSpacing:.4,textTransform:"uppercase"}}>coming soon</span>}
+                  </div>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.5}}>
+                    {it.desc}
+                  </div>
+                </div>
+                {premium && !it.comingSoon && <span style={{fontSize:18,color:"#ccc"}}>›</span>}
+              </button>
+            ))}
+          </div>
+
+          {premium && (
+            <div style={{marginTop:18,padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",lineHeight:1.55}}>
+              💡 We're building EC, Crawling, and the VIP chat — they'll appear here once they're ready. Subscribers are first in line.
+            </div>
+          )}
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+
+// Shown when a parent: (a) tries to add a second language while on free tier,
+// (b) taps the parent-profile tile, or (c) explicitly opens it from a banner.
+// The "subscribe" button is currently a mock — flips the localStorage flag —
+// since payment isn't wired yet. Plan structure stored is enough to drive
+// later integration with App Store / Play Store purchases.
+function PremiumUpsell({ onClose, onSubscribed, reason }) {
+  // Plans: single (1 child) vs family (up to 4 children under 3); monthly vs yearly
+  const [tier, setTier] = useState("family");
+  const [interval, setInterval] = useState("yearly");
+  const [postSubscribed, setPostSubscribed] = useState(false);
+  const [bookAddOn, setBookAddOn] = useState(false);
+
+  const PRICES = {
+    single: { monthly: 9.99,  yearly: 99 },
+    family: { monthly: 14.99, yearly: 149 },
+  };
+  const price = PRICES[tier][interval];
+  const yearlyEquivalent = (PRICES[tier].monthly * 12).toFixed(0);
+  const yearlySavings = interval === "yearly" ? (PRICES[tier].monthly * 12 - PRICES[tier].yearly).toFixed(0) : 0;
+
+  const handleSubscribe = () => {
+    // Mock: persist subscription locally. In production this would route to
+    // StoreKit (iOS) / Play Billing (Android) / Stripe (web).
+    setPremium({ tier, interval, at: Date.now() });
+    setPostSubscribed(true);
+  };
+
+  const handleFinishWithBook = () => {
+    // Mock: record book purchase intent. In production this would send to
+    // a fulfillment system tied to the user's email + shipping address.
+    if (bookAddOn) {
+      try {
+        const cur = JSON.parse(localStorage.getItem("lb-purchases") || "[]");
+        cur.push({ type: "signed-book-event-ticket", price: 49, at: Date.now() });
+        localStorage.setItem("lb-purchases", JSON.stringify(cur));
+      } catch {}
+    }
+    onSubscribed && onSubscribed();
+  };
+
+  // POST-SUBSCRIPTION ADD-ON SCREEN
+  if (postSubscribed) {
+    return (
+      <Sheet onClose={handleFinishWithBook}>
+        <div style={{flex:1,overflowY:"auto",padding:"24px 22px"}}>
+          <div style={{fontSize:48,textAlign:"center",marginBottom:8}}>🎉</div>
+          <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:"0 0 8px",textAlign:"center"}}>
+            Welcome to Premium!
+          </h2>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#666",lineHeight:1.55,textAlign:"center",marginBottom:24}}>
+            All the features are unlocked. One last thing — would you like to add a special bonus?
+          </p>
+
+          <div style={{padding:"16px 18px",background:"linear-gradient(135deg,#FFF0F1 0%,#FFE4E6 100%)",border:`2px solid ${RED}`,borderRadius:18,marginBottom:18}}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:14}}>
+              <span style={{fontSize:36}}>📚</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:16,color:"#111",lineHeight:1.15}}>
+                  Signed book + local event ticket
+                </div>
+                <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#666",marginTop:4,lineHeight:1.5}}>
+                  A signed copy of Olivia's companion book delivered to your door, plus a guaranteed ticket to the next Limitless Babies in-person event in your area.
+                </div>
+                <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:18,color:RED,marginTop:8}}>
+                  $49
+                </div>
+              </div>
+            </div>
+            <button onClick={()=>setBookAddOn(v=>!v)}
+              style={{width:"100%",background:bookAddOn?RED:"#fff",color:bookAddOn?"#fff":RED,border:`2px solid ${RED}`,borderRadius:50,padding:"10px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13}}>
+              {bookAddOn ? "✓ Added to your order" : "Yes, add to my order"}
+            </button>
+          </div>
+
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",lineHeight:1.5,textAlign:"center",marginBottom:20}}>
+            Events are scheduled regionally — we'll email you when one is announced near you. No expiration on your event ticket.
+          </p>
+        </div>
+
+        <div style={{padding:"12px 18px 18px",borderTop:"1px solid #f0f0f0",display:"flex",gap:10}}>
+          <button onClick={handleFinishWithBook}
+            style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+            no thanks
+          </button>
+          <button onClick={handleFinishWithBook}
+            style={{flex:1,background:RED,border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff"}}>
+            {bookAddOn ? "complete order →" : "skip & continue →"}
+          </button>
+        </div>
+      </Sheet>
+    );
+  }
+
+  // MAIN UPSELL SCREEN
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{flex:1,overflowY:"auto"}}>
+        {/* Hero */}
+        <div style={{padding:"24px 22px 12px",background:"linear-gradient(180deg,#FFF0F1 0%,#fff 100%)"}}>
+          <div style={{fontSize:42,textAlign:"center",marginBottom:6}}>✨</div>
+          <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:26,color:"#111",margin:"0 0 6px",textAlign:"center",lineHeight:1.1}}>
+            Unlock Limitless Babies Premium
+          </h2>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:RED,textAlign:"center",margin:"4px 0 0"}}>
+            {reason === "multilingual" && "Free tier supports one language. Premium opens up the world."}
+            {reason === "parent-profile" && "Parent profile is a Premium feature."}
+            {(!reason || reason === "general") && "Multiple languages, no ads, exclusive content for parents."}
+          </p>
+        </div>
+
+        {/* Benefits list */}
+        <div style={{padding:"18px 22px"}}>
+          <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:10}}>
+            What you get:
+          </div>
+          <ul style={{listStyle:"none",padding:0,margin:0,display:"flex",flexDirection:"column",gap:10}}>
+            {[
+              { e:"🌍", t:"Unlimited languages", d:"Free is English only. Premium unlocks all 90+ languages, simultaneously." },
+              { e:"🚫", t:"No ads",               d:"Free tier shows a brief ad after every session." },
+              { e:"⚙️", t:"Customize your child's level", d:"Skip ahead, repeat sets, or fine-tune the curriculum to match their pace." },
+              { e:"🚼", t:"EC potty-training course", d:"Step-by-step elimination communication course — babies potty trained by the time they walk." },
+              { e:"🐛", t:"Crawling course",       d:"Activities and milestones to support crawling before 6 months." },
+              { e:"💚", t:"VIP WhatsApp community", d:"Exclusive subscriber chat with Olivia + the most engaged Limitless Babies parents." },
+              { e:"🎟️", t:"Priority access to in-person events", d:"First dibs on tickets when events come to your city." },
+            ].map((b, i) => (
+              <li key={i} style={{display:"flex",gap:10,padding:"10px 12px",background:"#fafafa",borderRadius:12,border:"1px solid #f0f0f0"}}>
+                <span style={{fontSize:22,lineHeight:1.1}}>{b.e}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:13,color:"#111",lineHeight:1.2}}>{b.t}</div>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#777",marginTop:3,lineHeight:1.5}}>{b.d}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Tier selector */}
+        <div style={{padding:"6px 22px"}}>
+          <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:10}}>
+            Choose your plan:
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            <button onClick={()=>setTier("single")}
+              style={{flex:1,padding:"12px",borderRadius:14,border:`2px solid ${tier==="single"?RED:"#eee"}`,background:tier==="single"?"#FFF8F8":"#fff",cursor:"pointer",textAlign:"left",fontFamily:"Nunito,sans-serif"}}>
+              <div style={{fontWeight:800,fontSize:13,color:tier==="single"?RED:"#111"}}>Single child</div>
+              <div style={{fontSize:11,color:"#888",marginTop:3,fontWeight:700}}>${PRICES.single.monthly}/mo or ${PRICES.single.yearly}/yr</div>
+            </button>
+            <button onClick={()=>setTier("family")}
+              style={{flex:1,padding:"12px",borderRadius:14,border:`2px solid ${tier==="family"?RED:"#eee"}`,background:tier==="family"?"#FFF8F8":"#fff",cursor:"pointer",textAlign:"left",fontFamily:"Nunito,sans-serif",position:"relative"}}>
+              <div style={{position:"absolute",top:-8,right:8,background:RED,color:"#fff",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,letterSpacing:.5,padding:"3px 8px",borderRadius:50,textTransform:"uppercase"}}>
+                Best value
+              </div>
+              <div style={{fontWeight:800,fontSize:13,color:tier==="family"?RED:"#111"}}>Family (up to 4 kids under 3)</div>
+              <div style={{fontSize:11,color:"#888",marginTop:3,fontWeight:700}}>${PRICES.family.monthly}/mo or ${PRICES.family.yearly}/yr</div>
+            </button>
+          </div>
+
+          <div style={{display:"flex",gap:8,marginBottom:6}}>
+            <button onClick={()=>setInterval("monthly")}
+              style={{flex:1,padding:"10px",borderRadius:12,border:`2px solid ${interval==="monthly"?RED:"#eee"}`,background:interval==="monthly"?"#FFF8F8":"#fff",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:interval==="monthly"?RED:"#666"}}>
+              Monthly · ${PRICES[tier].monthly}
+            </button>
+            <button onClick={()=>setInterval("yearly")}
+              style={{flex:1,padding:"10px",borderRadius:12,border:`2px solid ${interval==="yearly"?RED:"#eee"}`,background:interval==="yearly"?"#FFF8F8":"#fff",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:interval==="yearly"?RED:"#666"}}>
+              Yearly · ${PRICES[tier].yearly}
+              {interval === "yearly" && yearlySavings > 0 && (
+                <span style={{display:"block",fontSize:9,color:RED,marginTop:2}}>save ${yearlySavings}/yr</span>
+              )}
+            </button>
+          </div>
+          {interval === "yearly" && (
+            <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",textAlign:"center",margin:"8px 0 0",lineHeight:1.4}}>
+              Yearly works out to about ${(PRICES[tier].yearly / 12).toFixed(2)}/mo (vs ${PRICES[tier].monthly}/mo).
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Footer with subscribe button */}
+      <div style={{padding:"14px 18px 18px",borderTop:"1px solid #f0f0f0",background:"#fff"}}>
+        <button onClick={handleSubscribe}
+          style={{width:"100%",background:RED,border:"none",borderRadius:50,padding:"14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:"#fff",boxShadow:"0 4px 16px rgba(232,25,44,.3)"}}>
+          subscribe — ${price}{interval==="monthly"?"/mo":"/yr"}
+        </button>
+        <button onClick={onClose}
+          style={{width:"100%",background:"transparent",border:"none",padding:"10px",marginTop:6,cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#888"}}>
+          maybe later
+        </button>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#bbb",textAlign:"center",margin:"6px 0 0",lineHeight:1.4,fontStyle:"italic"}}>
+          Payment processing not yet enabled — this is a preview button. Cancel anytime when billing launches.
+        </p>
+      </div>
+    </Sheet>
+  );
+}
+
+
 // Per-language class enrollment UI (Option A from design discussion).
 // Each class is a row that can be expanded to show language-chip toggles.
 // Music applies to all languages uniformly (pitch/rhythm aren't language-
@@ -3564,7 +4377,7 @@ function ClassEnrollmentsSheet({ child, onSave, onClose }) {
   );
 }
 
-function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments }) {
+function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, premium, onPremiumNeeded }) {
   const [name, setName] = useState(child?.name || "");
   const [emoji, setEmoji] = useState(child?.emoji || CHILD_EMOJIS[0]);
   const [langs, setLangs] = useState(child?.languages || ["English"]);
@@ -3897,7 +4710,7 @@ function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments }) {
       </div>
 
       {showLangPicker && (
-        <LanguageMultiPicker selected={langs} onToggle={toggleLang} onClose={()=>setShowLangPicker(false)}/>
+        <LanguageMultiPicker selected={langs} onToggle={toggleLang} onClose={()=>setShowLangPicker(false)} premium={premium} onPremiumNeeded={()=>{ setShowLangPicker(false); onPremiumNeeded && onPremiumNeeded(); }}/>
       )}
     </Sheet>
   );
@@ -4222,7 +5035,11 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
                 UC Berkeley Linguistics · Columbia Business School
               </div>
               <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#444",lineHeight:1.6}}>
-                Limitless Babies draws inspiration from several different early-learning methods — but it isn't exactly like any one in particular. It's an intentional blend designed around what actually works for real families raising multilingual babies.
+                Limitless Babies is <strong>heavily inspired by the Doman method</strong> — Olivia's approach to teaching her twins reading, math, knowledge, and music draws directly from Glenn Doman's research and curriculum structure. But this app isn't <em>exactly</em> like the Doman method.
+                <br/><br/>
+                <strong>Important note:</strong> the Doman Institute does <em>not</em> recommend screens for early-childhood learning, and they have good reasons for that position. This app is on a screen — that's an intentional trade-off. Limitless Babies exists for the real-world reality of busy families, multilingual households, and parents who can't physically print and laminate thousands of flash cards a month. The cards here are designed to be as close to real flash cards as possible: no distracting animations, no gimmicks, no autoplay videos — just the cards.
+                <br/><br/>
+                If your family has the time and resources to do physical flash cards instead, that's wonderful and we'd recommend it. For everyone else, this is here to help.
               </div>
             </div>
 
@@ -4326,7 +5143,7 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
   );
 }
 
-function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, language, speechOn, onLang, onToggleSpeech, onProgress, onOpenChildren, onAdjustLevel, onOpenWelcome, onEditActiveChild }) {
+function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, language, speechOn, onLang, onToggleSpeech, onProgress, onOpenChildren, onAdjustLevel, onOpenWelcome, onEditActiveChild, onOpenParentProfile, premium }) {
   // Per-language day count — shows day 1 if child has never used this language,
   // otherwise counts from the first session done in this language.
   const dayNum = getDayNumberForLanguage(activeChildId, language);
@@ -4447,6 +5264,16 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
         <ChildSwitcher activeChild={activeChild} onOpen={onOpenChildren}/>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {onOpenParentProfile && (
+            <button onClick={onOpenParentProfile}
+              style={{background:premium?"#FFF0F1":"#f5f5f5",border:`2px solid ${premium?RED:"#e8e8e8"}`,borderRadius:50,width:34,height:34,fontSize:15,cursor:"pointer",color:premium?RED:"#999",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}
+              aria-label="parent profile">
+              👤
+              {!premium && (
+                <span style={{position:"absolute",top:-4,right:-4,background:"#fff",border:"1px solid #ddd",borderRadius:"50%",width:14,height:14,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center"}}>🔒</span>
+              )}
+            </button>
+          )}
           {onOpenWelcome && (
             <button onClick={onOpenWelcome}
               style={{background:"#f5f5f5",border:"2px solid #e8e8e8",borderRadius:50,width:34,height:34,fontSize:15,cursor:"pointer",color:"#888",fontFamily:"'Fredoka One','Baloo 2',cursive",display:"flex",alignItems:"center",justifyContent:"center"}}
@@ -5982,6 +6809,19 @@ export default function App() {
   };
   const [editingChild, setEditingChild]   = useState(undefined);
   const [showEnrollments, setShowEnrollments] = useState(null); // child.id or null
+  // ── PREMIUM STATE ──────────────────────────────────────────────────────────
+  // `premium` is whether the user has subscribed (mock for now). When true,
+  // multilingual is unlocked, ads disappear, parent profile unlocks.
+  const [premium, setPremiumState] = useState(() => isPremium());
+  // `showUpsell` opens the PremiumUpsell sheet. Stores a "reason" string so
+  // the upsell headline matches why the user landed there.
+  const [showUpsell, setShowUpsell] = useState(null); // null | "multilingual" | "parent-profile" | "general"
+  // `showAd` shows the post-session ad to free-tier users
+  const [showAd, setShowAd] = useState(false);
+  // `showParentProfile` opens the parent profile screen
+  const [showParentProfile, setShowParentProfile] = useState(false);
+  // Re-read premium from storage when upsell closes (in case user just subscribed)
+  const refreshPremium = () => setPremiumState(isPremium());
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dailyWords, setDailyWords]   = useState([]);
   const [dailyKnow, setDailyKnow]     = useState([]);
@@ -6009,30 +6849,12 @@ export default function App() {
     };
   }, []);
 
-  // iOS silent-switch workaround. By default, iOS Safari mutes WebAudio
-  // when the device's mute switch is engaged. The fix is to tell iOS that
-  // the page is playing "media" (not just incidental sounds) by keeping a
-  // hidden <audio> element looping a silent track. iOS then treats audio
-  // playback as intentional and respects the volume setting instead of the
-  // mute switch.
-  //
-  // The audio source is a tiny base64-encoded silent WAV.
-  const silentAudioRef = useRef(null);
-  useEffect(() => {
-    const startSilentLoop = () => {
-      try {
-        if (silentAudioRef.current) {
-          silentAudioRef.current.play().catch(() => {});
-        }
-      } catch {}
-    };
-    document.addEventListener("click",      startSilentLoop, { once: true, capture: true });
-    document.addEventListener("touchstart", startSilentLoop, { once: true, capture: true });
-    return () => {
-      document.removeEventListener("click",      startSilentLoop, { capture: true });
-      document.removeEventListener("touchstart", startSilentLoop, { capture: true });
-    };
-  }, []);
+  // iOS silent-switch limitation note: in installed PWAs, WebAudio respects
+  // the device mute switch by default and there's no API in JS to override
+  // that. A previous attempt to use a hidden <audio> element looping silent
+  // audio interfered with WebAudio routing on iOS, so we removed it. The
+  // proper fix is via Capacitor's `playsInSilentMode: true` option in the
+  // iOS native config, which we'll enable when wrapping for TestFlight.
 
   // Compute active child + its data
   const activeChild = children.find(c => c.id === activeChildId) || children[0] || null;
@@ -6261,6 +7083,16 @@ export default function App() {
     if (!activeChildId) return;
     if (sessionStatus?.isReplay) return;  // replays don't add to today's count
     markSessionComplete(activeChildId, category, language);
+    // Reload children from storage — markSessionComplete may have advanced the
+    // child's per-language curriculum position (when the 3rd/final session of
+    // the day is completed). React state needs to mirror that so the next
+    // fetchDailyWords / fetchDailyKnowledge picks up the new sets immediately.
+    try {
+      const fresh = loadChildren();
+      setChildren(fresh);
+    } catch {}
+    // Free tier: show post-session ad. Premium subscribers skip this.
+    if (!premium) setShowAd(true);
   };
 
   if (showSplash) return <SplashScreen/>;
@@ -6277,7 +7109,7 @@ export default function App() {
     return (
       <>
         <style>{baseStyles}</style>
-        <Onboarding onDone={handleOnboardingDone}/>
+        <Onboarding onDone={handleOnboardingDone} premium={premium} onPremiumNeeded={()=>setShowUpsell("multilingual")}/>
       </>
     );
   }
@@ -6308,14 +7140,7 @@ export default function App() {
   return (
     <>
       <style>{baseStyles}</style>
-      {/* Hidden silent audio loop — iOS silent-switch workaround. When the
-          mute switch is engaged, iOS mutes WebAudio unless a media element
-          is also playing. This 1-second silent WAV loops in the background
-          to keep "media playing" status active. */}
-      <audio ref={silentAudioRef} loop playsInline preload="auto"
-        src="silent.wav"
-        style={{display:"none"}}/>
-      {mode===null       && <HomeScreen activeChild={activeChild} activeChildId={activeChildId} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)} onAdjustLevel={()=>setShowLangLevel(true)} onOpenWelcome={()=>setShowWelcome(true)} onEditActiveChild={()=>activeChild && setEditingChild(activeChild)}/>}
+      {mode===null       && <HomeScreen activeChild={activeChild} activeChildId={activeChildId} streak={streak} onSelectCategory={handleSelectCategory} language={language} speechOn={speechOn} onLang={()=>setShowLang(true)} onToggleSpeech={handleToggleSpeech} onProgress={()=>setMode("progress")} onOpenChildren={()=>setShowChildren(true)} onAdjustLevel={()=>setShowLangLevel(true)} onOpenWelcome={()=>setShowWelcome(true)} onEditActiveChild={()=>activeChild && setEditingChild(activeChild)} onOpenParentProfile={()=>setShowParentProfile(true)} premium={premium}/>}
 
       {mode==="menu:reading"   && <CategoryMenu category="reading"   activeChild={activeChild} language={language} words={dailyWords} couplets={dailyCouplets} sentences={dailySentences} onSelect={handleStartSession} onOpenRoadmap={handleOpenRoadmap} onBack={handleBackToHome}/>}
       {mode==="menu:math"      && <CategoryMenu category="math"      activeChild={activeChild} language={language} onSelect={handleStartSession} onOpenRoadmap={handleOpenRoadmap} onBack={handleBackToHome}/>}
@@ -6403,6 +7228,8 @@ export default function App() {
           onDelete={editingChild ? handleDeleteChild : null}
           onClose={()=>setEditingChild(undefined)}
           onOpenEnrollments={()=>setShowEnrollments(editingChild?.id)}
+          premium={premium}
+          onPremiumNeeded={()=>setShowUpsell("multilingual")}
         />
       )}
 
@@ -6433,6 +7260,33 @@ export default function App() {
           />
         );
       })()}
+
+      {/* Premium upsell — opened by language gate, parent-profile tap, or post-session ad */}
+      {showUpsell && (
+        <PremiumUpsell
+          reason={showUpsell}
+          onClose={() => { setShowUpsell(null); refreshPremium(); }}
+          onSubscribed={() => { setShowUpsell(null); refreshPremium(); }}
+        />
+      )}
+
+      {/* Post-session ad — only shows for free tier */}
+      {showAd && !premium && (
+        <PostSessionAd
+          onUpgrade={() => { setShowAd(false); setShowUpsell("general"); }}
+          onDismiss={() => setShowAd(false)}
+        />
+      )}
+
+      {/* Parent profile — gated overlay for free users */}
+      {showParentProfile && (
+        <ParentProfile
+          premium={premium}
+          onClose={() => setShowParentProfile(false)}
+          onUpgrade={() => { setShowParentProfile(false); setShowUpsell("parent-profile"); }}
+          onAdjustLevel={() => { setShowParentProfile(false); setShowLangLevel(true); }}
+        />
+      )}
 
       {showLangLevel && activeChild && (
         <LanguageLevelSheet
