@@ -3015,18 +3015,58 @@ function isClassFullyComplete(child, classId) {
   if (enrolledLangs.length === 0) return false;
   const pos = (typeof migratePosition === "function") ? migratePosition(child.position) : (child.position || {});
 
+  // Helper: did this child complete at least one book session in this language?
+  // Reading isn't graduated until the child has practiced reading actual books.
+  const hasCompletedBook = (lang) => {
+    if (!child?.id) return false;
+    try {
+      const hist = JSON.parse(localStorage.getItem(`lb-history-${child.id}`) || "{}");
+      // History keys are "category:language" → count
+      for (const day of Object.values(hist)) {
+        if (day[`book:${lang}`] && day[`book:${lang}`] > 0) return true;
+      }
+    } catch {}
+    return false;
+  };
+
+  // Get the actual final-set index for a category in a given month.
+  // Falls back to a safe high number if the curriculum data isn't accessible.
+  const finalSetIdxFor = (category, month) => {
+    const data = (
+      category === "words"     ? WORDS_BY_MONTH :
+      category === "couplets"  ? COUPLETS_BY_MONTH :
+      category === "sentences" ? SENTENCES_BY_MONTH :
+      category === "knowledge" ? KNOWLEDGE_BY_MONTH : null
+    );
+    if (!data) return 99;
+    const monthSets = data[month];
+    if (!monthSets) return -1;
+    return monthSets.length - 1;
+  };
+
   const langComplete = (lang, cls) => {
     const lp = pos[lang] || {};
     if (cls === "reading") {
+      // Reading covers words → couplets → sentences → books. Graduation
+      // requires ALL FOUR to be complete in this language:
+      //   • Words at Month 3 final set
+      //   • Couplets at Month 2 final set (Month 2 is the only month with couplets)
+      //   • Sentences at Month 3 final set
+      //   • At least one completed book session
       const w = lp.words || lp.reading;
-      if (!w) return false;
-      return (w.month >= 3) && (w.setIdx >= 3);
+      const wordsDone = w && w.month >= 3 && w.setIdx >= finalSetIdxFor("words", 3);
+      const couplets = lp.couplets;
+      const coupletsDone = couplets && couplets.month >= 2 && couplets.setIdx >= finalSetIdxFor("couplets", 2);
+      const sentences = lp.sentences;
+      const sentencesDone = sentences && sentences.month >= 3 && sentences.setIdx >= finalSetIdxFor("sentences", 3);
+      const bookDone = hasCompletedBook(lang);
+      return wordsDone && coupletsDone && sentencesDone && bookDone;
     }
     if (cls === "math") return (lp.math === "eq-both");
     if (cls === "knowledge") {
       const k = lp.knowledge;
       if (!k) return false;
-      return (k.month >= 3) && (k.setIdx >= 3);
+      return (k.month >= 3) && (k.setIdx >= finalSetIdxFor("knowledge", 3));
     }
     if (cls === "music") {
       const lastScale  = MUSIC_SCALES[MUSIC_SCALES.length - 1]?.id;
@@ -3046,16 +3086,47 @@ function getGraduatedLanguages(child, classId) {
   if (!child) return [];
   const enrolledLangs = getClassLanguages(child, classId);
   const pos = (typeof migratePosition === "function") ? migratePosition(child.position) : (child.position || {});
+
+  // Same strict checks as isClassFullyComplete — kept in sync intentionally.
+  const hasCompletedBook = (lang) => {
+    if (!child?.id) return false;
+    try {
+      const hist = JSON.parse(localStorage.getItem(`lb-history-${child.id}`) || "{}");
+      for (const day of Object.values(hist)) {
+        if (day[`book:${lang}`] && day[`book:${lang}`] > 0) return true;
+      }
+    } catch {}
+    return false;
+  };
+  const finalSetIdxFor = (category, month) => {
+    const data = (
+      category === "words"     ? WORDS_BY_MONTH :
+      category === "couplets"  ? COUPLETS_BY_MONTH :
+      category === "sentences" ? SENTENCES_BY_MONTH :
+      category === "knowledge" ? KNOWLEDGE_BY_MONTH : null
+    );
+    if (!data) return 99;
+    const monthSets = data[month];
+    if (!monthSets) return -1;
+    return monthSets.length - 1;
+  };
+
   return enrolledLangs.filter(lang => {
     const lp = pos[lang] || {};
     if (classId === "reading") {
       const w = lp.words || lp.reading;
-      return w && w.month >= 3 && w.setIdx >= 3;
+      const wordsDone = w && w.month >= 3 && w.setIdx >= finalSetIdxFor("words", 3);
+      const couplets = lp.couplets;
+      const coupletsDone = couplets && couplets.month >= 2 && couplets.setIdx >= finalSetIdxFor("couplets", 2);
+      const sentences = lp.sentences;
+      const sentencesDone = sentences && sentences.month >= 3 && sentences.setIdx >= finalSetIdxFor("sentences", 3);
+      const bookDone = hasCompletedBook(lang);
+      return wordsDone && coupletsDone && sentencesDone && bookDone;
     }
     if (classId === "math") return lp.math === "eq-both";
     if (classId === "knowledge") {
       const k = lp.knowledge;
-      return k && k.month >= 3 && k.setIdx >= 3;
+      return k && k.month >= 3 && k.setIdx >= finalSetIdxFor("knowledge", 3);
     }
     if (classId === "music") {
       const lastScale  = MUSIC_SCALES[MUSIC_SCALES.length - 1]?.id;
@@ -6132,8 +6203,13 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
 
 // ── MATH SESSION ──────────────────────────────────────────────────────────────
 
-function MathSession({ mathStage, language, speechOn, sessionNum, onBack, onComplete }) {
-  const dayNum = useMemo(()=>getDayNumber(), []);
+function MathSession({ childId, mathStage, language, speechOn, sessionNum, onBack, onComplete }) {
+  // Use the per-language day number — math windows are scoped to each
+  // language Elara is learning. Switching from English to Cantonese should
+  // restart at day 1 (window 0–10) for Cantonese, not continue from English's
+  // day count. Previously this used the global getDayNumber() which mixed
+  // all languages together and produced wrong windows after language switches.
+  const dayNum = useMemo(()=>getDayNumberForLanguage(childId, language), [childId, language]);
   const stage = useMemo(()=>MATH_STAGES.find(s => s.id === mathStage) || MATH_STAGES[0], [mathStage]);
   const cards = useMemo(()=>getMathCards(mathStage, dayNum, sessionNum), [mathStage, dayNum, sessionNum]);
   const [idx, setIdx]     = useState(0);
@@ -7057,6 +7133,15 @@ export default function App() {
 
   // Back from session → return to the category menu they came from
   const handleBackFromSession = () => {
+    // Refresh children from storage — markSessionComplete may have advanced
+    // the child's curriculum position. We do it on session-exit (instead of
+    // on session-completion) to avoid remounting the in-flight session mid-
+    // celebration. Position changes will be visible the next time the parent
+    // returns to this category.
+    try {
+      const fresh = loadChildren();
+      setChildren(fresh);
+    } catch {}
     // Figure out which category menu to return to based on the current mode
     let returnTo = null;
     if (mode === "reading" || mode === "couplets" || mode === "sentences" || mode === "book") {
@@ -7075,6 +7160,11 @@ export default function App() {
   };
 
   const handleBackToHome = () => {
+    // Same: refresh children on home navigation
+    try {
+      const fresh = loadChildren();
+      setChildren(fresh);
+    } catch {}
     setMode(null);
     setSessionStatus(null);
   };
@@ -7083,14 +7173,12 @@ export default function App() {
     if (!activeChildId) return;
     if (sessionStatus?.isReplay) return;  // replays don't add to today's count
     markSessionComplete(activeChildId, category, language);
-    // Reload children from storage — markSessionComplete may have advanced the
-    // child's per-language curriculum position (when the 3rd/final session of
-    // the day is completed). React state needs to mirror that so the next
-    // fetchDailyWords / fetchDailyKnowledge picks up the new sets immediately.
-    try {
-      const fresh = loadChildren();
-      setChildren(fresh);
-    } catch {}
+    // NOTE: we used to call setChildren(loadChildren()) here so the position
+    // advance was reflected in React state immediately. But that caused the
+    // in-flight session to remount mid-completion (because dailyWords changed
+    // ref) and the user saw cards restart instead of the celebration screen.
+    // Instead, the position-refresh now happens when the user navigates back
+    // (handleBackFromSession), which is the next time they'd want fresh data.
     // Free tier: show post-session ad. Premium subscribers skip this.
     if (!premium) setShowAd(true);
   };
@@ -7175,7 +7263,7 @@ export default function App() {
       {mode==="couplets" && sessionStatus && <ReadingSession childId={activeChildId} words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
       {mode==="sentences"&& sessionStatus && <ReadingSession childId={activeChildId} words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
       {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("book")}/>}
-      {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
+      {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession childId={activeChildId} mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
       {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
       {mode==="music" && sessionStatus && activeChild && <MusicSession content={getMusicContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("music")}/>}
       {mode==="rhythm" && sessionStatus && activeChild && <RhythmSession content={getRhythmContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("rhythm")}/>}
