@@ -934,7 +934,7 @@ function getSetsForPosition(allSetsArray, position, month) {
 // The parent only sees the specific slots if at least one of the child's
 // learning languages uses them (dynamic display, decision C from user).
 const FAMILY_PHOTO_WORDS = [
-  "mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada"
+  "mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada","friend"
 ];
 
 // Kinship slot mapping — when the curriculum card has a specific kinship
@@ -1014,7 +1014,30 @@ function lookupFamilyPhoto(familyPhotos, englishWord, note) {
   if (familyPhotos[slot]) return familyPhotos[slot];
   // Fall back to base word
   const base = englishWord.toLowerCase();
-  return familyPhotos[base] || null;
+  if (familyPhotos[base]) return familyPhotos[base];
+  // ── PEOPLE → FAMILY-PHOTO ALIASES ─────────────────────────────────────────
+  // Generic "people" curriculum words (woman/man/child/elder) reuse the
+  // parent-uploaded family photos. Per Olivia's curriculum design:
+  //   "woman" card → shows the mother photo (if uploaded)
+  //   "man"   card → shows the father photo (if uploaded)
+  //   "child" card → shows the baby photo (if uploaded)
+  //   "elder" card → shows grandma OR grandpa photo (whichever exists)
+  // This avoids forcing parents to upload duplicate photos for the People
+  // set. Falls through to null (then to curriculum/emoji) if the relevant
+  // family slot is empty.
+  const PEOPLE_ALIASES = {
+    woman: ["mother"],
+    man:   ["father"],
+    child: ["baby"],
+    elder: ["grandma", "grandpa", "grandma_paternal", "grandma_maternal", "grandpa_paternal", "grandpa_maternal"],
+  };
+  const aliasList = PEOPLE_ALIASES[base];
+  if (aliasList) {
+    for (const altSlot of aliasList) {
+      if (familyPhotos[altSlot]) return familyPhotos[altSlot];
+    }
+  }
+  return null;
 }
 
 // Determine which kinship slots to show in the photo upload UI, given the
@@ -2362,33 +2385,360 @@ function photoUrlForKnowledge(cardId) {
 // during onboarding. If a parent skips family photo upload, those cards fall
 // through to emoji.
 const WORD_PHOTO_URLS = {
-  // Animals (Month 1, Set 2)
+  // ── MONTH 1 ─────────────────────────────────────────────────────────────
+  // Set 2 — Animals
   dog:        "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Dog_coat_variation.png/250px-Dog_coat_variation.png",
   cat:        "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Cat_November_2010-1a.jpg/960px-Cat_November_2010-1a.jpg",
   bird:       "https://upload.wikimedia.org/wikipedia/commons/4/45/Eopsaltria_australis_-_Mogo_Campground.jpg",
   fish:       "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Pacific_double-saddle_butterflyfish_%28Chaetodon_ulietensis%29_and_other_Chaetodon_Moorea.jpg/1280px-Pacific_double-saddle_butterflyfish_%28Chaetodon_ulietensis%29_and_other_Chaetodon_Moorea.jpg",
   rabbit:     "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/4-Week-Old_Netherlands_Dwarf_Rabbit.JPG/250px-4-Week-Old_Netherlands_Dwarf_Rabbit.JPG",
 
-  // Fruit (Month 1, Set 3)
+  // Set 3 — Fruit (strawberry was renamed to "berries")
   apple:      "https://upload.wikimedia.org/wikipedia/commons/a/a6/Pink_lady_and_cross_section.jpg",
   banana:     "https://upload.wikimedia.org/wikipedia/commons/d/de/Bananavarieties.jpg",
   orange:     "https://upload.wikimedia.org/wikipedia/commons/e/e3/Oranges_-_whole-halved-segment.jpg",
   grapes:     "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Grapes%2C_Rostov-on-Don%2C_Russia.jpg/1280px-Grapes%2C_Rostov-on-Don%2C_Russia.jpg",
-  strawberry: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Garden_strawberry_%28Fragaria_%C3%97_ananassa%29_single2.jpg/1280px-Garden_strawberry_%28Fragaria_%C3%97_ananassa%29_single2.jpg",
+  berries:    "https://media.istockphoto.com/id/182187173/photo/isolated-berries.jpg?s=612x612&w=0&k=20&c=iBBvIdL39XuHATGIlNkKn6nAHfE_BTWkHiOs49IWlFU=",
 
-  // Furniture (Month 1, Set 4)
+  // Set 4 — Furniture
   chair:      "https://upload.wikimedia.org/wikipedia/commons/c/c6/Set_of_fourteen_side_chairs_MET_DP110780.jpg",
   table:      "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ed/Writing_table_%28bureau_plat%29_MET_DP105403.jpg/330px-Writing_table_%28bureau_plat%29_MET_DP105403.jpg",
   bed:        "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Bed_in_hotel_room_5.jpg/250px-Bed_in_hotel_room_5.jpg",
   sofa:       "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d9/Kubus_sofa.jpg/250px-Kubus_sofa.jpg",
   lamp:       "https://upload.wikimedia.org/wikipedia/commons/7/79/Lampshades.jpg",
+
+  // Set 5 — Places
+  home:       "https://maps.googleapis.com/maps/api/streetview?location=6332+N+Charlotte+Ave%2C+San+Gabriel%2C+CA+91775&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=oqowQU2HzQzwWsnFKugJvfgPD8s=",
+  park:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS7Q9Ic7HZVY36bmOhX4qTpCNOFP2COpsJGLA&s",
+  school:     "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/A_child_development_center_and_day_care_in_the_United_States.jpg/250px-A_child_development_center_and_day_care_in_the_United_States.jpg",
+  beach:      "https://upload.wikimedia.org/wikipedia/commons/1/1f/Lanikai_Beach%2C_Hawaii.JPG",
+  store:      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Supermarket_full_of_goods.jpg/250px-Supermarket_full_of_goods.jpg",
+
+  // Set 6 — African Animals (hippo renamed to hippopotamus)
+  lion:       "https://upload.wikimedia.org/wikipedia/commons/7/73/Lion_waiting_in_Namibia.jpg",
+  elephant:   "https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/African_Bush_Elephant.jpg/250px-African_Bush_Elephant.jpg",
+  giraffe:    "https://upload.wikimedia.org/wikipedia/commons/9/9e/Giraffe_Mikumi_National_Park.jpg",
+  zebra:      "https://upload.wikimedia.org/wikipedia/commons/9/96/Plains_Zebra_Equus_quagga_cropped.jpg",
+  hippopotamus: "https://upload.wikimedia.org/wikipedia/commons/1/17/Hippopotamus_-_04.jpg",
+
+  // Set 7 — Fun Foods
+  pizza:      "https://upload.wikimedia.org/wikipedia/commons/9/91/Pizza-3007395.jpg",
+  icecream:   "https://upload.wikimedia.org/wikipedia/commons/2/2e/Ice_cream_with_whipped_cream%2C_chocolate_syrup%2C_and_a_wafer_%28cropped%29.jpg",
+  cookie:     "https://upload.wikimedia.org/wikipedia/commons/b/b4/Choco_chip_cookie.png",
+  cake:       "https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Pound_layer_cake.jpg/250px-Pound_layer_cake.jpg",
+  popcorn:    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/Popcorn_up_close_salted_and_air_popped.jpg/250px-Popcorn_up_close_salted_and_air_popped.jpg",
+
+  // Set 8 — Objects in the House
+  bottle:     "https://upload.wikimedia.org/wikipedia/commons/e/e1/Transparante_kunststof_zuigfles_met_blauwe_dop_en_siliconen_speen%2C_antilekplaatje_en_schroefbevestiging%2C_objectnr_83556-A-E.JPG",
+  pillow:     "https://upload.wikimedia.org/wikipedia/commons/a/ad/Pillows_on_a_hotel_bed.jpg",
+  towel:      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcThHvqols06zK8TF6IgVnSE11PDlJhP1h6wug&s",
+  mirror:     "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Mirror.jpg/250px-Mirror.jpg",
+  basket:     "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Contemporary_bamboo_baskets_of_Bangladesh_%2801%29.jpg/250px-Contemporary_bamboo_baskets_of_Bangladesh_%2801%29.jpg",
+
+  // Set 9 — At the Playground
+  swing:      "https://upload.wikimedia.org/wikipedia/commons/4/47/Little_girl_on_swing.jpg",
+  slide:      "https://upload.wikimedia.org/wikipedia/commons/c/cd/Playground_slide2.jpg",
+  seesaw:     "https://i5.walmartimages.com/seo/Pure-Fun-Heavy-Duty-360-Degree-Swivel-Kids-Seesaw-Indoor-or-Outdoor-175lb-Weight-Limit-Ages-3_6ff46691-2e49-4ede-a4b9-37d59e42fbf9.f02ce129c44d5553b767ccd92217f332.jpeg",
+  sandbox:    "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Sandbox_Lawn_Jam_Our_Community_Place_Harrisonburg_VA_June_2008.jpg/1280px-Sandbox_Lawn_Jam_Our_Community_Place_Harrisonburg_VA_June_2008.jpg",
+  swingset:   "https://images.thdstatic.com/productImages/261832d2-6533-415c-a4f9-d99e59c57802/svn/swing-sets-kikio205686-64_600.jpg",
+
+  // Set 10 — Fun Activities
+  dance:      "https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Two_dancers.jpg/250px-Two_dancers.jpg",
+  sing:       "https://upload.wikimedia.org/wikipedia/commons/e/e5/Ah_cricket_20122_%287364759010%29.jpg",
+  run:        "https://www.shutterstock.com/image-photo/cheerful-kid-girl-playing-running-600nw-2717249685.jpg",
+  jump:       "https://thumbs.dreamstime.com/b/african-american-school-boy-jumping-black-people-isolated-white-background-33447300.jpg",
+  play:       "https://static.vecteezy.com/system/resources/thumbnails/024/654/910/small/smiling-kids-playing-with-multi-colored-toy-blocks-generated-by-ai-free-photo.jpg",
+
+  // Set 11 — Farm Animals
+  cow:        "https://media.istockphoto.com/id/104783196/photo/profile-of-holstein-cow-5-years-old-standing.jpg?s=612x612&w=0&k=20&c=UUB27oW3p-ZeIYvlBfFiee1cQEcnH6WQDSsLTSsnQLs=",
+  chicken:    "https://thumbs.dreamstime.com/b/full-body-brown-chicken-hen-standing-isolated-white-backgroun-background-use-farm-animals-livestock-theme-49613241.jpg",
+  duck:       "https://media.istockphoto.com/id/464988959/photo/mallard-duck-on-white-background.jpg?s=612x612&w=0&k=20&c=S1jcDuyXuoCVUaTobTrZ5f6SlscukkyheqKDHAeflW8=",
+  sheep:      "https://media.istockphoto.com/id/1933216911/photo/flock-of-sheep.jpg?s=612x612&w=0&k=20&c=TOjq_Or2i_5V4M5f8nUoE8bPWTF8Q3EqPu1Pt-K286E=",
+  pig:        "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTradJ8u78mJnV09Zj3w0CBYMMPXBxBrQ_oMQ&s",
+
+  // Set 12 — Food Groups
+  grains:     "https://www.shutterstock.com/image-photo/whole-grains-concept-colorful-mix-260nw-2568130697.jpg",
+  dairy:      "https://media.istockphoto.com/id/544807136/photo/various-fresh-dairy-products.jpg?s=612x612&w=0&k=20&c=U5T70bi24itoTDive1CVonJbJ97ChyL2Pz1I2kOoSRo=",
+  protein:    "https://media.istockphoto.com/id/1457411409/photo/food-rich-in-healthy-proteins.jpg?s=612x612&w=0&k=20&c=VhsyYnYvYixR5XwjYilltfS2oWHse2XMVtKufq1lS_A=",
+  vegetable:  "https://media.istockphoto.com/id/104822134/photo/variety-of-green-vegetables.jpg?s=612x612&w=0&k=20&c=Q2WQgzyVpA-gR2SQTlSo97fzBvIHGBc2IcPg6HOcvpc=",
+  fruit:      "https://media.istockphoto.com/id/995518546/photo/assortment-of-colorful-ripe-tropical-fruits-top-view.jpg?s=612x612&w=0&k=20&c=bz2zksjSPikOYm9I-mG-f8SAQWVpFsR4M_u4K9soLQ0=",
+
+  // Set 13 — Technology
+  phone:      "https://www.shutterstock.com/image-photo/millennial-woman-rests-indoors-while-600nw-2740563505.jpg",
+  tablet:     "https://media.istockphoto.com/id/477596053/photo/samsung-galaxy-tab-3.jpg?s=612x612&w=0&k=20&c=3pQRcqxNy9Tn7M1QIi9Or5wkkdyBdcaobAofsp_xK28=",
+  tv:         "https://media.istockphoto.com/id/1395191574/photo/black-led-tv-television-screen-blank-isolated.jpg?s=612x612&w=0&k=20&c=ps14JZJh0ebkINcbQyHFsR1J5EC7ozkj_WO7Fh_9IOI=",
+  computer:   "https://www.shutterstock.com/image-photo/modern-workspace-blank-computer-screen-600nw-2654062975.jpg",
+  camera:     "https://www.shutterstock.com/image-photo/modern-camera-isolated-on-white-600nw-2488860301.jpg",
+
+  // Set 14 — Toys
+  ball:       "https://www.shutterstock.com/image-vector/glass-blue-ball-precious-pearl-600nw-2459644253.jpg",
+  doll:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS6_6F3fqA2pZampUkRAGxPwwDmyp7os9SWOQ&s",
+  block:      "https://media.istockphoto.com/id/483876139/photo/toy-wooden-blocks-multicolor-building-construction-bricks.jpg?s=612x612&w=0&k=20&c=2RIgA7dCroAh6QbrFA6o0cDU-9sTwgRfswoEf5-cskg=",
+  puzzle:     "https://www.shutterstock.com/image-photo/adorable-hispanic-boy-playing-maths-600nw-2340667333.jpg",
+  teddybear:  "https://www.shutterstock.com/image-photo/cute-teddy-bear-red-bow-260nw-2693837603.jpg",
+
+  // Set 15 — Superheroes
+  superman:   "https://www.shutterstock.com/image-photo/superman-character-standing-cutout-without-260nw-2654464235.jpg",
+  spiderman:  "https://www.shutterstock.com/image-vector/spiderman-suit-icon-logo-super-600nw-2407844867.jpg",
+  batman:     "https://www.shutterstock.com/image-photo/create-picture-batman-front-city-600nw-2719422723.jpg",
+  hulk:       "https://www.shutterstock.com/image-photo/incredible-hulk-isolated-comic-book-600nw-2712493969.jpg",
+  wonderwoman:"https://www.shutterstock.com/image-photo/kuala-lumpur-malaysia-march-24-600nw-1228898209.jpg",
+
+  // Set 16 — Activities
+  swim:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRax_BsOQQH1PrQrTa4WQd27SxfXUAIUWTDSw&s",
+  climb:      "https://www.shutterstock.com/image-photo/baby-learning-stand-climb-on-260nw-1676198911.jpg",
+  read:       "https://media.istockphoto.com/id/1369013987/photo/portrait-of-caring-black-mom-reading-book-to-little-baby-at-home.jpg?s=612x612&w=0&k=20&c=pV7aZrYHXG4QA2kcJJpIcTKabA0dBs28D_m5EjEBLNM=",
+  paint:      "https://media.istockphoto.com/id/529366103/photo/happy-child-draws-with-colored-paints-hands.jpg?s=612x612&w=0&k=20&c=M6j45BYRSGfSbNMSh9d1jHX7xSF4Aeii3-zr-JH0GRA=",
+  cook:       "https://thumbs.dreamstime.com/b/child-cook-5684430.jpg",
+
+  // Set 17 — Foods
+  rice:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRxsDgik89dN2xVPymF5ErkW9XLUE4PydRu8Q&s",
+  bread:      "https://cdn.pixabay.com/photo/2025/10/01/01/13/sourdough-9865309_1280.jpg",
+  pasta:      "https://media.istockphoto.com/id/155433174/photo/bolognese-pens.jpg?s=612x612&w=0&k=20&c=A_TBqOAzcOkKbeVv8qSDs0bukfAedhkA458JEFolo_M=",
+  soup:       "https://t3.ftcdn.net/jpg/17/69/98/10/360_F_1769981069_Sfjz5YRiRI9g6V6BEmfuOG4G1WC6k4h0.jpg",
+  salad:      "https://media.istockphoto.com/id/953810510/photo/green-salad-with-fresh-vegetables.jpg?s=612x612&w=0&k=20&c=OyC-xDuR4SUnY3CCnzXc1RAI12CxpLF0g-M8yQ_NeUs=",
+
+  // Set 18 — Body Parts
+  head:       "https://www.shutterstock.com/image-photo/portrait-cute-redhead-emotional-little-600nw-1322244740.jpg",
+  arm:        "https://media.istockphoto.com/id/471472229/photo/cute-baby-girl.jpg?s=612x612&w=0&k=20&c=wtFsMQOODbDEHajoUFnSRxgr-BWW_kHl4XStzTrmxtk=",
+  leg:        "https://www.shutterstock.com/image-photo/newborn-baby-legs-soft-light-600nw-2625553743.jpg",
+  hand:       "https://static.vecteezy.com/system/resources/thumbnails/074/691/542/small/two-baby-hands-with-open-palms-isolated-on-transparent-background-png.png",
+  foot:       "https://static.vecteezy.com/system/resources/thumbnails/054/058/019/small/a-person-holding-a-baby-s-feet-in-their-hands-photo.jpg",
+
+  // Set 19 — Toys 2
+  car:        "https://media.istockphoto.com/id/2240583574/photo/a-blue-plastic-toy-car-isolated-on-a-white-background.jpg?s=612x612&w=0&k=20&c=ZzDT9N7WEo6y3DwY3KHEHAwGOFcdYB1NJR9RdHEMjsg=",
+  truck:      "https://media.istockphoto.com/id/477865381/photo/toy-dump-truck.jpg?s=612x612&w=0&k=20&c=GoY8NFa_YvFpGjwWBTAu1Q4ZCv2QesiBJk9CG263EU0=",
+  train:      "https://static.vecteezy.com/system/resources/thumbnails/075/319/752/small/a-toy-train-is-sitting-on-a-train-track-photo.jpg",
+  plane:      "https://thumbs.dreamstime.com/b/plastic-toy-plane-isolated-white-background-76265019.jpg",
+  robot:      "https://media.istockphoto.com/id/496953956/photo/retro-robot-wound-up-with-key-isolated-with-clipping-path.jpg?s=612x612&w=0&k=20&c=57oPQmbYAkQD2F2oEUWXr1360IbXcRJDqEUWRBuyn80=",
+
+  // Set 20 — Motor Vehicles
+  bicycle:    "https://img.freepik.com/free-vector/vintage-bike-design_1268-347.jpg?semt=ais_hybrid&w=740&q=80",
+  motorcycle: "https://www.shutterstock.com/image-photo/motorcycle-parked-on-road-backpack-600nw-2627929387.jpg",
+  bus:        "https://plus.unsplash.com/premium_photo-1664302152991-d013ff125f3f?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8YnVzfGVufDB8fDB8fHww",
+  scooter:    "https://media.istockphoto.com/id/1718415253/photo/electric-scooter-isolated-on-white-background.jpg?s=612x612&w=0&k=20&c=1q8Be9p_twjykxXTFaj2rfCjHrkIkfee4JZ5cKRD8x4=",
+  skateboard: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQL-UZ1SUrsi7TmaSUjhcW3gr0dyI1HFzSK4Q&s",
+
+  // Set 21 — Colors
+  red:        "https://www.shutterstock.com/image-vector/circle-red-palette-concentric-gradient-260nw-2612451815.jpg",
+  blue:       "https://static.vecteezy.com/system/resources/thumbnails/034/132/417/small/abstract-blue-shades-color-palette-for-your-design-illustration-free-vector.jpg",
+  yellow:     "https://media.istockphoto.com/id/1077528452/vector/colorful-abstract-geometric-shadow-lines.jpg?s=612x612&w=0&k=20&c=OXB4REx_GqhYky-7ChHa6ToGKJSy01OIz7cd5rdrrIA=",
+  green:      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSpfiQn8cGaK4A52fpY5pl_9X2XZx6yqrtkbg&s",
+  purple:     "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Shades_of_Purple.svg/1280px-Shades_of_Purple.svg.png",
+
+  // Set 22 — Meat (uses photoKey to disambiguate from live-animal photos)
+  meat_chicken: "https://images.unsplash.com/photo-1606728035253-49e8a23146de?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTB8fGNoaWNrZW4lMjBtZWF0fGVufDB8fDB8fHww",
+  beef:       "https://www.shutterstock.com/image-photo/grilled-beef-steak-rosemary-peppercorns-600nw-2678618569.jpg",
+  pork:       "https://static.vecteezy.com/system/resources/thumbnails/075/321/662/small/crispy-roasted-pork-belly-slices-on-wooden-board-with-fresh-garnish-and-sauce-photo.jpg",
+  meat_fish:  "https://media.istockphoto.com/id/509028439/photo/grilled-fish-salmon-steak.jpg?s=612x612&w=0&k=20&c=9vtoieZd6s1AV8-_r5Vy2Jtlt3NMLNeC7Mvj9PmEFBg=",
+  lamb:       "https://www.shutterstock.com/image-photo/grilled-lamb-chops-herbs-garlic-600nw-2684128835.jpg",
+
+  // Set 23 — Emotions
+  happy:      "https://thumbs.dreamstime.com/b/happy-baby-playing-toys-sofa-67971220.jpg",
+  sad:        "https://media.istockphoto.com/id/151557041/photo/baby-crying.jpg?s=612x612&w=0&k=20&c=PR6N_B-8TRjeyBVPzud5Gw_sJZZlf3wOgtg_4-AmGbM=",
+  angry:      "https://static.vecteezy.com/system/resources/thumbnails/069/186/838/small/a-close-up-of-a-baby-with-an-angry-face-photo.jpg",
+  scared:     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSAFStnz5l6juAXHBGegb8gY5EO4dragN_Eag&s",
+  excited:    "https://static.vecteezy.com/system/resources/thumbnails/070/096/398/small/excited-baby-expressing-joyful-surprise-with-wide-open-mouth-and-raised-hand-photo.jpg",
+
+  // Set 24 — Descriptive Words
+  big:        "https://thumbs.dreamstime.com/b/comparative-big-small-football-isolated-white-background-comparison-concept-81764354.jpg",
+  small:      "https://thumbs.dreamstime.com/b/comparative-big-small-football-isolated-white-background-comparison-concept-81764354.jpg",
+  fast:       "https://media.istockphoto.com/id/1254530990/photo/cheetah-acinonyx-jubatus-adult-running-through-savannah.jpg?s=612x612&w=0&k=20&c=3cE-L3T8rR9yF2QDW_kh4sSMsuV9qtkLC7HlY3dM_84=",
+  slow:       "https://media.istockphoto.com/id/1068395160/photo/sloth-in-costa-rica.jpg?s=612x612&w=0&k=20&c=yBRmFqb0qwBUWT0ne4fuVvQiN2vv4iKEaDj2v_gwE-I=",
+  loud:       "https://www.shutterstock.com/image-photo/young-businessman-suffering-loud-noise-260nw-2586707745.jpg",
+
+  // Set 25 — Body Parts 2
+  knee:       "https://www.shutterstock.com/image-photo/closeup-man-touching-his-painful-260nw-2667461405.jpg",
+  elbow:      "https://static.vecteezy.com/system/resources/thumbnails/017/555/810/small/close-up-man-holding-on-elbow-and-feeling-a-pain-studio-shot-isolated-on-grey-background-with-copy-space-for-text-free-photo.JPG",
+  shoulder:   "https://static.vecteezy.com/system/resources/thumbnails/026/797/621/small/professional-man-struggling-with-fatigue-anxiety-and-neck-pain-on-white-background-office-syndrome-management-and-wellness-strategies-free-photo.jpg",
+  ankle:      "https://static.vecteezy.com/system/resources/thumbnails/059/953/472/small/woman-experiencing-ankle-pain-touching-sore-area-indicating-injury-photo.jpg",
+  wrist:      "https://www.shutterstock.com/image-photo/carpal-tunnel-syndrome-wrist-pain-260nw-2732188407.jpg",
+
+  // Set 26 — Sports
+  soccer:     "https://static.vecteezy.com/system/resources/thumbnails/027/829/024/small/close-up-of-many-soccer-players-kicking-a-football-on-a-field-competition-scene-created-with-generative-ai-technology-photo.jpg",
+  basketball: "https://t4.ftcdn.net/jpg/18/09/03/19/360_F_1809031948_kMkXHHd7p20Hu2jYz3ZGeOku4enbHym4.jpg",
+  tennis:     "https://plus.unsplash.com/premium_photo-1666913667082-c1fecc45275d?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8dGVubmlzfGVufDB8fDB8fHww",
+  baseball:   "https://t4.ftcdn.net/jpg/00/33/24/95/360_F_33249506_jD4DUdFM7fYIqHYRYbgsjCGDFyPtNH5w.jpg",
+  swimming:   "https://plus.unsplash.com/premium_photo-1664475361436-e37f6f2ba407?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8c3dpbW1pbmd8ZW58MHx8MHx8fDA%3D",
+
+  // Set 27 — Colors 2 (orange uses photoKey for the color, not the fruit)
+  pink:         "https://img.freepik.com/free-photo/blurred-gradient-background-pink-color_58702-1643.jpg",
+  color_orange: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTIqXdl4kGB1b1RffaSSZonG9CsSxSqemTJZg&s",
+  brown:      "https://static.vecteezy.com/system/resources/thumbnails/047/751/097/small/soft-brown-gradient-background-texture-modern-dynamic-color-design-for-poster-banner-brochure-branding-advertising-surface-backdrop-decorative-cover-page-branding-invitation-free-vector.jpg",
+  black:      "https://www.shutterstock.com/image-vector/black-solid-color-background-simple-260nw-2637264033.jpg",
+  white:      "https://www.shutterstock.com/image-photo/old-white-mortar-wall-background-260nw-2477511245.jpg",
+
+  // Set 28 — Vegetables
+  carrot:     "https://www.shutterstock.com/image-photo/rainbow-carrots-isolated-on-white-600nw-2663717039.jpg",
+  broccoli:   "https://t4.ftcdn.net/jpg/01/38/59/65/360_F_138596528_dG7J8xrEXROzGkE0PCgKjDWyclYUWfzz.jpg",
+  potato:     "https://www.shutterstock.com/image-photo/different-types-potatoes-isolated-on-260nw-2671270737.jpg",
+  tomato:     "https://media.istockphoto.com/id/918150668/photo/tomato-varieties-isolated-on-white-background.jpg?s=612x612&w=0&k=20&c=-LhmigoiJNWo3_7aO7u2OUDFz_qL7WdlOKzYz7OoQiM=",
+  lettuce:    "https://media.istockphoto.com/id/1169204773/photo/set-of-various-fresh-lettuces-and-kale-cutout.jpg?s=612x612&w=0&k=20&c=6qWhFKpQiPMLrezaqexRAZPncNAIEmUSr_WXS8uysvY=",
+
+  // Set 29 — Descriptive Words 2
+  soft:       "https://thumbs.dreamstime.com/b/close-up-cat-fur-soft-texture-white-grey-animal-skin-background-180763222.jpg",
+  hard:       "https://www.shutterstock.com/image-photo/scrap-stainless-steel-tubes-recycling-260nw-2597512673.jpg",
+  hot:        "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQsLiR8YZJ60WjzdC8h9wEHTBcJKQcJoX-8Og&s",
+  cold:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQQB1w6hl-rEPon0_YOMRKhCQfbNRkJp1orJw&s",
+  smooth:     "https://media.istockphoto.com/id/627373186/photo/abstract-smooth-round-pebbles-sea-texture-background.jpg?s=612x612&w=0&k=20&c=-wU1H9tqb7HQElvrzo1hjeQK1G6rdgbFU6aHQZKuArU=",
+
+  // ── MONTH 2 ─────────────────────────────────────────────────────────────
+  // Set 1 — People (woman/man/child/elder) → reuse parent-uploaded family
+  // photos via PEOPLE_ALIASES in lookupFamilyPhoto. No URLs needed here.
+  // "friend" has no photo yet — will fall through to emoji until parent
+  // upload UI is added.
+
+  // Set 2 — Rodents
+  mouse:      "https://www.shutterstock.com/image-photo/adorable-house-mouse-eating-flower-600nw-2670472061.jpg",
+  rat:        "https://t3.ftcdn.net/jpg/00/68/43/12/360_F_68431244_BXVWMQPEJRxONCAru4jjspScjOzKIx5K.jpg",
+  hamster:    "https://media.istockphoto.com/id/1137633429/photo/golden-hamster-in-front-of-white-background.jpg?s=612x612&w=0&k=20&c=PMLTheCQNARkjE05NgI-MFf4-2RgMJwgfgUEUVDlLDs=",
+  squirrel:   "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRoxcAl25uw-vQa7svivAxoOlLFXTUbg7SMHg&s",
+  beaver:     "https://thumbs.dreamstime.com/b/beaver-north-american-isolated-white-88955650.jpg",
+
+  // Set 3 — Berries (NB: "strawberry" lives here, not Month 1 anymore)
+  strawberry: "https://www.shutterstock.com/image-photo/delicious-fresh-asia-strawberries-garden-260nw-2741379581.jpg",
+  blueberry:  "https://www.shutterstock.com/image-photo/blueberries-isolated-on-white-background-600nw-2604133331.jpg",
+  raspberry:  "https://media.istockphoto.com/id/648967314/photo/raspberry-with-leaves-isolated-on-white-background.jpg?s=612x612&w=0&k=20&c=tv_hnCyZYtY-RoUI-Mm875oMlcsF7toRjOp0lHYGVGc=",
+  blackberry: "https://media.istockphoto.com/id/173612468/photo/close-up-of-two-fresh-blackberry-with-leaves.jpg?s=612x612&w=0&k=20&c=Y9S5D76RtxS-at46xvOxHnlwpanj7zMlamAoAxe0afA=",
+  cranberry:  "https://static.vecteezy.com/system/resources/thumbnails/046/937/656/small/a-bunch-of-cranberries-with-leaves-on-a-white-background-free-photo.jpg",
+
+  // Set 4 — Furnitures
+  dresser:    "https://media.istockphoto.com/id/487536558/photo/old-original-vintage-wooden-chest-of-drawers.jpg?s=612x612&w=0&k=20&c=-8ZslZj_eBiHIlGRInUFOmdrUXBFIhb2MwFA9iagIEk=",
+  desk:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQsv3ORBiESYWVzp1SuTO1-JvFbgT_ZsNYiTw&s",
+  bookshelf:  "https://www.shutterstock.com/image-photo/old-decorative-books-book-case-600nw-2522814919.jpg",
+  armchair:   "https://media.istockphoto.com/id/1490325659/photo/armchair.jpg?s=612x612&w=0&k=20&c=qIN0Gni0GstSVh6ong1rFApT_f7N-30HXn6DPU5rnQ8=",
+  nightstand: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQaQ5XiZTM7iatzp93R76K-qwmYMJKX3nkpmg&s",
+
+  // Set 5 — Places (M2 — different content from M1 Set 5)
+  library:    "https://burst.shopifycdn.com/photos/library-books.jpg?width=1000&format=pjpg&exif=0&iptc=0",
+  museum:     "https://thumbs.dreamstime.com/b/natural-history-museum-london-interior-36322294.jpg",
+  zoo:        "https://media.istockphoto.com/id/1248960383/video/a-young-woman-and-her-little-son-feed-giraffes-in-a-safari-park.jpg?s=640x640&k=20&c=LLC7I6ho0n3Z7bvwGpUH4QWEEVcLpx1qkpmrU4VxzNA=",
+  aquarium:   "https://media.istockphoto.com/id/153782658/photo/biggest-aquarium-in-the-world-atlanta-georgia.jpg?s=612x612&w=0&k=20&c=aTGApHF81O05Dj1aXwI4bUPgji-w1raxC89cacVdHJw=",
+  hospital:   "https://www.shutterstock.com/image-photo/diverse-male-female-medical-professionals-260nw-2557673895.jpg",
+
+  // Set 6 — Occupation 1
+  doctor:        "https://www.shutterstock.com/image-photo/healthcare-doctor-woman-portrait-arms-600nw-2603758965.jpg",
+  teacher:       "https://media.istockphoto.com/id/2202092156/photo/elementary-school-teacher-at-front-of-class-talking-to-children-gesturing.jpg?s=612x612&w=0&k=20&c=WmhTcS4HnKG3h0xJn6u6arNBEELHZLYnOPfanFK98c0=",
+  firefighter:   "https://thumbs.dreamstime.com/z/firefighter-thumbs-up-3080173.jpg",
+  policeofficer: "https://t3.ftcdn.net/jpg/02/86/98/66/360_F_286986663_7E6s5ufIPpWwODFfg7a07GZruWSQuJQr.jpg",
+  chef:          "https://www.shutterstock.com/image-photo/portrait-attractive-skillful-asian-male-260nw-2656194381.jpg",
+
+  // Set 7 — African Animals (M2)
+  rhinoceros: "https://www.shutterstock.com/image-photo/rhinoceros-prominent-horns-stands-firmly-260nw-2695591647.jpg",
+  cheetah:    "https://www.shutterstock.com/image-photo/closeup-cheetahs-head-looking-under-600nw-2673356711.jpg",
+  gazelle:    "https://www.shutterstock.com/image-photo/portrait-gazelle-detailed-fur-texture-600nw-2695948211.jpg",
+  meerkat:    "https://media.istockphoto.com/id/494602505/photo/meerkat.jpg?s=612x612&w=0&k=20&c=vJXpUDCl7ZHdctRha7L2kJZsvDtZ9PKUpkd_o9lPNsg=",
+  warthog:    "https://www.shutterstock.com/image-photo/wild-grey-warthog-prominent-tusks-600nw-2715991307.jpg",
+
+  // Set 8 — Vegetables (M2)
+  spinach:     "https://media.istockphoto.com/id/522189977/photo/spinach.jpg?s=612x612&w=0&k=20&c=WnfMaNx-yOhh393DZ4lyG6tF3Hp2osD6PEmuOKsTvWs=",
+  cauliflower: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT_5wNvjnTXkAy58Y5_gRfXUC-h2NGo9CcAGw&s",
+  zucchini:    "https://media.istockphoto.com/id/1149201983/photo/fresh-whole-and-sliced-zucchini-isolated-on-white-background-from-top-view-courgette-zucchini.jpg?s=612x612&w=0&k=20&c=8r6T0Lk1iRw0mkbSCMSMKuamrFyvo0QrQD25_jiq10w=",
+  asparagus:   "https://media.istockphoto.com/id/1084123600/photo/green-asparagus-sticks.jpg?s=612x612&w=0&k=20&c=x7E0xz8E81yt3fg_BD_NMUw1qENCt-kZsWmwPCr4OnM=",
+  kale:        "https://media.istockphoto.com/id/135091129/photo/kale.jpg?s=612x612&w=0&k=20&c=Hp7jsS7S1tkFQuHM3-xzM9egFuLA8dI_MYUWuYGUh1U=",
+
+  // Set 9 — Kitchen Appliances
+  refrigerator: "https://static.vecteezy.com/system/resources/thumbnails/038/015/873/small/ai-generated-refrigerator-isolated-on-transparent-background-free-png.png",
+  oven:         "https://media.istockphoto.com/id/163928216/photo/inside-of-the-oven.jpg?s=612x612&w=0&k=20&c=YTM4LRcQEAsfWxKRH4Db-_SGYgrjSJD0fvTQWwJrY1c=",
+  microwave:    "https://t4.ftcdn.net/jpg/00/35/03/01/360_F_35030185_4f0JQTIWSQqAH2GQdMYBVFeeF2JK8Z72.jpg",
+  blender:      "https://www.shutterstock.com/image-photo/electric-blender-standing-on-kitchen-600nw-2698751239.jpg",
+  toaster:      "https://www.shutterstock.com/image-photo/kitchen-utensils-household-chromeplated-toaster-260nw-2571255527.jpg",
+
+  // Set 10 — Synonyms for Smart: noPhoto:true in curriculum, no entries here
+
+  // Set 11 — Animal Verbs
+  bark:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSoNyIv83JZmUP4r38eAhWA861bEAD7cM1C8g&s",
+  meow:       "https://www.shutterstock.com/image-photo/domestic-orange-white-feline-meowing-600nw-2703198743.jpg",
+  moo:        "https://www.shutterstock.com/image-photo/holstein-cow-white-black-spots-260nw-2732170793.jpg",
+  roar:       "https://media.istockphoto.com/id/456097309/photo/close-up-of-a-lion-roaring-isolated-on-white.jpg?s=612x612&w=0&k=20&c=MaE4KVmHzkq6AWVxjHfngAR5OEVd-w7UqllKeBE0rRQ=",
+  chirp:      "https://www.shutterstock.com/image-photo/myna-sits-on-sign-chirping-260nw-2740104227.jpg",
+
+  // Set 12 — Farm Animals (M2)
+  horse:      "https://www.shutterstock.com/image-photo/beautiful-brown-horse-stands-gracefully-260nw-2656937037.jpg",
+  goat:       "https://t4.ftcdn.net/jpg/00/49/14/31/360_F_49143192_8ktZSseOEdFkGft0Du38rEEmnUzRZoqY.jpg",
+  goose:      "https://www.shutterstock.com/image-photo/canadian-goose-wings-fully-spread-260nw-2741021371.jpg",
+  turkey:     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRSO3l4Xcr9YgGvL7TzuiLyegqhYkoqWB01sg&s",
+  donkey:     "https://media.istockphoto.com/id/1303802195/photo/donkey-isolated-on-white.jpg?s=612x612&w=0&k=20&c=dRTgRm4-Ii_GIxERqPvOcqzUC3MeOtWA_BDghUJPhZ8=",
+
+  // Set 13 — Food Groups (M2)
+  carbohydrate: "https://www.shutterstock.com/image-photo/foods-high-carbohydrates-healthy-food-260nw-2658480373.jpg",
+  legume:       "https://media.istockphoto.com/id/163729647/photo/an-up-close-picture-of-organic-legumes.jpg?s=612x612&w=0&k=20&c=E9NdcSr4SxRaYtKjjjk6rFoHvw69mooX5aY78J34DMY=",
+  nut:          "https://www.shutterstock.com/image-photo/nuts-assortment-black-background-almond-260nw-2728921873.jpg",
+  seed:         "https://www.shutterstock.com/image-photo/pumpkin-flex-seeds-watermelon-sunflower-260nw-2504656113.jpg",
+  herb:         "https://media.istockphoto.com/id/598931180/photo/basil-sage-dill-and-thyme-herbs.jpg?s=612x612&w=0&k=20&c=YsWP1t7c3y8IEO9AZ4qIGdkqeufaYSGW7_wVjLZWLl4=",
+
+  // ── MONTH 3 ─────────────────────────────────────────────────────────────
+  // Set 6 — Space (galaxy renamed to asteroid)
+  sun:        "https://static.vecteezy.com/system/resources/thumbnails/049/667/553/small/sun-s-fiery-surface-with-transparent-background-a-glowing-celestial-body-with-intricate-details-png.png",
+  moon:       "https://media.istockphoto.com/id/503874466/photo/full-moon.jpg?s=612x612&w=0&k=20&c=uhTug9hbnP5uKzjWPjnmu2wDcFMNpi4N9M24e6MUXYI=",
+  star:       "https://d2j2uxe7jasn0r.cloudfront.net/thumbnails/image/rDtN98Qoishumwih/stars-on-the-dark_zkt_s5rO_thumb.jpg",
+  planet:     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQVRlM_WZ-UPPp85H9n1bVgmmLhDDPc4_pwbA&s",
+  asteroid:   "https://static.vecteezy.com/system/resources/thumbnails/070/848/735/small/an-enormous-asteroid-floating-above-earth-s-atmosphere-in-space-photo.jpg",
+
+  // Set 7 — Actions
+  skip:       "https://thumbs.dreamstime.com/b/child-hopping-4011807.jpg",
+  hop:        "https://static.vecteezy.com/system/resources/thumbnails/070/314/764/small/energetic-little-girl-mid-air-joyfully-jumping-with-arms-raised-on-a-clean-background-free-photo.jpg",
+  tiptoe:     "https://t3.ftcdn.net/jpg/02/96/59/30/360_F_296593045_9dM7xH4cEvf6wE2KB2ZeOYrxroqFmXIm.jpg",
+  march:      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSl1zXThsjGe_YeqsnFlVtSYk1FHLE-utQi2A&s",
+  glide:      "https://media.istockphoto.com/id/183695972/photo/figure-skater-glides-on-one-leg.jpg?s=612x612&w=0&k=20&c=2t3cXuRRKLZy4h6TCz8DKr4i4jq7ZwurxaGRTTx3l1Y=",
+
+  // Set 8 — Actions 2
+  throw:      "https://thumbs.dreamstime.com/b/man-throwing-shot-put-2136446.jpg",
+  catch:      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6jemmMiuCMgG128WCUpz9pDbTLuGGFZOqtw&s",
+  kick:       "https://thumbs.dreamstime.com/b/high-side-kick-18995323.jpg",
+  push:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ2FelSWq7JdtteRI13jTHS1oSpYvTpv1uoJA&s",
+  pull:       "https://www.shutterstock.com/image-photo/group-professionals-engaged-teambuilding-activity-260nw-2706093517.jpg",
+
+  // Set 9 — North America
+  usa:        "https://media.istockphoto.com/id/1674295267/vector/united-states-of-america-map-isolated-usa-map-with-division-on-states-stock-vector.jpg?s=612x612&w=0&k=20&c=MPnkdqMpj9NM2UWXOfij8z_ayl3sOh0aSkrsyilIaMk=",
+  canada:     "https://media.istockphoto.com/id/1977400926/vector/map-of-canada-vector-illustration.jpg?s=612x612&w=0&k=20&c=wsfGoHXmvJQrZkZR0On3zmxSjuKBxj0SYGFSl3Gy_pc=",
+  mexico:     "https://www.shutterstock.com/image-photo/map-mexico-on-grunge-green-260nw-2692642793.jpg",
+  cuba:       "https://static.vecteezy.com/system/resources/thumbnails/039/148/661/small/map-of-cuba-with-national-flag-of-cuba-png.png",
+  guatemala:  "https://media.gettyimages.com/id/2151285618/vector/guatemala-map-vector-colored-map-of-guatemala.jpg?s=612x612&w=gi&k=20&c=XbVStbCJFO0P9iEVSGmgPmxXr7Y0tzVnm3DCK7DprPU=",
+
+  // Set 10 — Geography
+  mountain:   "https://static.vecteezy.com/system/resources/thumbnails/057/255/732/small/lush-green-mountains-tropical-rainforest-aerial-view-dramatic-peaks-island-landscape-photo.jpeg",
+  valley:     "https://shotstash.com/wp-content/uploads/2018/11/0036-1-1-1100x734.jpg",
+  river:      "https://thumbs.dreamstime.com/b/landscape-mountains-trees-river-front-30280444.jpg",
+  lake:       "https://media.istockphoto.com/id/1280015859/photo/blue-lake-with-treeline-in-autumn-color-on-a-sunny-afternoon-in-northern-minnesota.jpg?s=612x612&w=0&k=20&c=smtj8bw1BW3gUI9rrxRnAzQKGWmTyMQYcODgbuWNMbc=",
+  desert:     "https://www.shutterstock.com/image-photo/vast-orange-sand-dune-desert-600nw-2725294555.jpg",
+
+  // Set 11 — Bodies of Water
+  ocean:      "https://media.istockphoto.com/id/467367026/photo/perfect-sky-and-ocean.jpg?s=612x612&w=0&k=20&c=LZYFRxIhuKQom3l-kR3TLN7GikSJYJz9NRglQ3nngBw=",
+  sea:        "https://media.istockphoto.com/id/1152237432/photo/underwater-scene-tropical-seabed-with-reef-and-sunshine.jpg?s=612x612&w=0&k=20&c=qAe3eZ_bwmrq6CW5IoddV2icSDKsO7vkbQKwqy3ma0o=",
+  pond:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRzbdT_HZ0Lh8F0Bo39G2C1bivNBqogif83zQ&s",
+  stream:     "https://media.istockphoto.com/id/2218495004/photo/small-stream.jpg?s=612x612&w=0&k=20&c=E4aghP4Ut89UMYiFMAk_xKUcd2EYznvMLnkNLFITx-k=",
+  waterfall:  "https://t3.ftcdn.net/jpg/02/86/72/18/360_F_286721823_jX2eKauNsttWhIxKAzPYhHwYpSRTCdcm.jpg",
+
+  // Set 12 — Nature
+  tree:       "https://t3.ftcdn.net/jpg/02/43/07/94/360_F_243079474_rpZFHvWpn7geHUxtmCoAiRUe8imur8vZ.jpg",
+  leaf:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTd5gIW_boUHSTRmh1vuoyJTsl7gXLYDsYSDg&s",
+  flower:     "https://isorepublic.com/wp-content/uploads/2018/11/field-of-flowers.jpg",
+  grass:      "https://images.pexels.com/photos/580900/pexels-photo-580900.jpeg?cs=srgb&dl=pexels-mattycphoto-580900.jpg&fm=jpg",
+  rock:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ6-WOCZo6ekK9IykrJPTMu3CaZVMvTtJwuqw&s",
+
+  // Set 13 — Flowers
+  rose:       "https://media.istockphoto.com/id/1145604197/photo/rose-and-warm-light-in-garden-background.jpg?s=612x612&w=0&k=20&c=71Y-z26VtRPFiJ6XFdkQzoRued06Y-yK56Fn6ugOa7M=",
+  tulip:      "https://static.vecteezy.com/system/resources/thumbnails/066/572/681/small/colorful-tulips-blooming-in-spring-garden-free-photo.jpg",
+  daisy:      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRo1DxgxVN-oTc37xJwAKyvbDUlumS6OYKd4w&s",
+  sunflower:  "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ7KyzMkTDMkMRKnDKXpOnaKnPWZqmtE6ECmg&s",
+  lily:       "https://media.istockphoto.com/id/1484744360/photo/white-lily-flower-bouquet-isolated-on-transparent-background.jpg?s=612x612&w=0&k=20&c=W3YZGZ64x0sH-rrUsVW1bmul_71DJ5PYU0ed6prIdqU=",
+
+  // Set 14 — Apes
+  chimpanzee: "https://thumbs.dreamstime.com/b/young-chimpanzee-simia-troglodytes-5-years-old-9772837.jpg",
+  gorilla:    "https://media.istockphoto.com/id/93212491/photo/young-silverback-gorilla-sitting-with-a-white-background.jpg?s=612x612&w=0&k=20&c=hqlAffB1lM0PNpJso1FJjjTn_1HYvnFJmVxiSVNNoWM=",
+  orangutan:  "https://plus.unsplash.com/premium_photo-1661821205919-aa973dad0529?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8b3Jhbmd1dGFufGVufDB8fDB8fHww",
+  bonobo:     "https://plus.unsplash.com/premium_photo-1664298009705-3bd5d9b1eaa4?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OXx8Ym9ub2JvfGVufDB8fDB8fHww",
+  gibbon:     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQU0w5G74PkRitmcU6k7EA2h2oBE5eomGEOdA&s",
 };
 
-// Look up a curriculum photo URL for a single-word card. Takes the English
-// canonical word (e.g., "apple", not "苹果") since the URL map is keyed in
-// English. Returns null if no curriculum photo exists for that word — caller
-// should fall through to family-photo lookup or emoji.
-function photoUrlForWord(englishWord) {
+// Look up a curriculum photo URL for a single-word card. The photoKey override
+// (if present on the curriculum item) takes priority over the word lookup —
+// this lets the same word have different photos in different sets, e.g.
+// "chicken" the live bird vs "chicken" the cooked meat. Returns null if
+// nothing matches; caller should fall through to family-photo or emoji.
+function photoUrlForWord(englishWord, photoKey) {
+  if (photoKey && WORD_PHOTO_URLS[photoKey]) return WORD_PHOTO_URLS[photoKey];
   if (!englishWord) return null;
   return WORD_PHOTO_URLS[englishWord.toLowerCase()] || null;
 }
@@ -6216,17 +6566,30 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
         {frame===1 && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:18,width:"100%",maxWidth:340}}>
             {/* Photo lookup priority:
-                  1. Parent-uploaded family photo (most personal — used for
-                     family terms like mother/sister/etc.)
-                  2. Curriculum stock photo from WORD_PHOTO_URLS (e.g., a
-                     stock dog/apple/chair photo bundled with the app)
+                  0. card.noPhoto → render a clean text-only card (abstract
+                     concepts like "clever", "brilliant" — Doman pure
+                     whole-word reading without visual association)
+                  1. Parent-uploaded family photo (most personal)
+                  2. Curriculum stock photo (WORD_PHOTO_URLS, keyed by word
+                     or photoKey override for collisions like meat/animal)
                   3. Emoji placeholder (last resort)
                 Uses card.original (English canonical) so it works regardless
                 of display language. */}
             {(() => {
+              if (card.noPhoto) {
+                // Text-only card: show the word large, centered, on a clean
+                // background. The word itself becomes the visual focus.
+                return (
+                  <div style={{width:"min(300px,82vw)",height:"min(300px,82vw)",borderRadius:22,boxShadow:"0 8px 32px rgba(0,0,0,.06)",background:"#FAFAFA",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <span style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:"min(72px,16vw)",color:RED,textAlign:"center",lineHeight:1.1,padding:"0 12px",wordBreak:"break-word"}}>
+                      {card.word}
+                    </span>
+                  </div>
+                );
+              }
               const englishWord = card.original || card.word;
               const familyPhoto = lookupFamilyPhoto(familyPhotos, englishWord, card.note);
-              const curriculumPhoto = familyPhoto ? null : photoUrlForWord(englishWord);
+              const curriculumPhoto = familyPhoto ? null : photoUrlForWord(englishWord, card.photoKey);
               const photo = familyPhoto || curriculumPhoto;
               return photo ? (
                 <img src={photo} alt=""

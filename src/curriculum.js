@@ -1372,7 +1372,7 @@ export const WORDS_MONTH1 = [
     { word:"banana" },
     { word:"orange" },
     { word:"grapes" },
-    { word:"strawberry" },
+    { word:"berries" },
   ]},
   { id:"set4-furniture", name:"Furniture", items:[
     { word:"chair" },
@@ -1393,7 +1393,7 @@ export const WORDS_MONTH1 = [
     { word:"elephant" },
     { word:"giraffe" },
     { word:"zebra" },
-    { word:"hippo" },
+    { word:"hippopotamus" },
   ]},
   { id:"set7-fun-foods", name:"Fun Foods", items:[
     { word:"pizza" },
@@ -1501,10 +1501,14 @@ export const WORDS_MONTH1 = [
     { word:"purple" },
   ]},
   { id:"set22-meat", name:"Meat", items:[
-    { word:"chicken" },
+    // photoKey overrides distinguish these from the live-animal versions of
+    // the same word elsewhere in the curriculum (Animals set, Farm Animals set).
+    // Pedagogically, "chicken" in Meat shows cooked food; in Farm Animals it
+    // shows the live bird. Same word — different context, different photo.
+    { word:"chicken", photoKey:"meat_chicken" },
     { word:"beef" },
     { word:"pork" },
-    { word:"fish" },
+    { word:"fish", photoKey:"meat_fish" },
     { word:"lamb" },
   ]},
   { id:"set23-emotions", name:"Emotions", items:[
@@ -1537,7 +1541,8 @@ export const WORDS_MONTH1 = [
   ]},
   { id:"set27-colors-2", name:"Colors 2", items:[
     { word:"pink" },
-    { word:"orange" },
+    // photoKey distinguishes this from the fruit "orange" in M1 Set 3
+    { word:"orange", photoKey:"color_orange" },
     { word:"brown" },
     { word:"black" },
     { word:"white" },
@@ -1623,11 +1628,15 @@ export const WORDS_MONTH2 = [
     { word:"toaster" },
   ]},
   { id:"set10-synonyms-for-smart", name:"Synonyms for Smart", items:[
-    { word:"clever" },
-    { word:"wise" },
-    { word:"bright" },
-    { word:"brilliant" },
-    { word:"intelligent" },
+    // noPhoto: true → render text only, no photo or emoji. These are abstract
+    // qualities that don't have a single visual representation, so the card
+    // forces the child to read the word itself (Doman's pure whole-word
+    // approach). Per Olivia's curriculum design.
+    { word:"clever",      noPhoto:true },
+    { word:"wise",        noPhoto:true },
+    { word:"bright",      noPhoto:true },
+    { word:"brilliant",   noPhoto:true },
+    { word:"intelligent", noPhoto:true },
   ]},
   { id:"set11-animal-verbs", name:"Animal Verbs", items:[
     { word:"bark" },
@@ -1812,7 +1821,7 @@ export const WORDS_MONTH3 = [
     { word:"moon" },
     { word:"star" },
     { word:"planet" },
-    { word:"galaxy" },
+    { word:"asteroid" },
   ]},
   { id:"set7-actions", name:"Actions", items:[
     { word:"skip" },
