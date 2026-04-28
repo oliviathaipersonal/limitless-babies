@@ -2346,6 +2346,53 @@ function photoUrlForKnowledge(cardId) {
     `https://picsum.photos/seed/${encodeURIComponent(cardId)}/800/600`;
 }
 
+// ── SINGLE-WORD CURRICULUM PHOTOS ─────────────────────────────────────────────
+// Photos for the Single Words flashcards (Family Members, Animals, Fruit,
+// Furniture, etc.). Keyed by the English word, lowercase. These are FALLBACKS
+// when the parent has not uploaded a personal family photo for that word —
+// e.g., "mother" defaults to a stock photo until the parent uploads a real
+// photo of their child's mom. So the priority order in the reading session is:
+//
+//   1. Parent-uploaded family photo (most personal — used for family terms)
+//   2. WORD_PHOTO_URLS curriculum stock photo (this map)
+//   3. Emoji placeholder (last resort)
+//
+// Family-member words (mother, father, sister, brother, baby) intentionally
+// have NO entries here — those are filled in via the family-photo upload flow
+// during onboarding. If a parent skips family photo upload, those cards fall
+// through to emoji.
+const WORD_PHOTO_URLS = {
+  // Animals (Month 1, Set 2)
+  dog:        "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Dog_coat_variation.png/250px-Dog_coat_variation.png",
+  cat:        "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Cat_November_2010-1a.jpg/960px-Cat_November_2010-1a.jpg",
+  bird:       "https://upload.wikimedia.org/wikipedia/commons/4/45/Eopsaltria_australis_-_Mogo_Campground.jpg",
+  fish:       "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Pacific_double-saddle_butterflyfish_%28Chaetodon_ulietensis%29_and_other_Chaetodon_Moorea.jpg/1280px-Pacific_double-saddle_butterflyfish_%28Chaetodon_ulietensis%29_and_other_Chaetodon_Moorea.jpg",
+  rabbit:     "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/4-Week-Old_Netherlands_Dwarf_Rabbit.JPG/250px-4-Week-Old_Netherlands_Dwarf_Rabbit.JPG",
+
+  // Fruit (Month 1, Set 3)
+  apple:      "https://upload.wikimedia.org/wikipedia/commons/a/a6/Pink_lady_and_cross_section.jpg",
+  banana:     "https://upload.wikimedia.org/wikipedia/commons/d/de/Bananavarieties.jpg",
+  orange:     "https://upload.wikimedia.org/wikipedia/commons/e/e3/Oranges_-_whole-halved-segment.jpg",
+  grapes:     "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Grapes%2C_Rostov-on-Don%2C_Russia.jpg/1280px-Grapes%2C_Rostov-on-Don%2C_Russia.jpg",
+  strawberry: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Garden_strawberry_%28Fragaria_%C3%97_ananassa%29_single2.jpg/1280px-Garden_strawberry_%28Fragaria_%C3%97_ananassa%29_single2.jpg",
+
+  // Furniture (Month 1, Set 4)
+  chair:      "https://upload.wikimedia.org/wikipedia/commons/c/c6/Set_of_fourteen_side_chairs_MET_DP110780.jpg",
+  table:      "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ed/Writing_table_%28bureau_plat%29_MET_DP105403.jpg/330px-Writing_table_%28bureau_plat%29_MET_DP105403.jpg",
+  bed:        "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Bed_in_hotel_room_5.jpg/250px-Bed_in_hotel_room_5.jpg",
+  sofa:       "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d9/Kubus_sofa.jpg/250px-Kubus_sofa.jpg",
+  lamp:       "https://upload.wikimedia.org/wikipedia/commons/7/79/Lampshades.jpg",
+};
+
+// Look up a curriculum photo URL for a single-word card. Takes the English
+// canonical word (e.g., "apple", not "苹果") since the URL map is keyed in
+// English. Returns null if no curriculum photo exists for that word — caller
+// should fall through to family-photo lookup or emoji.
+function photoUrlForWord(englishWord) {
+  if (!englishWord) return null;
+  return WORD_PHOTO_URLS[englishWord.toLowerCase()] || null;
+}
+
 async function fetchDailyKnowledge(child, language) {
   const pos = getChildPosition(child, "knowledge", language);
   if (!pos) return [];
@@ -6168,12 +6215,19 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
 
         {frame===1 && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:18,width:"100%",maxWidth:340}}>
-            {/* Family photo lookup: resolves kinship-specific slots (e.g.
-                "older sister" → sister_older) then falls back to the generic
-                word. Uses card.original (English canonical) so it works
-                regardless of display language. */}
+            {/* Photo lookup priority:
+                  1. Parent-uploaded family photo (most personal — used for
+                     family terms like mother/sister/etc.)
+                  2. Curriculum stock photo from WORD_PHOTO_URLS (e.g., a
+                     stock dog/apple/chair photo bundled with the app)
+                  3. Emoji placeholder (last resort)
+                Uses card.original (English canonical) so it works regardless
+                of display language. */}
             {(() => {
-              const photo = lookupFamilyPhoto(familyPhotos, card.original || card.word, card.note);
+              const englishWord = card.original || card.word;
+              const familyPhoto = lookupFamilyPhoto(familyPhotos, englishWord, card.note);
+              const curriculumPhoto = familyPhoto ? null : photoUrlForWord(englishWord);
+              const photo = familyPhoto || curriculumPhoto;
               return photo ? (
                 <img src={photo} alt=""
                   style={{width:"min(300px,82vw)",height:"min(300px,82vw)",borderRadius:22,boxShadow:"0 8px 32px rgba(0,0,0,.14)",objectFit:"cover"}}/>
