@@ -353,6 +353,7 @@ export const EXTRA_TRANSLATIONS = {
   "grape":      { Spanish:"uva", French:"raisin", German:"traube", Italian:"uva", Portuguese:"uva", "Portuguese (Brazil)":"uva", Russian:"виноград", "Chinese (Mandarin)":"葡萄", "Chinese (Cantonese)":"葡萄", Japanese:"ぶどう", Korean:"포도", Hebrew:"ענב", Arabic:"عنب", Hindi:"अंगूर", Vietnamese:"nho", Turkish:"üzüm" },
   "orange":     { Spanish:"naranja", French:"orange", German:"orange", Italian:"arancia", Portuguese:"laranja", "Portuguese (Brazil)":"laranja", Russian:"апельсин", "Chinese (Mandarin)":"橙子", "Chinese (Cantonese)":"橙", Japanese:"オレンジ", Korean:"오렌지", Hebrew:"תפוז", Arabic:"برتقال", Hindi:"संतरा", Vietnamese:"cam", Turkish:"portakal" },
   "strawberry": { Spanish:"fresa", French:"fraise", German:"erdbeere", Italian:"fragola", Portuguese:"morango", "Portuguese (Brazil)":"morango", Russian:"клубника", "Chinese (Mandarin)":"草莓", "Chinese (Cantonese)":"士多啤梨", Japanese:"いちご", Korean:"딸기", Hebrew:"תות", Arabic:"فراولة", Hindi:"स्ट्रॉबेरी", Vietnamese:"dâu", Turkish:"çilek" },
+  "fruits":     { Spanish:"frutas", French:"fruits", German:"obst", Italian:"frutta", Portuguese:"frutas", "Portuguese (Brazil)":"frutas", Russian:"фрукты", "Chinese (Mandarin)":"水果", "Chinese (Cantonese)":"水果", Japanese:"果物", Korean:"과일", Hebrew:"פירות", Arabic:"فواكه", Hindi:"फल", Vietnamese:"trái cây", Turkish:"meyveler", Tagalog:"prutas" },
 
   // Pets (dog/cat/fish/bird in CORE)
   "rabbit": { Spanish:"conejo", French:"lapin", German:"hase", Italian:"coniglio", Portuguese:"coelho", "Portuguese (Brazil)":"coelho", Russian:"кролик", "Chinese (Mandarin)":"兔子", "Chinese (Cantonese)":"兔仔", Japanese:"うさぎ", Korean:"토끼", Hebrew:"ארנב", Arabic:"أرنب", Hindi:"खरगोश", Vietnamese:"thỏ", Turkish:"tavşan" },
@@ -1372,7 +1373,7 @@ export const WORDS_MONTH1 = [
     { word:"banana" },
     { word:"orange" },
     { word:"grapes" },
-    { word:"berries" },
+    { word:"fruits" },
   ]},
   { id:"set4-furniture", name:"Furniture", items:[
     { word:"chair" },
@@ -1561,6 +1562,25 @@ export const WORDS_MONTH1 = [
     { word:"cold" },
     { word:"smooth" },
   ]},
+  // Set 30 — Extended Family. Adds the broader relatives beyond the immediate
+  // family in Set 1. Languages with kinship distinctions (Mandarin, Korean,
+  // Vietnamese, Italian, etc.) automatically split each word into its
+  // distinct kinship variants via KINSHIP_VARIANTS — for those languages,
+  // a parent might see 6+ cards instead of 4 because grandma/grandpa expand
+  // into paternal + maternal forms.
+  //
+  // Cousin is intentionally NOT here. In English/Spanish/French/etc., one
+  // word covers all cousins. In Mandarin/Cantonese, eight distinct words
+  // cover the same concept (paternal/maternal × older/younger × M/F). To
+  // avoid forcing that complexity on every learner, cousin lives in a
+  // separate Chinese-only "Cousins" set (built separately for Chinese
+  // dialect learners).
+  { id:"set30-extended-family", name:"Extended Family", items:[
+    { word:"grandma" },
+    { word:"grandpa" },
+    { word:"aunt" },
+    { word:"uncle" },
+  ]},
 ];
 
 export const WORDS_MONTH2 = [
@@ -1688,11 +1708,13 @@ export const WORDS_MONTH2 = [
     { word:"camping" },
   ]},
   { id:"set18-synonyms-for-pretty", name:"Synonyms for Pretty", items:[
-    { word:"beautiful" },
-    { word:"lovely" },
-    { word:"gorgeous" },
-    { word:"charming" },
-    { word:"elegant" },
+    // noPhoto: same treatment as Synonyms for Smart — abstract qualities
+    // rendered as text-only cards (Doman pure whole-word).
+    { word:"beautiful", noPhoto:true },
+    { word:"lovely",    noPhoto:true },
+    { word:"gorgeous",  noPhoto:true },
+    { word:"charming",  noPhoto:true },
+    { word:"elegant",   noPhoto:true },
   ]},
   { id:"set19-parts-of-the-face", name:"Parts of the Face", items:[
     { word:"eye" },
@@ -1702,11 +1724,11 @@ export const WORDS_MONTH2 = [
     { word:"cheek" },
   ]},
   { id:"set20-synonyms-for-big", name:"Synonyms for Big", items:[
-    { word:"huge" },
-    { word:"large" },
-    { word:"giant" },
-    { word:"massive" },
-    { word:"enormous" },
+    { word:"huge",     noPhoto:true },
+    { word:"large",    noPhoto:true },
+    { word:"giant",    noPhoto:true },
+    { word:"massive",  noPhoto:true },
+    { word:"enormous", noPhoto:true },
   ]},
   { id:"set21-transport", name:"Transport", items:[
     { word:"helicopter" },
@@ -1723,11 +1745,11 @@ export const WORDS_MONTH2 = [
     { word:"peach" },
   ]},
   { id:"set23-synonyms-for-small", name:"Synonyms for Small", items:[
-    { word:"tiny" },
-    { word:"little" },
-    { word:"mini" },
-    { word:"petite" },
-    { word:"miniature" },
+    { word:"tiny",      noPhoto:true },
+    { word:"little",    noPhoto:true },
+    { word:"mini",      noPhoto:true },
+    { word:"petite",    noPhoto:true },
+    { word:"miniature", noPhoto:true },
   ]},
   { id:"set24-emotions", name:"Emotions", items:[
     { word:"surprised" },

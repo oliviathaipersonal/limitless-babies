@@ -933,8 +933,14 @@ function getSetsForPosition(allSetsArray, position, month) {
 //
 // The parent only sees the specific slots if at least one of the child's
 // learning languages uses them (dynamic display, decision C from user).
+// Words that appear in the ChildEditor's "Personal Photos" grid. Each one is
+// a slot that the parent can upload a photo to. NOTE: home/child/elder/friend
+// are intentionally NOT here — those are uploaded just-in-time via the
+// in-session prompt right before the relevant card appears, so the parent
+// understands WHY they're being asked. This keeps the profile editor focused
+// on actual family members.
 const FAMILY_PHOTO_WORDS = [
-  "mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada","friend","child","elder","home"
+  "mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada"
 ];
 
 // Kinship slot mapping — when the curriculum card has a specific kinship
@@ -2483,7 +2489,7 @@ const WORD_PHOTO_URLS = {
   banana:     "https://upload.wikimedia.org/wikipedia/commons/d/de/Bananavarieties.jpg",
   orange:     "https://upload.wikimedia.org/wikipedia/commons/e/e3/Oranges_-_whole-halved-segment.jpg",
   grapes:     "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Grapes%2C_Rostov-on-Don%2C_Russia.jpg/1280px-Grapes%2C_Rostov-on-Don%2C_Russia.jpg",
-  berries:    "https://media.istockphoto.com/id/182187173/photo/isolated-berries.jpg?s=612x612&w=0&k=20&c=iBBvIdL39XuHATGIlNkKn6nAHfE_BTWkHiOs49IWlFU=",
+  fruits:     "https://media.istockphoto.com/id/995518546/photo/assortment-of-colorful-ripe-tropical-fruits-top-view.jpg?s=612x612&w=0&k=20&c=bz2zksjSPikOYm9I-mG-f8SAQWVpFsR4M_u4K9soLQ0=",
 
   // Set 4 — Furniture
   chair:      "https://upload.wikimedia.org/wikipedia/commons/c/c6/Set_of_fourteen_side_chairs_MET_DP110780.jpg",
@@ -2755,6 +2761,61 @@ const WORD_PHOTO_URLS = {
   nut:          "https://www.shutterstock.com/image-photo/nuts-assortment-black-background-almond-260nw-2728921873.jpg",
   seed:         "https://www.shutterstock.com/image-photo/pumpkin-flex-seeds-watermelon-sunflower-260nw-2504656113.jpg",
   herb:         "https://media.istockphoto.com/id/598931180/photo/basil-sage-dill-and-thyme-herbs.jpg?s=612x612&w=0&k=20&c=YsWP1t7c3y8IEO9AZ4qIGdkqeufaYSGW7_wVjLZWLl4=",
+
+  // Set 14 — Occupation 2
+  engineer:    "https://specials-images.forbesimg.com/imageserve/65538a66d57606269ac71531/960x0.jpg",
+  lawyer:      "https://www.shutterstock.com/image-photo/court-justice-law-trial-successful-260nw-2056433831.jpg",
+  artist:      "https://static.vecteezy.com/system/resources/thumbnails/001/457/373/small/artist-painting-in-her-studio-free-photo.jpg",
+  scientist:   "https://www.shutterstock.com/image-photo/histology-technician-using-compound-microscope-260nw-2735245423.jpg",
+  musician:    "https://i.ytimg.com/vi/vmhmDYV4mjc/maxresdefault.jpg",
+
+  // Set 15 — Sports (M2 — different from M1 Set 26 Sports)
+  hockey:      "https://cdn.britannica.com/50/219150-050-0032E44D/Marc-Andre-Fleury-Vegas-Golden-Knights-Stanley-Cup-Final-2018.jpg",
+  football:    "https://assets.tegnaone.com/assets/AssociatedPress/images/33e64210-cb67-4e79-a284-be4d54bf4575/20251229T165504/33e64210-cb67-4e79-a284-be4d54bf4575.jpg",
+  volleyball:  "https://dotorg.brightspotcdn.com/dims4/default/6b3ef88/2147483647/strip/true/crop/3000x2000+0+0/resize/800x533!/quality/90/?url=http%3A%2F%2Fsoi-brightspot.s3.amazonaws.com%2Fdotorg%2F3a%2F80%2Fc263d7cb4e4b9ee2f20a6249c7f8%2Fie-sovoleywc-051025-01801.jpg",
+  rugby:       "https://cdn.britannica.com/27/222727-050-5CDE94F8/South-Africa-and-England-Rugby-World-Cup-2019-Final-Yokohama-Japan.jpg",
+  cricket:     "https://cdn.britannica.com/94/261794-050-C392CD48/grant-elliott-of-new-zealand-during-the-icc-cricket-world-cup-match-between-south-africa-and-new-zealand-march-24-2015.jpg",
+
+  // Set 16 — Superheroes (M2 — different from M1 Set 15 Superheroes)
+  captainamerica: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQBPIRNAn9q9rbnd0s7zvfjIlVETs_Utf700A&s",
+  thor:           "https://upload.wikimedia.org/wikipedia/en/3/3c/Chris_Hemsworth_as_Thor.jpg",
+  blackwidow:     "https://upload.wikimedia.org/wikipedia/en/thumb/f/f6/Scarlett_Johansson_as_Black_Widow.jpg/250px-Scarlett_Johansson_as_Black_Widow.jpg",
+  ironman:        "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRU2VoN_x84a_MzE-bJ4DCxJPfyc6eWo2nOXA&s",
+  flash:          "https://e.snmc.io/lk/f/x/a87af2906911932f02ec36697f22ea32/5295160",
+
+  // Set 17 — Fun Activities (M2 — different from M1 Set 10 Fun Activities)
+  skating:     "https://media.istockphoto.com/id/1338986114/photo/african-american-young-boy-riding-on-roller-skates-or-roller-blades-at-outdoor-kid-playing-on.jpg?s=612x612&w=0&k=20&c=yZ--0440ZLc2LctQQ0kWl-n1AoeMrWQv_U2M6_bcF2Q=",
+  biking:      "https://www.shutterstock.com/image-photo/child-safety-helmet-riding-bike-600nw-2290762723.jpg",
+  surfing:     "https://www.shutterstock.com/image-photo/pro-surfer-rides-big-wave-260nw-2558039415.jpg",
+  fishing:     "https://www.shutterstock.com/image-photo/kid-holding-fishing-pole-big-600nw-2646431295.jpg",
+  camping:     "https://www.shutterstock.com/image-photo/two-friends-sit-inside-pitched-260nw-2695984043.jpg",
+
+  // Set 18 — Synonyms for Pretty: noPhoto:true in curriculum, no entries here
+
+  // Set 19 — Parts of the Face
+  eye:         "https://www.shutterstock.com/image-photo/this-extreme-closeup-human-eye-260nw-2704574873.jpg",
+  nose:        "https://www.shutterstock.com/image-photo/human-nose-detailed-macro-nostril-260nw-2708630733.jpg",
+  mouth:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQmdRA_lbjsso99T3247WoMZ7cXkTF41RKoJA&s",
+  ear:         "https://thumbs.dreamstime.com/b/ear-19740150.jpg",
+  cheek:       "https://www.shutterstock.com/image-photo/happy-fingers-on-cheek-portrait-600nw-2482092137.jpg",
+
+  // Set 20 — Synonyms for Big: noPhoto:true in curriculum, no entries here
+
+  // Set 21 — Transport (M2)
+  helicopter:  "https://media.istockphoto.com/id/462483323/photo/helicopter.jpg?s=612x612&w=0&k=20&c=d6iGR8g0gLgtGU7j_IU-Ut1zQmsT0a_6A7ks46AsQpU=",
+  submarine:   "https://www.shutterstock.com/image-photo/us-navy-submarine-260nw-2750073613.jpg",
+  rocket:      "https://www.shutterstock.com/image-photo/rocket-space-on-orbit-planet-600nw-2656054565.jpg",
+  ferry:       "https://www.shutterstock.com/image-photo/ferry-on-open-water-cruising-260nw-2614295567.jpg",
+  subway:      "https://www.shutterstock.com/image-photo/man-waiting-train-london-underground-260nw-2694820287.jpg",
+
+  // Set 22 — Fruit (M2 — exotic fruits beyond M1's basic fruit set)
+  mango:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTQVvzR5EkiMuG8xlamz6vZDrhUCZzWcQUvaQ&s",
+  pineapple:   "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRaYNSXy2fZuNs93BqaQ6wXPndHyglykooD2g&s",
+  kiwi:        "https://media.istockphoto.com/id/834807852/photo/whole-kiwi-fruit-and-half-kiwi-fruit-on-white.jpg?s=612x612&w=0&k=20&c=zliUVnZlYPcOxEDYef7PMmOEEODFr8FUkTYqqFVaRG8=",
+  watermelon:  "https://www.shutterstock.com/image-photo/fresh-whole-half-cut-watermelon-260nw-2759463297.jpg",
+  peach:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS3LnAP2Y6xenZN1_CY07l0EV5jnYX1N2ZLRA&s",
+
+  // Set 23 — Synonyms for Small: noPhoto:true in curriculum, no entries here
 
   // ── MONTH 3 ─────────────────────────────────────────────────────────────
   // Set 6 — Space (galaxy renamed to asteroid)
@@ -3129,7 +3190,7 @@ function ProgressScreen({ child, onBack }) {
           <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:18,color:"#111",margin:0}}>Progress</h2>
           {child && (
             <p style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#aaa",margin:"2px 0 0"}}>
-              {child.emoji} {child.name}
+              {child.avatarPhoto ? "👶" : child.emoji} {child.name}
               {ageFromBirthdate(child.birthdate) && (
                 <span style={{color:RED}}> · {ageFromBirthdate(child.birthdate).label}</span>
               )}
@@ -3677,6 +3738,11 @@ function Onboarding({ onDone, premium, onPremiumNeeded }) {
   const [name, setName] = useState("");
   const [birthdate, setBirthdate] = useState("");
   const [emoji, setEmoji] = useState(CHILD_EMOJIS[0]);
+  // Optional photo avatar — parents can use a real photo of their child
+  // instead of (or in addition to) an emoji. The photo also gets stored as
+  // the family-photos "baby" slot so the "baby" word card uses the same
+  // photo automatically. Per Olivia's design: simpler than two separate slots.
+  const [avatarPhoto, setAvatarPhoto] = useState(null);
   const [gender, setGender] = useState("prefer");
   const [langs, setLangs] = useState(["English"]);
   const [showLangPicker, setShowLangPicker] = useState(false);
@@ -3702,6 +3768,9 @@ function Onboarding({ onDone, premium, onPremiumNeeded }) {
       id,
       name: name.trim(),
       emoji,
+      // If parent uploaded a photo, store it on the child object so the
+      // home screen + profile show the photo as the avatar.
+      avatarPhoto: avatarPhoto || null,
       gender,
       birthdate: birthdate || null,
       languages: langs.length ? langs : ["English"],
@@ -3714,6 +3783,12 @@ function Onboarding({ onDone, premium, onPremiumNeeded }) {
       Object.entries(photoUploads).forEach(([slot, dataUrl]) => {
         if (dataUrl) photoMap[slot] = dataUrl;
       });
+      // Avatar photo also serves as the "baby" family photo — same slot,
+      // simpler mental model. If parent uploaded a separate baby slot photo
+      // earlier, that takes precedence (parent already explicitly chose).
+      if (avatarPhoto && !photoMap.baby) {
+        photoMap.baby = avatarPhoto;
+      }
       if (Object.keys(photoMap).length > 0) {
         localStorage.setItem(`lb-photos-${id}`, JSON.stringify(photoMap));
       }
@@ -3723,6 +3798,7 @@ function Onboarding({ onDone, premium, onPremiumNeeded }) {
     // Reset for next child
     setName(""); setBirthdate("");
     setEmoji(CHILD_EMOJIS[next.length % CHILD_EMOJIS.length]);
+    setAvatarPhoto(null);
     setGender("prefer");
     setLangs(["English"]);
     setEnrollment(null);
@@ -3811,7 +3887,53 @@ function Onboarding({ onDone, premium, onPremiumNeeded }) {
 
           <div style={{width:"100%",maxWidth:360,marginTop:18}}>
             <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:8,letterSpacing:.5,textTransform:"uppercase"}}>Avatar</label>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+
+            {/* Avatar photo + emoji row. The photo upload acts as both the
+                profile avatar AND the "baby" family photo (used on the
+                'baby' word card) — same slot, simpler mental model. */}
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+              <label style={{cursor:"pointer",position:"relative",width:64,height:64,borderRadius:"50%",overflow:"hidden",background:"#fff",border:avatarPhoto?`3px solid ${RED}`:"3px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                {avatarPhoto ? (
+                  <img src={avatarPhoto} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                ) : (
+                  <span style={{fontSize:28,opacity:.4}}>📷</span>
+                )}
+                <input type="file" accept="image/*"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    try {
+                      const dataUrl = await compressImageFile(f);
+                      setAvatarPhoto(dataUrl);
+                    } catch (err) {
+                      setPhotoError("Couldn't read that photo — try another.");
+                    }
+                    e.target.value = "";
+                  }}
+                  style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/>
+              </label>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:13,color:avatarPhoto?"#111":"#666",lineHeight:1.2}}>
+                  {avatarPhoto ? "Photo of " + (name || "your child") : "Use a photo of " + (name || "your child") + "?"}
+                </div>
+                <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.45}}>
+                  {avatarPhoto
+                    ? <span><span style={{color:RED}}>✓ uploaded.</span> Also used on the "baby" flashcard.</span>
+                    : "Tap the circle to upload. Or pick an emoji below."}
+                </div>
+                {avatarPhoto && (
+                  <button type="button" onClick={()=>setAvatarPhoto(null)}
+                    style={{background:"none",border:"none",padding:0,marginTop:4,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#aaa",cursor:"pointer",textDecoration:"underline"}}>
+                    remove photo
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Emoji grid — used when no photo is uploaded. If both are set,
+                photo takes precedence in display; emoji is preserved as a
+                fallback for future use. */}
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,opacity:avatarPhoto?0.5:1}}>
               {CHILD_EMOJIS.map(e=>(
                 <button key={e} onClick={()=>setEmoji(e)}
                   style={{width:44,height:44,fontSize:24,border:`2px solid ${emoji===e?RED:"#eee"}`,background:emoji===e?"#FFF0F1":"#fff",borderRadius:12,cursor:"pointer"}}>
@@ -3819,6 +3941,9 @@ function Onboarding({ onDone, premium, onPremiumNeeded }) {
                 </button>
               ))}
             </div>
+            <p style={{fontFamily:"Nunito,sans-serif",fontSize:10,color:"#aaa",fontWeight:700,marginTop:8,lineHeight:1.5}}>
+              🔒 Photos stay on this device only — they never leave your phone.
+            </p>
           </div>
 
           <div style={{width:"100%",maxWidth:360,marginTop:18}}>
@@ -4171,7 +4296,12 @@ function ChildSwitcher({ activeChild, onOpen }) {
   return (
     <button onClick={onOpen}
       style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:"2px solid #f0f0f0",borderRadius:50,padding:"6px 14px 6px 6px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#333",boxShadow:"0 2px 8px rgba(0,0,0,.04)"}}>
-      <span style={{width:28,height:28,borderRadius:"50%",background:"#FFF0F1",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{activeChild.emoji}</span>
+      {activeChild.avatarPhoto ? (
+        <img src={activeChild.avatarPhoto} alt=""
+          style={{width:28,height:28,borderRadius:"50%",objectFit:"cover",background:"#FFF0F1"}}/>
+      ) : (
+        <span style={{width:28,height:28,borderRadius:"50%",background:"#FFF0F1",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{activeChild.emoji}</span>
+      )}
       {activeChild.name}
       <span style={{fontSize:9,color:"#999",marginLeft:2}}>▼</span>
     </button>
@@ -5127,15 +5257,15 @@ function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, prem
         {!isNew && (
           <div style={{marginTop:16,padding:"14px 14px 12px",background:"#FAFAFA",borderRadius:16,border:"1px solid #f0f0f0"}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-              <label style={{fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",letterSpacing:.5,textTransform:"uppercase"}}>Personal Photos</label>
+              <label style={{fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",letterSpacing:.5,textTransform:"uppercase"}}>Family Photos</label>
               <button type="button" onClick={()=>setShowFamilyInfo(v=>!v)}
-                aria-label="personal photo info"
+                aria-label="family photo info"
                 style={{background:"#eee",border:"none",borderRadius:"50%",width:18,height:18,fontSize:11,lineHeight:"18px",padding:0,cursor:"pointer",color:"#666",fontFamily:"'Fredoka One','Baloo 2',cursive"}}>
                 ?
               </button>
             </div>
             <p style={{fontFamily:"Nunito,sans-serif",fontSize:11,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:10,lineHeight:1.4}}>
-              Upload photos for family, friends, and your home. These appear on the matching flashcards and stay on this device only.
+              Upload a photo for each family-member word. Photos are stored on this device only.
             </p>
 
             {showFamilyInfo && (
@@ -6534,12 +6664,14 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
   const [visible, setVisible] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
   const [finished, setFinished] = useState(false);
-  // Personal-photo upload prompt — shown ONCE at the start of a session if
-  // any upcoming cards reference a "personal" word (home, child, elder,
-  // friend) and the parent hasn't uploaded a photo for it yet. They can
-  // upload, skip individually, or skip all and proceed.
+  // Personal-photo upload prompt — shown JUST BEFORE a card with a personal
+  // word (home, child, elder, friend) is presented, IF the parent hasn't
+  // uploaded a photo for it yet. Dismissed prompts are tracked by set so we
+  // don't repeatedly interrupt within a single session, but we DO ask once
+  // per relevant set. This way parents understand WHY they're being asked
+  // (because the next cards include "your home").
   const [showPersonalPrompt, setShowPersonalPrompt] = useState(false);
-  const [personalPromptDismissed, setPersonalPromptDismissed] = useState(false);
+  const [dismissedPromptSetIds, setDismissedPromptSetIds] = useState(() => new Set());
 
   useEffect(()=>{
     setIdx(0); setFrame(0); setFinished(false); setTransError(null);
@@ -6579,35 +6711,33 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
     run();
   },[language, words, sessionNum, gender]);
 
-  // After cards are built, scan for personal words (home/child/elder/friend)
-  // that don't have an uploaded photo yet. If any are missing, show the
-  // upload prompt before the first card. Only fires once per session mount.
+  // After cards are built (and as idx advances), check if the CURRENT card
+  // references a personal word (home/child/elder/friend) AND the parent
+  // hasn't uploaded a photo yet AND we haven't already prompted for this
+  // set this session. Fire the prompt just-in-time.
   useEffect(() => {
-    if (cards.length === 0 || personalPromptDismissed || finished) return;
+    if (cards.length === 0 || finished || translating) return;
     if (!childId) return;
+    const card = cards[idx];
+    if (!card) return;
+    const eng = (card.original || card.word || "").toLowerCase();
     const PERSONAL_WORDS = ["home", "child", "elder", "friend"];
-    // Check if any upcoming card references a personal word AND that slot is
-    // empty. We use card.original (English canonical) so the check works
-    // regardless of display language.
-    const hasMissing = cards.some(c => {
-      const eng = (c.original || c.word || "").toLowerCase();
-      if (!PERSONAL_WORDS.includes(eng)) return false;
-      // For elder, the alias chain checks grandma/grandpa slots too — only
-      // consider it "missing" if NONE of the relevant slots have a photo.
-      if (eng === "elder") {
-        return !familyPhotos.elder
-          && !familyPhotos.grandma && !familyPhotos.grandpa
-          && !familyPhotos.grandma_paternal && !familyPhotos.grandma_maternal
-          && !familyPhotos.grandpa_paternal && !familyPhotos.grandpa_maternal;
-      }
-      // Same for child → also check baby alias
-      if (eng === "child") {
-        return !familyPhotos.child && !familyPhotos.baby;
-      }
-      return !familyPhotos[eng];
-    });
-    if (hasMissing) setShowPersonalPrompt(true);
-  }, [cards, childId, familyPhotos, personalPromptDismissed, finished]);
+    if (!PERSONAL_WORDS.includes(eng)) return;
+    // Don't re-prompt for a set we already prompted for
+    const setId = card.setId || "_";
+    if (dismissedPromptSetIds.has(setId)) return;
+    // Check if a relevant photo exists. Aliases: child→baby, elder→grandma/grandpa
+    let hasPhoto = !!familyPhotos[eng];
+    if (eng === "child") hasPhoto = hasPhoto || !!familyPhotos.baby;
+    if (eng === "elder") {
+      hasPhoto = hasPhoto
+        || !!familyPhotos.grandma || !!familyPhotos.grandpa
+        || !!familyPhotos.grandma_paternal || !!familyPhotos.grandma_maternal
+        || !!familyPhotos.grandpa_paternal || !!familyPhotos.grandpa_maternal;
+    }
+    if (hasPhoto) return;
+    setShowPersonalPrompt(true);
+  }, [cards, idx, childId, familyPhotos, finished, translating, dismissedPromptSetIds]);
 
   useEffect(()=>{
     if (!speechOn || !visible || translating) return;
@@ -6653,35 +6783,20 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
   if (translating) return <LoadingScreen message={`Translating to ${language}…`}/>;
   if (finished) return <CompleteScreen category="reading" sessionNum={sessionNum} onBack={onBack}/>;
 
-  // Personal-photo upload prompt — gates the session until parent uploads or
-  // skips. Only shown once per mount (personalPromptDismissed prevents re-show).
-  if (showPersonalPrompt && !personalPromptDismissed) {
+  // Personal-photo upload prompt — gates the session at the moment a
+  // personal-word card is about to appear. Single-word focus, NOT a list.
+  if (showPersonalPrompt) {
     const PERSONAL_WORD_INFO = {
-      home:   { emoji: "🏠", label: "Home",   blurb: "your house, apartment, or wherever your family lives" },
-      child:  { emoji: "🧒", label: "Child",  blurb: "your child or another child your baby knows" },
-      elder:  { emoji: "👵", label: "Elder",  blurb: "a grandparent or older relative" },
-      friend: { emoji: "🧑‍🤝‍🧑", label: "Friend", blurb: "a friend of your child's or of your family" },
+      home:   { emoji: "🏠", label: "home",   blurb: "your house, apartment, or wherever your family lives" },
+      child:  { emoji: "🧒", label: "child",  blurb: "your child or another child your baby knows" },
+      elder:  { emoji: "👵", label: "elder",  blurb: "a grandparent or older relative" },
+      friend: { emoji: "🧑‍🤝‍🧑", label: "friend", blurb: "a friend of your child's or of your family" },
     };
-    // Build the actual missing list for this session
-    const missing = [];
-    const seen = new Set();
-    for (const c of cards) {
-      const eng = (c.original || c.word || "").toLowerCase();
-      if (!(eng in PERSONAL_WORD_INFO)) continue;
-      if (seen.has(eng)) continue;
-      seen.add(eng);
-      // Use same alias logic as the effect above
-      let isMissing = !familyPhotos[eng];
-      if (eng === "elder") {
-        isMissing = !familyPhotos.elder
-          && !familyPhotos.grandma && !familyPhotos.grandpa
-          && !familyPhotos.grandma_paternal && !familyPhotos.grandma_maternal
-          && !familyPhotos.grandpa_paternal && !familyPhotos.grandpa_maternal;
-      } else if (eng === "child") {
-        isMissing = !familyPhotos.child && !familyPhotos.baby;
-      }
-      if (isMissing) missing.push(eng);
-    }
+    const card = cards[idx] || {};
+    const eng = (card.original || card.word || "").toLowerCase();
+    const info = PERSONAL_WORD_INFO[eng];
+    const setId = card.setId || "_";
+    const photo = familyPhotos[eng];
 
     const handleUpload = async (slot, file) => {
       if (!file || !childId) return;
@@ -6692,16 +6807,14 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
       } catch {}
     };
 
-    const allDone = missing.every(w => {
-      if (w === "elder") {
-        return familyPhotos.elder
-          || familyPhotos.grandma || familyPhotos.grandpa
-          || familyPhotos.grandma_paternal || familyPhotos.grandma_maternal
-          || familyPhotos.grandpa_paternal || familyPhotos.grandpa_maternal;
-      }
-      if (w === "child") return familyPhotos.child || familyPhotos.baby;
-      return !!familyPhotos[w];
-    });
+    const dismiss = () => {
+      setDismissedPromptSetIds(prev => {
+        const n = new Set(prev);
+        n.add(setId);
+        return n;
+      });
+      setShowPersonalPrompt(false);
+    };
 
     return (
       <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
@@ -6711,56 +6824,50 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
           <div style={{width:38}}/>
         </div>
 
-        <div style={{flex:1,overflowY:"auto",padding:"18px 22px"}}>
-          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#444",lineHeight:1.6,textAlign:"center",margin:"4px 0 18px"}}>
-            Today's session has cards for words like <strong>{missing.map(m => PERSONAL_WORD_INFO[m].label).join(", ")}</strong>. Upload personal photos so {missing.length === 1 ? "this card" : "these cards"} feel meaningful — or skip to use defaults.
-          </p>
-          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:RED,lineHeight:1.55,textAlign:"center",margin:"0 0 18px"}}>
-            💛 Babies LOVE recognizing things they know! A photo of your actual home or grandma turns a flashcard into a moment of recognition.
+        <div style={{flex:1,overflowY:"auto",padding:"24px 22px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+          <div style={{fontSize:64,marginTop:8,marginBottom:6}}>{info?.emoji || "📸"}</div>
+          <h3 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:"0 0 6px",textAlign:"center",lineHeight:1.15}}>
+            The next card is "{info?.label || eng}"
+          </h3>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:14,color:"#444",lineHeight:1.55,textAlign:"center",margin:"4px 0 14px",maxWidth:340}}>
+            Want to upload a photo of {info?.blurb || "this"}? Babies LOVE seeing things they recognize — it turns a flashcard into a real moment of connection. 💛
           </p>
 
-          <div style={{display:"flex",flexDirection:"column",gap:12,maxWidth:380,margin:"0 auto"}}>
-            {missing.map(slot => {
-              const info = PERSONAL_WORD_INFO[slot];
-              const photo = familyPhotos[slot];
-              return (
-                <div key={slot} style={{display:"flex",alignItems:"center",gap:12,padding:12,background:"#FAFAFA",borderRadius:14,border:photo ? `2px solid ${RED}` : "1px solid #eee"}}>
-                  <label style={{cursor:"pointer",position:"relative",width:64,height:64,borderRadius:12,overflow:"hidden",background:"#fff",border:photo?`2px solid ${RED}`:"2px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    {photo ? (
-                      <img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                    ) : (
-                      <span style={{fontSize:26,opacity:.5}}>{info.emoji}</span>
-                    )}
-                    <input type="file" accept="image/*"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(slot, f); e.target.value = ""; }}
-                      style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/>
-                  </label>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",lineHeight:1.2}}>
-                      {info.label} {photo && <span style={{color:RED,fontSize:11}}>· uploaded ✓</span>}
-                    </div>
-                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.45}}>
-                      {info.blurb}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          {/* Upload box */}
+          <label style={{cursor:"pointer",position:"relative",width:160,height:160,borderRadius:20,overflow:"hidden",background:"#fff",border:photo?`3px solid ${RED}`:"3px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center",margin:"4px 0 14px"}}>
+            {photo ? (
+              <img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                <span style={{fontSize:42,opacity:.4}}>{info?.emoji}</span>
+                <span style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#aaa",letterSpacing:.5}}>tap to upload</span>
+              </div>
+            )}
+            <input type="file" accept="image/*"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(eng, f); e.target.value = ""; }}
+              style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/>
+          </label>
+
+          {photo && (
+            <p style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:RED,margin:"0 0 10px"}}>
+              ✓ uploaded — looks great!
+            </p>
+          )}
+
+          {/* Privacy reassurance — explicit per Olivia's request */}
+          <div style={{maxWidth:340,padding:"10px 14px",background:"#F0FAF4",border:"1px solid #C5E5D0",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#2D5F3F",lineHeight:1.55,marginBottom:6}}>
+            🔒 <strong>This photo stays on your phone.</strong> It never leaves your device — not to our servers, not to the cloud. You can delete it anytime.
           </div>
-
-          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",lineHeight:1.5,textAlign:"center",margin:"18px 0 6px",fontStyle:"italic"}}>
-            Photos are stored on this device only — they never leave your phone. You can also manage these in your child's profile anytime.
-          </p>
         </div>
 
         <div style={{padding:"12px 18px 18px",borderTop:"1px solid #f0f0f0",display:"flex",gap:10}}>
-          <button onClick={() => setPersonalPromptDismissed(true)}
+          <button onClick={dismiss}
             style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
-            skip for now
+            skip — use default
           </button>
-          <button onClick={() => setPersonalPromptDismissed(true)}
+          <button onClick={dismiss}
             style={{flex:1,background:RED,border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
-            {allDone ? "start session →" : "continue →"}
+            {photo ? "show card →" : "continue →"}
           </button>
         </div>
       </div>
