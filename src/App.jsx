@@ -934,7 +934,7 @@ function getSetsForPosition(allSetsArray, position, month) {
 // The parent only sees the specific slots if at least one of the child's
 // learning languages uses them (dynamic display, decision C from user).
 const FAMILY_PHOTO_WORDS = [
-  "mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada","friend"
+  "mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada","friend","child","elder","home"
 ];
 
 // Kinship slot mapping — when the curriculum card has a specific kinship
@@ -2301,67 +2301,152 @@ function titleForKnowledge(cardId, language) {
 // takes priority over the picsum.photos placeholder. URLs are expected to be
 // publicly accessible (Wikipedia Commons, etc.). Empty entries or missing keys
 // fall through to picsum.
+//
+// This map is populated from Olivia's curriculum spreadsheet — when she
+// updates a row's "Existing Photo URL" column there, the value gets added or
+// replaced here. M1 has all 12 sets done; M2 has the first 8 sets done; M3 is
+// pending.
 const KNOWLEDGE_PHOTO_URLS = {
-  cleopatra: "https://upload.wikimedia.org/wikipedia/commons/3/3e/Kleopatra-VII.-Altes-Museum-Berlin1.jpg",
-  joan_of_arc: "https://i.natgeofe.com/k/f1c570bf-a993-432e-bcc8-13e58d1d13c2/joan-of-arc-profile_16x9.jpg",
-  queen_victoria: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Queen_Victoria_by_Bassano.jpg/500px-Queen_Victoria_by_Bassano.jpg",
-  amelia_earhart: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Amelia_Earhart_standing_under_nose_of_her_Lockheed_Model_10-E_Electra%2C_small_%28cropped%29.jpg/500px-Amelia_Earhart_standing_under_nose_of_her_Lockheed_Model_10-E_Electra%2C_small_%28cropped%29.jpg",
-  marie_curie: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Marie_Curie_c._1920s.jpg/500px-Marie_Curie_c._1920s.jpg",
-  mlk: "https://upload.wikimedia.org/wikipedia/commons/0/05/Martin_Luther_King%2C_Jr..jpg",
-  gandhi: "https://cdn.britannica.com/66/194466-050-CD294675/Mahatma-Gandhi-1931.jpg?w=740&h=416&c=crop",
-  mandela: "https://i0.wp.com/www.culturetype.com/wp-content/uploads/2013/12/mandela.png?ssl=1",
-  mother_teresa: "https://cdn.britannica.com/42/155442-050-AB85E00E/Mother-Teresa.jpg",
-  einstein: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/Albert_Einstein_Head_cleaned.jpg/250px-Albert_Einstein_Head_cleaned.jpg",
-  eiffel_tower: "https://media.architecturaldigest.com/photos/66a951edce728792a48166e6/master/pass/GettyImages-955441104.jpg",
-  great_wall: "https://images.nationalgeographic.org/image/upload/t_edhub_resource_key_image/v1638892506/EducationHub/photos/the-great-wall-of-china.jpg",
-  statue_liberty: "https://www.exp1.com/wp-content/uploads/sites/2/2025/02/AdobeStock_268267939-scaled.jpeg",
-  pyramid: "https://cdn.mos.cms.futurecdn.net/YMa7Wx2FyjQFUjEeqa72Rm-1200-80.jpg",
-  taj_mahal: "https://media.architecturaldigest.com/photos/67acb9b0339bcbaaadeb91b5/3:2/w_5850,h_3900,c_limit/GettyImages-873536102.jpg",
-  white_house: "https://media.architecturaldigest.com/photos/6559735fb796d428bef00d25/4:3/w_4948,h_3711,c_limit/GettyImages-1731443210.jpg",
-  mt_rushmore: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Mount_Rushmore_detail_view_%28100MP%29.jpg/1280px-Mount_Rushmore_detail_view_%28100MP%29.jpg",
-  liberty_bell: "https://www.nps.gov/inde/images/DSC8249.jpg",
-  italy_flag: "https://flagcdn.com/w320/it.png",
-  france_flag: "https://flagcdn.com/w320/fr.png",
-  germany_flag: "https://flagcdn.com/w320/de.png",
-  spain_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Bandera_de_Espa%C3%B1a.svg/1280px-Bandera_de_Espa%C3%B1a.svg.png",
-  uk_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Flag_of_the_United_Kingdom_%283-5%29.svg/250px-Flag_of_the_United_Kingdom_%283-5%29.svg.png",
-  american_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg/330px-Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg.png",
-  usa_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg/330px-Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg.png",
-  japan_flag: "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Flag_of_Japan.svg/1280px-Flag_of_Japan.svg.png",
-  china_flag: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Flag_of_the_People%27s_Republic_of_China.svg/330px-Flag_of_the_People%27s_Republic_of_China.svg.png",
-  korea_flag: "https://flagcdn.com/w320/kr.png",
-  india_flag: "https://flagcdn.com/w320/in.png",
-  vietnam_flag: "https://flagcdn.com/w320/vn.png",
-  labrador: "https://bestforpet.co.nz/wp-content/uploads/2025/07/Labrador_Retriever_1200x800.jpg",
-  poodle: "https://upload.wikimedia.org/wikipedia/commons/f/f8/Full_attention_%288067543690%29.jpg",
-  bulldog: "https://upload.wikimedia.org/wikipedia/commons/b/bf/Bulldog_inglese.jpg",
-  husky: "https://www.akc.org/wp-content/uploads/2017/11/Siberian-Husky-standing-outdoors-in-the-winter.jpg",
-  corgi: "https://www.akc.org/wp-content/uploads/2017/11/Pembroke-Welsh-Corgi-standing-outdoors-in-the-fall.jpg",
-  soccer_ball: "https://upload.wikimedia.org/wikipedia/commons/1/1d/Football_Pallo_valmiina-cropped.jpg",
-  basketball: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Basketball.png/250px-Basketball.png",
-  baseball: "https://upload.wikimedia.org/wikipedia/en/1/1e/Baseball_%28crop%29.jpg",
-  tennis_ball: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Tennis_Racket_and_Balls.jpg/250px-Tennis_Racket_and_Balls.jpg",
-  football: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/American_football.svg/960px-American_football.svg.png",
-  lion: "https://images.squarespace-cdn.com/content/v1/5b061f0e0dbda31446baccc0/1527895159358-L9MJ3G7A5ITWRIB8F0SZ/image-asset.jpeg?format=2500w",
-  tiger: "https://upload.wikimedia.org/wikipedia/commons/b/b0/Bengal_tiger_%28Panthera_tigris_tigris%29_female_3_crop.jpg",
-  leopard: "https://upload.wikimedia.org/wikipedia/commons/8/8e/Nagarhole_Kabini_Karnataka_India%2C_Leopard_September_2013.jpg",
-  cheetah: "https://upload.wikimedia.org/wikipedia/commons/9/92/Male_cheetah_facing_left_in_South_Africa.jpg",
-  jaguar: "https://upload.wikimedia.org/wikipedia/commons/0/0a/Standing_jaguar.jpg",
-  elephant: "https://upload.wikimedia.org/wikipedia/commons/9/94/178_Male_African_bush_elephant_in_Etosha_National_Park_Photo_by_Giles_Laurent.jpg",
-  giraffe: "https://www.andbeyond.com/wp-content/uploads/sites/5/Giraffe-Maasai-01-no-bgnd.png",
-  zebra: "https://upload.wikimedia.org/wikipedia/commons/9/96/Plains_Zebra_Equus_quagga_cropped.jpg",
-  rhinoceros: "https://upload.wikimedia.org/wikipedia/commons/6/69/Black_Rhino_at_Working_with_Wildlife.jpg",
-  sedan: "https://upload.wikimedia.org/wikipedia/commons/b/b6/Toyota_Camry_2.5_Hybrid_Ascent_Sport_%28IX%29_%E2%80%93_f_02012026.jpg",
-  suv: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSa1Dr4_J2mIRM7EeCMbRI6pLOuMKWsH4_7sBbQqQ5pI1RgFjh93fgqcDM&s=10",
-  sportscar: "https://imageio.forbes.com/specials-images/imageserve/6064c6802c761b99a89d1f21/0x0.jpg?format=jpg&crop=2375,1336,x0,y120,safe&height=600&width=1200&fit=bounds",
-  pickup: "https://upload.wikimedia.org/wikipedia/commons/0/02/Ford_F-150_crew_cab_--_05-28-2011.jpg",
-  convertible: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/Peugeot-204-cabriolet-de-1968-rouge-China-1135-villegiature-arriere.jpg/1920px-Peugeot-204-cabriolet-de-1968-rouge-China-1135-villegiature-arriere.jpg",
-  sushi: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/60/Sushi_platter.jpg/330px-Sushi_platter.jpg",
-  pizza: "https://upload.wikimedia.org/wikipedia/commons/9/91/Pizza-3007395.jpg",
-  tacos: "https://upload.wikimedia.org/wikipedia/commons/7/73/001_Tacos_de_carnitas%2C_carne_asada_y_al_pastor.jpg",
-  curry: "https://www.allrecipes.com/thmb/n_0kMGogNFnpJhGhGCf8cNoFqo4=/0x512/filters:no_upscale():max_bytes(150000):strip_icc()/46822-Indian-Chicken-Curry-PICS-Beauty-4x3-9535b806e7dc4f1da14f8ddb7a6367a4.jpg",
-  croissant: "https://upload.wikimedia.org/wikipedia/commons/2/2a/Croissant-Petr_Kratochvil.jpg",
-  bald_eagle: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Bald_eagle_about_to_fly_in_Alaska_%282016%29.jpg/1280px-Bald_eagle_about_to_fly_in_Alaska_%282016%29.jpg",
+  // ── MONTH 1 ───────────────────────────────────────────────────────────────
+  // Set 1 — Epic Historical Women
+  cleopatra:        "https://upload.wikimedia.org/wikipedia/commons/3/3e/Kleopatra-VII.-Altes-Museum-Berlin1.jpg",
+  joan_of_arc:      "https://i.natgeofe.com/k/f1c570bf-a993-432e-bcc8-13e58d1d13c2/joan-of-arc-profile_16x9.jpg",
+  queen_victoria:   "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Queen_Victoria_by_Bassano.jpg/500px-Queen_Victoria_by_Bassano.jpg",
+  amelia_earhart:   "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Amelia_Earhart_standing_under_nose_of_her_Lockheed_Model_10-E_Electra%2C_small_%28cropped%29.jpg/500px-Amelia_Earhart_standing_under_nose_of_her_Lockheed_Model_10-E_Electra%2C_small_%28cropped%29.jpg",
+  marie_curie:      "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Marie_Curie_c._1920s.jpg/500px-Marie_Curie_c._1920s.jpg",
+
+  // Set 2 — Flags of Europe
+  italy_flag:       "https://flagcdn.com/w320/it.png",
+  france_flag:      "https://flagcdn.com/w320/fr.png",
+  germany_flag:     "https://flagcdn.com/w320/de.png",
+  spain_flag:       "https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Bandera_de_Espa%C3%B1a.svg/1280px-Bandera_de_Espa%C3%B1a.svg.png",
+  uk_flag:          "https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Flag_of_the_United_Kingdom_%283-5%29.svg/250px-Flag_of_the_United_Kingdom_%283-5%29.svg.png",
+
+  // Set 3 — Landmarks
+  eiffel_tower:     "https://media.architecturaldigest.com/photos/66a951edce728792a48166e6/master/pass/GettyImages-955441104.jpg",
+  great_wall:       "https://images.nationalgeographic.org/image/upload/t_edhub_resource_key_image/v1638892506/EducationHub/photos/the-great-wall-of-china.jpg",
+  statue_liberty:   "https://www.exp1.com/wp-content/uploads/sites/2/2025/02/AdobeStock_268267939-scaled.jpeg",
+  pyramid:          "https://cdn.mos.cms.futurecdn.net/YMa7Wx2FyjQFUjEeqa72Rm-1200-80.jpg",
+  taj_mahal:        "https://media.architecturaldigest.com/photos/67acb9b0339bcbaaadeb91b5/3:2/w_5850,h_3900,c_limit/GettyImages-873536102.jpg",
+
+  // Set 4 — Dog Breeds
+  labrador:         "https://bestforpet.co.nz/wp-content/uploads/2025/07/Labrador_Retriever_1200x800.jpg",
+  poodle:           "https://upload.wikimedia.org/wikipedia/commons/f/f8/Full_attention_%288067543690%29.jpg",
+  bulldog:          "https://upload.wikimedia.org/wikipedia/commons/b/bf/Bulldog_inglese.jpg",
+  husky:            "https://www.akc.org/wp-content/uploads/2017/11/Siberian-Husky-standing-outdoors-in-the-winter.jpg",
+  corgi:            "https://www.akc.org/wp-content/uploads/2017/11/Pembroke-Welsh-Corgi-standing-outdoors-in-the-fall.jpg",
+
+  // Set 5 — Sport Balls
+  soccer_ball:      "https://upload.wikimedia.org/wikipedia/commons/1/1d/Football_Pallo_valmiina-cropped.jpg",
+  basketball:       "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Basketball.png/250px-Basketball.png",
+  baseball:         "https://upload.wikimedia.org/wikipedia/en/1/1e/Baseball_%28crop%29.jpg",
+  tennis_ball:      "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Tennis_Racket_and_Balls.jpg/250px-Tennis_Racket_and_Balls.jpg",
+  football:         "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/American_football.svg/960px-American_football.svg.png",
+
+  // Set 6 — Symbols of America
+  bald_eagle:       "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Bald_eagle_about_to_fly_in_Alaska_%282016%29.jpg/1280px-Bald_eagle_about_to_fly_in_Alaska_%282016%29.jpg",
+  liberty_bell:     "https://www.nps.gov/inde/images/DSC8249.jpg",
+  american_flag:    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg/330px-Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg.png",
+  white_house:      "https://media.architecturaldigest.com/photos/6559735fb796d428bef00d25/4:3/w_4948,h_3711,c_limit/GettyImages-1731443210.jpg",
+  mt_rushmore:      "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Mount_Rushmore_detail_view_%28100MP%29.jpg/1280px-Mount_Rushmore_detail_view_%28100MP%29.jpg",
+
+  // Set 7 — Flags of Asia
+  japan_flag:       "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Flag_of_Japan.svg/1280px-Flag_of_Japan.svg.png",
+  china_flag:       "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Flag_of_the_People%27s_Republic_of_China.svg/330px-Flag_of_the_People%27s_Republic_of_China.svg.png",
+  korea_flag:       "https://flagcdn.com/w320/kr.png",
+  india_flag:       "https://flagcdn.com/w320/in.png",
+  vietnam_flag:     "https://flagcdn.com/w320/vn.png",
+
+  // Set 8 — Big Cats
+  lion:             "https://images.squarespace-cdn.com/content/v1/5b061f0e0dbda31446baccc0/1527895159358-L9MJ3G7A5ITWRIB8F0SZ/image-asset.jpeg?format=2500w",
+  tiger:            "https://upload.wikimedia.org/wikipedia/commons/b/b0/Bengal_tiger_%28Panthera_tigris_tigris%29_female_3_crop.jpg",
+  leopard:          "https://upload.wikimedia.org/wikipedia/commons/8/8e/Nagarhole_Kabini_Karnataka_India%2C_Leopard_September_2013.jpg",
+  cheetah:          "https://upload.wikimedia.org/wikipedia/commons/9/92/Male_cheetah_facing_left_in_South_Africa.jpg",
+  jaguar:           "https://upload.wikimedia.org/wikipedia/commons/0/0a/Standing_jaguar.jpg",
+
+  // Set 9 — Kinds of Automobiles
+  sedan:            "https://upload.wikimedia.org/wikipedia/commons/b/b6/Toyota_Camry_2.5_Hybrid_Ascent_Sport_%28IX%29_%E2%80%93_f_02012026.jpg",
+  suv:              "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSa1Dr4_J2mIRM7EeCMbRI6pLOuMKWsH4_7sBbQqQ5pI1RgFjh93fgqcDM&s=10",
+  sportscar:        "https://imageio.forbes.com/specials-images/imageserve/6064c6802c761b99a89d1f21/0x0.jpg?format=jpg&crop=2375,1336,x0,y120,safe&height=600&width=1200&fit=bounds",
+  pickup:           "https://upload.wikimedia.org/wikipedia/commons/0/02/Ford_F-150_crew_cab_--_05-28-2011.jpg",
+  convertible:      "https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/Peugeot-204-cabriolet-de-1968-rouge-China-1135-villegiature-arriere.jpg/1920px-Peugeot-204-cabriolet-de-1968-rouge-China-1135-villegiature-arriere.jpg",
+
+  // Set 10 — Inspirational People
+  mlk:              "https://upload.wikimedia.org/wikipedia/commons/0/05/Martin_Luther_King%2C_Jr..jpg",
+  gandhi:           "https://cdn.britannica.com/66/194466-050-CD294675/Mahatma-Gandhi-1931.jpg?w=740&h=416&c=crop",
+  mandela:          "https://i0.wp.com/www.culturetype.com/wp-content/uploads/2013/12/mandela.png?ssl=1",
+  mother_teresa:    "https://cdn.britannica.com/42/155442-050-AB85E00E/Mother-Teresa.jpg",
+  einstein:         "https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/Albert_Einstein_Head_cleaned.jpg/250px-Albert_Einstein_Head_cleaned.jpg",
+
+  // Set 11 — African Animals (M1 knowledge — different photos than the
+  // Animals single-word set, which uses live-photo crops)
+  elephant:         "https://upload.wikimedia.org/wikipedia/commons/9/94/178_Male_African_bush_elephant_in_Etosha_National_Park_Photo_by_Giles_Laurent.jpg",
+  giraffe:          "https://www.andbeyond.com/wp-content/uploads/sites/5/Giraffe-Maasai-01-no-bgnd.png",
+  zebra:            "https://upload.wikimedia.org/wikipedia/commons/9/96/Plains_Zebra_Equus_quagga_cropped.jpg",
+  rhinoceros:       "https://upload.wikimedia.org/wikipedia/commons/6/69/Black_Rhino_at_Working_with_Wildlife.jpg",
+
+  // Set 12 — International Cuisine
+  sushi:            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/60/Sushi_platter.jpg/330px-Sushi_platter.jpg",
+  pizza:            "https://upload.wikimedia.org/wikipedia/commons/9/91/Pizza-3007395.jpg",
+  tacos:            "https://upload.wikimedia.org/wikipedia/commons/7/73/001_Tacos_de_carnitas%2C_carne_asada_y_al_pastor.jpg",
+  curry:            "https://www.allrecipes.com/thmb/n_0kMGogNFnpJhGhGCf8cNoFqo4=/0x512/filters:no_upscale():max_bytes(150000):strip_icc()/46822-Indian-Chicken-Curry-PICS-Beauty-4x3-9535b806e7dc4f1da14f8ddb7a6367a4.jpg",
+  croissant:        "https://upload.wikimedia.org/wikipedia/commons/2/2a/Croissant-Petr_Kratochvil.jpg",
+
+  // ── MONTH 2 ───────────────────────────────────────────────────────────────
+  // Set 1 — Historic Landmarks
+  colosseum:        "https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/Colosseo_2020.jpg/1280px-Colosseo_2020.jpg",
+  acropolis:        "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/1029_Acropolis_of_Athens_in_Greece_at_night_Photo_by_Giles_Laurent.jpg/1280px-1029_Acropolis_of_Athens_in_Greece_at_night_Photo_by_Giles_Laurent.jpg",
+  machu_picchu:     "https://cdn.mos.cms.futurecdn.net/WFJBpzs4J5x3uvbeKdnm3i.jpg",
+  angkor_wat:       "https://cdn.britannica.com/49/94449-050-ECB0E7C2/Angkor-Wat-temple-complex-Cambodia.jpg",
+  stonehenge:       "https://upload.wikimedia.org/wikipedia/commons/3/3c/Stonehenge2007_07_30.jpg",
+
+  // Set 2 — Technology
+  smartphone:       "https://upload.wikimedia.org/wikipedia/commons/6/66/Wikipedia_homepage_on_a_large_Android_phone%2C_2015-04-16.jpg",
+  laptop:           "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Macbook_Air.jpg/250px-Macbook_Air.jpg",
+  headphones:       "https://upload.wikimedia.org/wikipedia/commons/7/7e/Apple_airpods_max_1.jpg",
+  drone:            "https://upload.wikimedia.org/wikipedia/commons/2/2f/DJI_Mavic_Pro.jpg",
+  smartwatch:       "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Smartwatch-828786.jpg/250px-Smartwatch-828786.jpg",
+
+  // Set 3 — Sports (M2 knowledge — separate from M1 single-word "Sports")
+  soccer:           "https://upload.wikimedia.org/wikipedia/commons/1/1d/Football_Pallo_valmiina-cropped.jpg",
+  tennis:           "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Tennis_Racket_and_Balls.jpg/250px-Tennis_Racket_and_Balls.jpg",
+  golf:             "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Golf_ball_resting_near_fairway_wood.jpg/250px-Golf_ball_resting_near_fairway_wood.jpg",
+  surfing:          "https://upload.wikimedia.org/wikipedia/commons/0/03/Surfer_at_the_Cayucos_Pier%2C_Cayucos%2C_CA.jpg",
+
+  // Set 4 — Presidents of the USA
+  washington:       "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b6/Gilbert_Stuart_Williamstown_Portrait_of_George_Washington.jpg/250px-Gilbert_Stuart_Williamstown_Portrait_of_George_Washington.jpg",
+  lincoln:          "https://upload.wikimedia.org/wikipedia/commons/5/57/Abraham_Lincoln_1863_Portrait_%283x4_cropped%29.jpg",
+  jefferson:        "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Official_Presidential_portrait_of_Thomas_Jefferson_%28by_Rembrandt_Peale%2C_1800%29.jpg/1280px-Official_Presidential_portrait_of_Thomas_Jefferson_%28by_Rembrandt_Peale%2C_1800%29.jpg",
+  roosevelt:        "https://upload.wikimedia.org/wikipedia/commons/f/fd/FDR-1944-Campaign-Portrait_%283x4_retouched%2C_cropped%29.jpg",
+  kennedy:          "https://upload.wikimedia.org/wikipedia/commons/c/c3/John_F._Kennedy%2C_White_House_color_photo_portrait.jpg",
+
+  // Set 5 — Kinds of Transport
+  airplane:         "https://upload.wikimedia.org/wikipedia/commons/f/fc/Tarom.b737-700.yr-bgg.arp.jpg",
+  ship:             "https://upload.wikimedia.org/wikipedia/commons/5/5c/John_C._Munro_off_Hong_Kong.jpg",
+  train:            "https://upload.wikimedia.org/wikipedia/commons/2/2f/Amtrak_Auto_Train_52_Passing_Through_Guinea_Station%2C_Virginia.jpg",
+  helicopter:       "https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/LAPD_Bell_206_Jetranger.jpg/1280px-LAPD_Bell_206_Jetranger.jpg",
+  bicycle:          "https://upload.wikimedia.org/wikipedia/commons/4/41/Left_side_of_Flying_Pigeon.jpg",
+
+  // Set 6 — Flags of the Americas
+  usa_flag:         "https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg/330px-Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg.png",
+  canada_flag:      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQBrulrU-JxvhfVpwPi0wP0TiznF1l45VKr6w&s",
+  mexico_flag:      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTSU-LvJrvDaVpgqybZPd56vT29q1hzjy-SNg&s",
+  brazil_flag:      "https://upload.wikimedia.org/wikipedia/en/thumb/0/05/Flag_of_Brazil.svg/1280px-Flag_of_Brazil.svg.png",
+  argentina_flag:   "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Flag_of_Argentina.svg/3840px-Flag_of_Argentina.svg.png",
+
+  // Set 7 — Organs
+  heart:            "https://media.istockphoto.com/id/1180569346/photo/illustration-of-human-heart.jpg?s=612x612&w=0&k=20&c=41cSBsdFbapUV5ludmXyCIVEwxu__ha6jSi-nZ85ErE=",
+  brain:            "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR3AbK374TCcBwY9_mSBteYkuKjDzl2xwjrGg&s",
+  lungs:            "https://media.istockphoto.com/id/1363838390/vector/watercolor-illustration-of-hand-painted-pink-abstract-anatomical-scheme-of-healthy-human.jpg?s=612x612&w=0&k=20&c=lz-gCTMcYeh8-ViClrHlVymkKOXfcYSHnWijJj8y_7Y=",
+  liver:            "https://media.istockphoto.com/id/475964404/photo/realistic-human-liver-illustration.jpg?s=612x612&w=0&k=20&c=7wYX0KeuMEIM-mqd9N0x6vLmH0gnS_tcFbhqidnY0jg=",
+  kidneys:          "https://www.shutterstock.com/image-photo/miniature-human-kidneys-model-on-260nw-2704489321.jpg",
+
+  // Set 8 — Occupations
+  doctor:           "https://www.shutterstock.com/image-photo/healthcare-medical-staff-concept-portrait-600nw-2281024823.jpg",
+  teacher:          "https://plus.unsplash.com/premium_photo-1661380797814-d0bcc01342b7?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8dGVhY2hlcnxlbnwwfHwwfHx8MA%3D%3D",
+  architect:        "https://www.shutterstock.com/image-photo/architect-analyzing-building-blueprints-on-600nw-2704338027.jpg",
+  chef:             "https://www.shutterstock.com/image-photo/portrait-female-chef-preparing-vegetarian-260nw-2657869605.jpg",
+  scientist:        "https://media.istockphoto.com/id/185107952/photo/female-scientist-analyzing-sample-in-conical-flask-isolated.jpg?s=612x612&w=0&k=20&c=JWKbwYnEKKPRBnKtkDCNO7iAxUDJT6Yr2VulKha7Oc4=",
 };
 
 function photoUrlForKnowledge(cardId) {
@@ -2408,7 +2493,11 @@ const WORD_PHOTO_URLS = {
   lamp:       "https://upload.wikimedia.org/wikipedia/commons/7/79/Lampshades.jpg",
 
   // Set 5 — Places
-  home:       "https://maps.googleapis.com/maps/api/streetview?location=6332+N+Charlotte+Ave%2C+San+Gabriel%2C+CA+91775&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=oqowQU2HzQzwWsnFKugJvfgPD8s=",
+  // NOTE: "home" was previously bundled with a Google Maps Street View URL
+  // pointing at a specific real address with an embedded API key. Removed for
+  // security (key was visible in bundled JS) and personalization — parents
+  // can now upload a photo of their actual home from the profile editor's
+  // Family Photos grid. Falls through to the 🏠 emoji if nothing uploaded.
   park:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS7Q9Ic7HZVY36bmOhX4qTpCNOFP2COpsJGLA&s",
   school:     "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/A_child_development_center_and_day_care_in_the_United_States.jpg/250px-A_child_development_center_and_day_care_in_the_United_States.jpg",
   beach:      "https://upload.wikimedia.org/wikipedia/commons/1/1f/Lanikai_Beach%2C_Hawaii.JPG",
@@ -5038,15 +5127,15 @@ function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, prem
         {!isNew && (
           <div style={{marginTop:16,padding:"14px 14px 12px",background:"#FAFAFA",borderRadius:16,border:"1px solid #f0f0f0"}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-              <label style={{fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",letterSpacing:.5,textTransform:"uppercase"}}>Family Photos</label>
+              <label style={{fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",letterSpacing:.5,textTransform:"uppercase"}}>Personal Photos</label>
               <button type="button" onClick={()=>setShowFamilyInfo(v=>!v)}
-                aria-label="family photo info"
+                aria-label="personal photo info"
                 style={{background:"#eee",border:"none",borderRadius:"50%",width:18,height:18,fontSize:11,lineHeight:"18px",padding:0,cursor:"pointer",color:"#666",fontFamily:"'Fredoka One','Baloo 2',cursive"}}>
                 ?
               </button>
             </div>
             <p style={{fontFamily:"Nunito,sans-serif",fontSize:11,color:"#aaa",fontWeight:700,marginTop:0,marginBottom:10,lineHeight:1.4}}>
-              Upload a photo for each family-member word. Photos are stored on this device only.
+              Upload photos for family, friends, and your home. These appear on the matching flashcards and stay on this device only.
             </p>
 
             {showFamilyInfo && (
@@ -6430,7 +6519,11 @@ function ProgressBar({ index, total }) {
 // ── READING SESSION (3-frame Doman: word → photo → word → next) ───────────────
 
 function ReadingSession({ childId, words, language, speechOn, sessionNum, gender, onBack, onComplete }) {
-  const familyPhotos = useMemo(() => childId ? getFamilyPhotos(childId) : {}, [childId]);
+  const [familyPhotos, setFamilyPhotos] = useState(() => childId ? getFamilyPhotos(childId) : {});
+  // Re-read photos when childId changes
+  useEffect(() => {
+    if (childId) setFamilyPhotos(getFamilyPhotos(childId));
+  }, [childId]);
   const isPhonePortrait = useIsPhonePortrait();
   const [orientationDismissed, setOrientationDismissed] = useState(false);
   const [cards, setCards]     = useState([]);
@@ -6441,6 +6534,12 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
   const [visible, setVisible] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
   const [finished, setFinished] = useState(false);
+  // Personal-photo upload prompt — shown ONCE at the start of a session if
+  // any upcoming cards reference a "personal" word (home, child, elder,
+  // friend) and the parent hasn't uploaded a photo for it yet. They can
+  // upload, skip individually, or skip all and proceed.
+  const [showPersonalPrompt, setShowPersonalPrompt] = useState(false);
+  const [personalPromptDismissed, setPersonalPromptDismissed] = useState(false);
 
   useEffect(()=>{
     setIdx(0); setFrame(0); setFinished(false); setTransError(null);
@@ -6479,6 +6578,36 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
     };
     run();
   },[language, words, sessionNum, gender]);
+
+  // After cards are built, scan for personal words (home/child/elder/friend)
+  // that don't have an uploaded photo yet. If any are missing, show the
+  // upload prompt before the first card. Only fires once per session mount.
+  useEffect(() => {
+    if (cards.length === 0 || personalPromptDismissed || finished) return;
+    if (!childId) return;
+    const PERSONAL_WORDS = ["home", "child", "elder", "friend"];
+    // Check if any upcoming card references a personal word AND that slot is
+    // empty. We use card.original (English canonical) so the check works
+    // regardless of display language.
+    const hasMissing = cards.some(c => {
+      const eng = (c.original || c.word || "").toLowerCase();
+      if (!PERSONAL_WORDS.includes(eng)) return false;
+      // For elder, the alias chain checks grandma/grandpa slots too — only
+      // consider it "missing" if NONE of the relevant slots have a photo.
+      if (eng === "elder") {
+        return !familyPhotos.elder
+          && !familyPhotos.grandma && !familyPhotos.grandpa
+          && !familyPhotos.grandma_paternal && !familyPhotos.grandma_maternal
+          && !familyPhotos.grandpa_paternal && !familyPhotos.grandpa_maternal;
+      }
+      // Same for child → also check baby alias
+      if (eng === "child") {
+        return !familyPhotos.child && !familyPhotos.baby;
+      }
+      return !familyPhotos[eng];
+    });
+    if (hasMissing) setShowPersonalPrompt(true);
+  }, [cards, childId, familyPhotos, personalPromptDismissed, finished]);
 
   useEffect(()=>{
     if (!speechOn || !visible || translating) return;
@@ -6523,6 +6652,120 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
 
   if (translating) return <LoadingScreen message={`Translating to ${language}…`}/>;
   if (finished) return <CompleteScreen category="reading" sessionNum={sessionNum} onBack={onBack}/>;
+
+  // Personal-photo upload prompt — gates the session until parent uploads or
+  // skips. Only shown once per mount (personalPromptDismissed prevents re-show).
+  if (showPersonalPrompt && !personalPromptDismissed) {
+    const PERSONAL_WORD_INFO = {
+      home:   { emoji: "🏠", label: "Home",   blurb: "your house, apartment, or wherever your family lives" },
+      child:  { emoji: "🧒", label: "Child",  blurb: "your child or another child your baby knows" },
+      elder:  { emoji: "👵", label: "Elder",  blurb: "a grandparent or older relative" },
+      friend: { emoji: "🧑‍🤝‍🧑", label: "Friend", blurb: "a friend of your child's or of your family" },
+    };
+    // Build the actual missing list for this session
+    const missing = [];
+    const seen = new Set();
+    for (const c of cards) {
+      const eng = (c.original || c.word || "").toLowerCase();
+      if (!(eng in PERSONAL_WORD_INFO)) continue;
+      if (seen.has(eng)) continue;
+      seen.add(eng);
+      // Use same alias logic as the effect above
+      let isMissing = !familyPhotos[eng];
+      if (eng === "elder") {
+        isMissing = !familyPhotos.elder
+          && !familyPhotos.grandma && !familyPhotos.grandpa
+          && !familyPhotos.grandma_paternal && !familyPhotos.grandma_maternal
+          && !familyPhotos.grandpa_paternal && !familyPhotos.grandpa_maternal;
+      } else if (eng === "child") {
+        isMissing = !familyPhotos.child && !familyPhotos.baby;
+      }
+      if (isMissing) missing.push(eng);
+    }
+
+    const handleUpload = async (slot, file) => {
+      if (!file || !childId) return;
+      try {
+        const dataUrl = await compressImageFile(file);
+        setFamilyPhoto(childId, slot, dataUrl);
+        setFamilyPhotos(getFamilyPhotos(childId));
+      } catch {}
+    };
+
+    const allDone = missing.every(w => {
+      if (w === "elder") {
+        return familyPhotos.elder
+          || familyPhotos.grandma || familyPhotos.grandpa
+          || familyPhotos.grandma_paternal || familyPhotos.grandma_maternal
+          || familyPhotos.grandpa_paternal || familyPhotos.grandpa_maternal;
+      }
+      if (w === "child") return familyPhotos.child || familyPhotos.baby;
+      return !!familyPhotos[w];
+    });
+
+    return (
+      <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #f5f5f5"}}>
+          <button onClick={onBack} style={{background:"#f5f5f5",border:"none",borderRadius:50,width:38,height:38,fontSize:17,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+          <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:18,color:"#111",margin:0}}>📸 Make it personal</h2>
+          <div style={{width:38}}/>
+        </div>
+
+        <div style={{flex:1,overflowY:"auto",padding:"18px 22px"}}>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#444",lineHeight:1.6,textAlign:"center",margin:"4px 0 18px"}}>
+            Today's session has cards for words like <strong>{missing.map(m => PERSONAL_WORD_INFO[m].label).join(", ")}</strong>. Upload personal photos so {missing.length === 1 ? "this card" : "these cards"} feel meaningful — or skip to use defaults.
+          </p>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:RED,lineHeight:1.55,textAlign:"center",margin:"0 0 18px"}}>
+            💛 Babies LOVE recognizing things they know! A photo of your actual home or grandma turns a flashcard into a moment of recognition.
+          </p>
+
+          <div style={{display:"flex",flexDirection:"column",gap:12,maxWidth:380,margin:"0 auto"}}>
+            {missing.map(slot => {
+              const info = PERSONAL_WORD_INFO[slot];
+              const photo = familyPhotos[slot];
+              return (
+                <div key={slot} style={{display:"flex",alignItems:"center",gap:12,padding:12,background:"#FAFAFA",borderRadius:14,border:photo ? `2px solid ${RED}` : "1px solid #eee"}}>
+                  <label style={{cursor:"pointer",position:"relative",width:64,height:64,borderRadius:12,overflow:"hidden",background:"#fff",border:photo?`2px solid ${RED}`:"2px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {photo ? (
+                      <img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                    ) : (
+                      <span style={{fontSize:26,opacity:.5}}>{info.emoji}</span>
+                    )}
+                    <input type="file" accept="image/*"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(slot, f); e.target.value = ""; }}
+                      style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/>
+                  </label>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",lineHeight:1.2}}>
+                      {info.label} {photo && <span style={{color:RED,fontSize:11}}>· uploaded ✓</span>}
+                    </div>
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.45}}>
+                      {info.blurb}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",lineHeight:1.5,textAlign:"center",margin:"18px 0 6px",fontStyle:"italic"}}>
+            Photos are stored on this device only — they never leave your phone. You can also manage these in your child's profile anytime.
+          </p>
+        </div>
+
+        <div style={{padding:"12px 18px 18px",borderTop:"1px solid #f0f0f0",display:"flex",gap:10}}>
+          <button onClick={() => setPersonalPromptDismissed(true)}
+            style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#666"}}>
+            skip for now
+          </button>
+          <button onClick={() => setPersonalPromptDismissed(true)}
+            style={{flex:1,background:RED,border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
+            {allDone ? "start session →" : "continue →"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const card    = cards[idx]||{};
   const wordLen = card.word?.length||0;
