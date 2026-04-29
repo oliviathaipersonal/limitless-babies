@@ -108,6 +108,200 @@ function noteDisplayLabel(note) {
   return m[1] + (m[2] === "#" ? "♯" : m[2] === "b" ? "♭" : "");
 }
 
+// Note color associations — 12 distinct colors, one per pitch class (chromatic
+// scale). Per Olivia's pedagogy: she's been teaching the twins these specific
+// colors since birth. Sharps/flats share colors across enharmonic equivalents
+// (C# and Db are the same color, etc.).
+const NOTE_COLORS = {
+  "C":  "#F62A3C",
+  "C#": "#FFB979",  "Db": "#FFB979",
+  "D":  "#FF7A00",
+  "D#": "#FFED8F",  "Eb": "#FFED8F",
+  "E":  "#FFD600",
+  "F":  "#81C995",
+  "F#": "#83FFD0",  "Gb": "#83FFD0",
+  "G":  "#AECBFA",
+  "G#": "#186EFF",  "Ab": "#186EFF",
+  "A":  "#C4A5EA",
+  "A#": "#9C39F4",  "Bb": "#9C39F4",
+  "B":  "#FF85C8",
+};
+function noteColor(note) {
+  const m = (note || "").match(/^([A-G])([#b]?)/);
+  if (!m) return "#111";
+  const key = m[1] + m[2];
+  return NOTE_COLORS[key] || "#111";
+}
+
+// Staff position mapping: returns the y-position (in "step units") of a note
+// on a treble or bass clef staff. 0 = the line/space the note sits on,
+// counting upward. Uses standard music notation:
+//   Treble staff: lines (bottom to top) E4 G4 B4 D5 F5; spaces F4 A4 C5 E5
+//   Bass staff:   lines (bottom to top) G2 B2 D3 F3 A3; spaces A2 C3 E3 G3
+// We choose treble for notes from middle C (C4) and up, bass for B3 and down.
+// Returns { clef: "treble"|"bass", step: number, hasLedger: bool, isAccidental: bool }.
+function noteStaffPosition(note) {
+  const m = note.match(/^([A-G])([#b]?)(-?\d)$/);
+  if (!m) return null;
+  const letter = m[1];
+  const acc = m[2];
+  const octave = parseInt(m[3], 10);
+  const isAccidental = acc !== "";
+  // Diatonic step from C0 (where C0 = 0, D0 = 1, ..., B0 = 6)
+  const letterStep = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
+  const totalStep = octave * 7 + letterStep[letter];
+  // Pick clef: treble for C4 and above, bass for B3 and below
+  const isTreble = totalStep >= 4 * 7; // C4 and up
+  // Reference note step for each clef:
+  //   Treble: bottom line is E4 → totalStep = 4*7 + 2 = 30. Each "step" up = +1.
+  //   Bass:   bottom line is G2 → totalStep = 2*7 + 4 = 18.
+  const refStep = isTreble ? 30 : 18;
+  const stepFromBottom = totalStep - refStep;
+  return {
+    clef: isTreble ? "treble" : "bass",
+    step: stepFromBottom,
+    isAccidental,
+    accidental: acc, // "#" or "b" or ""
+  };
+}
+
+// React component: render a 5-line staff with a clef and one note placed at
+// the right step. Standard music engraving conventions:
+//   - 5 horizontal lines, equally spaced
+//   - Whole notes are open ovals; quarter notes are filled with a stem
+//   - Ledger lines drawn through notes that fall above/below the staff
+//   - Sharp/flat sign drawn to the left of the notehead
+function StaffNotation({ note, size = 220 }) {
+  const pos = noteStaffPosition(note);
+  if (!pos) return null;
+  const { clef, step, accidental } = pos;
+  // Layout constants (SVG units). 100 wide × 80 tall canvas.
+  const W = 100, H = 80;
+  // Staff lines occupy y = 30 to y = 60 (5 lines, 4 gaps), each gap = 7.5.
+  // Bottom line at y=60, top line at y=30.
+  const lineGap = 7.5;
+  const bottomLineY = 60;
+  // Each "step" (line OR space) = half a gap = 3.75.
+  // step 0 = sitting on the bottom line (y = 60)
+  // step 1 = in the first space (y = 56.25)
+  // step 2 = on second line (y = 52.5)
+  const stepSize = lineGap / 2;
+  const noteY = bottomLineY - step * stepSize;
+  const noteX = 60;
+  const color = noteColor(note);
+
+  // Ledger lines: any line position above the top line (step > 8) or below
+  // the bottom line (step < 0) needs a ledger. Plus, notes on ledger LINES
+  // (step % 2 === 0) get a single ledger; notes in ledger SPACES need
+  // ledgers above/below.
+  const ledgers = [];
+  if (step < 0) {
+    // Below bottom line. Each ledger at step -2, -4, ...
+    for (let s = -2; s >= step; s -= 2) {
+      ledgers.push(bottomLineY - s * stepSize);
+    }
+    // If note is in a space below (e.g. step = -1), add a ledger 2 steps below (which we already did for step <= -2, but also for step === -1 we don't add anything because the note hangs below the lowest staff line, no ledger needed for first space below)
+  } else if (step > 8) {
+    for (let s = 10; s <= step; s += 2) {
+      ledgers.push(bottomLineY - s * stepSize);
+    }
+  }
+
+  // Stem direction: down for high notes (step >= 4 in middle), up for low
+  // notes. Convention: notes above the middle line have stems pointing down,
+  // notes on or below the middle line have stems pointing up.
+  const stemUp = step < 4;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={size} height={size * (H/W)} style={{display:"block"}}>
+      {/* Staff lines */}
+      {[0,1,2,3,4].map(i => (
+        <line key={i}
+          x1={5} x2={W-5}
+          y1={bottomLineY - i * lineGap}
+          y2={bottomLineY - i * lineGap}
+          stroke="#222" strokeWidth={0.6}/>
+      ))}
+      {/* Clef glyph — using Unicode 𝄞 (treble) / 𝄢 (bass). Falls back to text
+          since SVG <text> renders these reliably. */}
+      <text x={9} y={clef === "treble" ? 65 : 50}
+        fontSize={clef === "treble" ? 56 : 38}
+        fontFamily="serif" fill="#222">
+        {clef === "treble" ? "\u{1D11E}" : "\u{1D122}"}
+      </text>
+      {/* Ledger lines for the note */}
+      {ledgers.map((y, i) => (
+        <line key={i} x1={noteX - 7} x2={noteX + 7} y1={y} y2={y}
+          stroke="#222" strokeWidth={0.7}/>
+      ))}
+      {/* Accidental (♯ or ♭) to the left of the notehead */}
+      {accidental && (
+        <text x={noteX - 12} y={noteY + 2} fontSize={12} fontFamily="serif" fill={color} fontWeight="bold">
+          {accidental === "#" ? "♯" : "♭"}
+        </text>
+      )}
+      {/* Notehead — a filled colored ellipse for visibility (quarter-note style).
+          Slightly tilted via rotate to mimic engraving convention. */}
+      <ellipse cx={noteX} cy={noteY} rx={5} ry={3.5} fill={color}
+        transform={`rotate(-20 ${noteX} ${noteY})`}/>
+      {/* Stem */}
+      <line
+        x1={stemUp ? noteX + 4 : noteX - 4}
+        x2={stemUp ? noteX + 4 : noteX - 4}
+        y1={noteY}
+        y2={stemUp ? noteY - 22 : noteY + 22}
+        stroke={color} strokeWidth={1.2}/>
+    </svg>
+  );
+}
+
+// Single-rhythm glyph renderer — draws ONE rhythm symbol (whole, half,
+// quarter, eighth, sixteenth) for use as a visual aid alongside the rhythm
+// label. Distinct from the existing multi-note RhythmNotation pattern
+// renderer used during rhythm sessions. Currently unused but available for
+// future "rhythm vocabulary" cards.
+function SingleRhythmGlyph({ rhythmType, size = 200 }) {
+  const W = 100, H = 80;
+  const cx = 50, cy = 50;
+  // Filled vs hollow; flagged vs beamed; rest variants
+  const visual = (() => {
+    switch (rhythmType) {
+      case "whole":     return { fill: false, stem: false, flags: 0 };
+      case "half":      return { fill: false, stem: true,  flags: 0 };
+      case "quarter":   return { fill: true,  stem: true,  flags: 0 };
+      case "eighth":    return { fill: true,  stem: true,  flags: 1 };
+      case "sixteenth": return { fill: true,  stem: true,  flags: 2 };
+      default: return { fill: true, stem: true, flags: 0 };
+    }
+  })();
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={size} height={size * (H/W)} style={{display:"block"}}>
+      {/* Single staff line for context */}
+      <line x1={5} x2={W-5} y1={cy + 10} y2={cy + 10} stroke="#ccc" strokeWidth={0.5}/>
+      {/* Notehead */}
+      <ellipse cx={cx} cy={cy} rx={6} ry={4}
+        fill={visual.fill ? "#111" : "none"}
+        stroke="#111" strokeWidth={visual.fill ? 0 : 1.5}
+        transform={`rotate(-20 ${cx} ${cy})`}/>
+      {/* Stem */}
+      {visual.stem && (
+        <line x1={cx + 5.5} x2={cx + 5.5} y1={cy} y2={cy - 28}
+          stroke="#111" strokeWidth={1.2}/>
+      )}
+      {/* Flags (eighth = 1 flag, sixteenth = 2 flags) */}
+      {visual.flags > 0 && (
+        <>
+          <path d={`M ${cx + 5.5} ${cy - 28} q 8 4 4 14`} stroke="#111" strokeWidth={1.5} fill="none"/>
+          {visual.flags > 1 && (
+            <path d={`M ${cx + 5.5} ${cy - 22} q 8 4 4 14`} stroke="#111" strokeWidth={1.5} fill="none"/>
+          )}
+        </>
+      )}
+    </svg>
+  );
+}
+
+
 // Convert a scientific pitch name (e.g. "C4", "F#4", "Bb3") to a frequency in
 // Hertz. Uses A4 = 440Hz as the reference.
 function noteToFrequency(note) {
@@ -940,7 +1134,7 @@ function getSetsForPosition(allSetsArray, position, month) {
 // understands WHY they're being asked. This keeps the profile editor focused
 // on actual family members.
 const FAMILY_PHOTO_WORDS = [
-  "mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle","mama","dada"
+  "mother","father","baby","sister","brother","grandma","grandpa","aunt","uncle"
 ];
 
 // Kinship slot mapping — when the curriculum card has a specific kinship
@@ -3495,7 +3689,12 @@ const AVAILABLE_CLASSES = [
   { id:"reading",   label:"Reading",   emoji:"📖", desc:"Words, phrases, and stories" },
   { id:"math",      label:"Math",      emoji:"🔢", desc:"Quantities and equations" },
   { id:"knowledge", label:"Knowledge", emoji:"🌍", desc:"Facts about the world" },
-  { id:"music",     label:"Music",     emoji:"🎵", desc:"Perfect pitch + rhythm training" },
+  // Music uses English-only note names (C, D, E, F, G, A, B) — translating
+  // those into other languages doesn't make pedagogical sense (the international
+  // standard for note literacy is the English letter system, even in non-English
+  // music programs). Per Olivia: music tile only appears when "English" is the
+  // active language, and enrollment is force-locked to ["English"].
+  { id:"music",     label:"Music",     emoji:"🎵", desc:"Perfect pitch + rhythm training", englishOnly:true },
 ];
 
 // Enrollment data model — child.enrolledClasses can be either:
@@ -4955,7 +5154,7 @@ function ClassEnrollmentsSheet({ child, onSave, onClose }) {
             // Subtitle text varies by state
             let subtitle;
             if (isMusic) {
-              subtitle = isOn ? "Enabled · pitch + rhythm" : "Not enrolled";
+              subtitle = isOn ? "Enabled · English only · pitch + rhythm" : "English only";
             } else if (!isOn) {
               subtitle = "Not enrolled";
             } else if (enrolledLangs.length === langs.length) {
@@ -5032,11 +5231,11 @@ function ClassEnrollmentsSheet({ child, onSave, onClose }) {
                   </div>
                 )}
 
-                {/* Music: special explainer when on */}
-                {isMusic && isOn && (
+                {/* Music: English-only note. Always shown for music card (on or off). */}
+                {isMusic && (
                   <div style={{padding:"4px 16px 14px"}}>
                     <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",lineHeight:1.5,margin:0}}>
-                      🎵 Music isn't language-specific — pitch and rhythm training apply across all languages your child is learning.
+                      🎵 <strong>Music is only available in English.</strong> Note names (C, D, E, F, G, A, B) are taught using the international English-letter system. The music tile only appears on the home screen when you're using English.
                     </p>
                   </div>
                 )}
@@ -5067,6 +5266,7 @@ function ClassEnrollmentsSheet({ child, onSave, onClose }) {
 function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, premium, onPremiumNeeded }) {
   const [name, setName] = useState(child?.name || "");
   const [emoji, setEmoji] = useState(child?.emoji || CHILD_EMOJIS[0]);
+  const [avatarPhoto, setAvatarPhoto] = useState(child?.avatarPhoto || null);
   const [langs, setLangs] = useState(child?.languages || ["English"]);
   const [birthdate, setBirthdate] = useState(child?.birthdate || "");
   // Gender is stored on the child profile. Used to select the correct
@@ -5222,7 +5422,50 @@ function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, prem
         )}
 
         <label style={{display:"block",fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:800,color:"#999",marginBottom:6,letterSpacing:.5,textTransform:"uppercase"}}>Avatar</label>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
+
+        {/* Photo upload + remove. The photo also propagates to the family-photos
+            'baby' slot on save (matches onboarding). Existing testers who only
+            had emoji avatars can now upload a custom photo here. */}
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+          <label style={{cursor:"pointer",position:"relative",width:60,height:60,borderRadius:"50%",overflow:"hidden",background:"#fff",border:avatarPhoto?`3px solid ${RED}`:"3px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            {avatarPhoto ? (
+              <img src={avatarPhoto} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            ) : (
+              <span style={{fontSize:24,opacity:.4}}>📷</span>
+            )}
+            <input type="file" accept="image/*"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                try {
+                  const dataUrl = await compressImageFile(f);
+                  setAvatarPhoto(dataUrl);
+                } catch {
+                  setPhotoError("Couldn't read that photo — try another.");
+                }
+                e.target.value = "";
+              }}
+              style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/>
+          </label>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:13,color:avatarPhoto?"#111":"#666",lineHeight:1.2}}>
+              {avatarPhoto ? "Photo of " + (name || "your child") : "Use a photo of " + (name || "your child") + "?"}
+            </div>
+            <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.45}}>
+              {avatarPhoto
+                ? <span><span style={{color:RED}}>✓ uploaded.</span> Also used on the "baby" flashcard.</span>
+                : "Tap the circle to upload. Or pick an emoji below."}
+            </div>
+            {avatarPhoto && (
+              <button type="button" onClick={()=>setAvatarPhoto(null)}
+                style={{background:"none",border:"none",padding:0,marginTop:4,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#aaa",cursor:"pointer",textDecoration:"underline"}}>
+                remove photo
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,opacity:avatarPhoto?0.5:1}}>
           {CHILD_EMOJIS.map(e=>(
             <button key={e} onClick={()=>setEmoji(e)}
               style={{width:40,height:40,fontSize:22,border:`2px solid ${emoji===e?RED:"#eee"}`,background:emoji===e?"#FFF0F1":"#fff",borderRadius:10,cursor:"pointer"}}>{e}</button>
@@ -5378,9 +5621,19 @@ function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, prem
         </button>
         <button onClick={()=>{
             if (!name.trim()) return;
+            // If a new avatar photo was uploaded and there's no separately-set
+            // baby family slot, propagate the avatar to baby slot too — matches
+            // onboarding behavior for consistency.
+            if (avatarPhoto && child?.id && !familyPhotos.baby) {
+              try {
+                setFamilyPhoto(child.id, "baby", avatarPhoto);
+              } catch {}
+            }
             onSave({
               id: child?.id || newChildId(),
-              name: name.trim(), emoji, languages: langs.length ? langs : ["English"],
+              name: name.trim(), emoji,
+              avatarPhoto: avatarPhoto || null,
+              languages: langs.length ? langs : ["English"],
               birthdate: birthdate || null,
               gender: gender || "prefer",
               // Preserve enrollment if it exists (managed via ClassEnrollmentsSheet)
@@ -5873,13 +6126,13 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
   ];
 
   // Only show categories where the child is enrolled in this class for the
-  // CURRENT active language. Music is treated specially — it's not really
-  // language-specific, so we show it whenever the child has music enrolled
-  // in any language at all.
+  // CURRENT active language. Music is special: only shown when the active
+  // language is English (note names are an English-letter system; per Olivia
+  // music shouldn't appear when toggled to another language).
   const categoryMeta = allCategoryMeta
     .filter(c => c.classIds.some(cid => {
-      // Music: language-agnostic — show if enrolled at all
-      if (cid === "music") return isClassEnrolled(activeChild, cid);
+      // Music: only for English (the note system uses English letter names)
+      if (cid === "music") return language === "English" && isClassEnrolled(activeChild, cid);
       // Other classes: must be enrolled for the CURRENT active language
       return isClassEnrolled(activeChild, cid, language);
     }))
@@ -6648,7 +6901,7 @@ function ProgressBar({ index, total }) {
 
 // ── READING SESSION (3-frame Doman: word → photo → word → next) ───────────────
 
-function ReadingSession({ childId, words, language, speechOn, sessionNum, gender, onBack, onComplete }) {
+function ReadingSession({ childId, words, language, speechOn, sessionNum, gender, category, onBack, onComplete }) {
   const [familyPhotos, setFamilyPhotos] = useState(() => childId ? getFamilyPhotos(childId) : {});
   // Re-read photos when childId changes
   useEffect(() => {
@@ -6660,7 +6913,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
   const [translating, setTranslating] = useState(false);
   const [transError, setTransError]   = useState(null);
   const [idx, setIdx]         = useState(0);
-  const [frame, setFrame]     = useState(0); // 0=word, 1=emoji, 2=word-again
+  const [frame, setFrame]     = useState(0); // 0=word, 1=photo (no word-repeat per Olivia's request)
   const [visible, setVisible] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -6743,7 +6996,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
     if (!speechOn || !visible || translating) return;
     const card = cards[idx];
     if (!card?.word) return;
-    if (frame === 0 || frame === 2) {
+    if (frame === 0) {
       // If the word wasn't actually translated (still English), speak in
       // English voice — don't try to pronounce English text with a Lao/Thai/etc. voice
       const wasTranslated = card.original && card.original !== card.word;
@@ -6755,11 +7008,12 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
   const advance = useCallback(()=>{
     setVisible(false);
     setTimeout(()=>{
-      if (frame < 2) {
+      if (frame < 1) {
+        // word → photo
         setFrame(f => f + 1);
         setVisible(true);
       } else {
-        // Word complete — move to next card or finish session
+        // photo shown, advance to next card (or finish)
         if (idx >= cards.length - 1) {
           setFinished(true);
           onComplete?.();
@@ -6882,15 +7136,20 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
 
   const frameDots = (
     <div style={{display:"flex",gap:5}}>
-      {[0,1,2].map(f=>(
+      {[0,1].map(f=>(
         <div key={f} style={{width:7,height:7,borderRadius:"50%",background:frame===f?RED:"#ddd",transition:"background .3s"}}/>
       ))}
     </div>
   );
 
+  // Per Olivia: sentences and books render in BLACK font (not red). Words and
+  // couplets stay red (the classic Doman cue). Pedagogically, sentences are a
+  // step closer to natural reading where black-on-white is the standard.
+  const wordColor = (category === "sentences" || category === "book") ? "#111" : RED;
+
   const WordDisplay = () => (
     <>
-      <div style={{fontSize:wordSize,fontFamily:"'Fredoka One','Baloo 2',cursive",color:RED,textAlign:"center",lineHeight:1.1,letterSpacing:1}}>
+      <div style={{fontSize:wordSize,fontFamily:"'Fredoka One','Baloo 2',cursive",color:wordColor,textAlign:"center",lineHeight:1.1,letterSpacing:1}}>
         {card.word}
       </div>
       {card.note && (
@@ -6911,7 +7170,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
       <div onClick={advance}
         style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
 
-        {(frame===0 || frame===2) && <WordDisplay/>}
+        {frame===0 && <WordDisplay/>}
 
         {frame===1 && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:18,width:"100%",maxWidth:340}}>
@@ -6931,7 +7190,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
                 // background. The word itself becomes the visual focus.
                 return (
                   <div style={{width:"min(300px,82vw)",height:"min(300px,82vw)",borderRadius:22,boxShadow:"0 8px 32px rgba(0,0,0,.06)",background:"#FAFAFA",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                    <span style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:"min(72px,16vw)",color:RED,textAlign:"center",lineHeight:1.1,padding:"0 12px",wordBreak:"break-word"}}>
+                    <span style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:"min(72px,16vw)",color:wordColor,textAlign:"center",lineHeight:1.1,padding:"0 12px",wordBreak:"break-word"}}>
                       {card.word}
                     </span>
                   </div>
@@ -6960,7 +7219,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
         )}
 
         <p style={{marginTop:30,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
-          {frame===0 ? "tap to see picture →" : frame===1 ? "tap to see word again →" : "tap for next word →"}
+          {frame===0 ? "tap to see picture →" : "tap for next word →"}
         </p>
       </div>
       <ProgressBar index={idx} total={cards.length}/>
@@ -7453,11 +7712,22 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
           {label}
         </div>
         {visible && (
-          <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:"min(240px,50vw)",color:RED,lineHeight:1,userSelect:"none"}}>
-            {card.label}
-          </div>
+          <>
+            {/* Note letter — rendered in the color associated with this pitch.
+                Olivia has been color-coding notes since the twins were born,
+                so the visual association is part of the curriculum. */}
+            <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:"min(180px,40vw)",color:noteColor(card.note),lineHeight:1,userSelect:"none"}}>
+              {card.label}
+            </div>
+            {/* Staff notation — shows where this note sits on a 5-line staff
+                with the appropriate clef. Reinforces the visual connection
+                between letter, color, and music notation. */}
+            <div style={{marginTop:18}}>
+              <StaffNotation note={card.note} size={Math.min(220, window.innerWidth * 0.55)}/>
+            </div>
+          </>
         )}
-        <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
+        <p style={{marginTop:24,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
           {started ? "tap to advance →" : "tap to begin · 🔊"}
         </p>
       </div>
@@ -7617,7 +7887,7 @@ function BookSession({ book, speechOn, language, sessionNum, onBack, onComplete 
       <div onClick={advance}
         style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
         <div style={{fontSize:140,marginBottom:24,lineHeight:1}}>{page.emoji}</div>
-        <div style={{fontSize:40,fontFamily:"'Fredoka One','Baloo 2',cursive",color:RED,textAlign:"center",lineHeight:1.2,letterSpacing:.5,maxWidth:340}}>
+        <div style={{fontSize:40,fontFamily:"'Fredoka One','Baloo 2',cursive",color:"#111",textAlign:"center",lineHeight:1.2,letterSpacing:.5,maxWidth:340}}>
           {page.text}
         </div>
         <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
@@ -8026,9 +8296,9 @@ export default function App() {
       })()}
 
       {mode==="progress" && <ProgressScreen child={activeChild} onBack={handleBackToHome}/>}
-      {mode==="reading"  && sessionStatus && <ReadingSession childId={activeChildId} words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
-      {mode==="couplets" && sessionStatus && <ReadingSession childId={activeChildId} words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
-      {mode==="sentences"&& sessionStatus && <ReadingSession childId={activeChildId} words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
+      {mode==="reading"  && sessionStatus && <ReadingSession category="reading"   childId={activeChildId} words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
+      {mode==="couplets" && sessionStatus && <ReadingSession category="couplets"  childId={activeChildId} words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
+      {mode==="sentences"&& sessionStatus && <ReadingSession category="sentences" childId={activeChildId} words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
       {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("book")}/>}
       {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession childId={activeChildId} mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
       {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
