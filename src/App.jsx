@@ -49,18 +49,24 @@ const LANGUAGES = [
 // Day 146-160: Division with numerals
 // Day 161+   : Mixed equations (both dots and numerals shown)
 
+// Math stages — dots stage runs 46 days (windows reach 90–100 by day 46),
+// then dot equations build on quantity recognition. The full curriculum
+// targets 200+ days end-to-end, matching Doman's pacing for babies who do
+// 3 sessions/day. Per Olivia: dots must cover the full 0–100 range before
+// transitioning to addition, since pure quantity recognition is the
+// foundation of everything else.
 const MATH_STAGES = [
   { id:"dots",           label:"Dots",                     desc:"dots · range 0–100 · S1 in order, then shuffled",              unlockDay:1,   op:null,    showDots:true,  showNumerals:false, isEq:false },
-  { id:"add-dots",       label:"Addition (dots)",          desc:"dot addition · S1 in order, then shuffled",                    unlockDay:21,  op:"+",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"sub-dots",       label:"Subtraction (dots)",       desc:"dot subtraction · S1 in order, then shuffled",                 unlockDay:36,  op:"-",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"mul-dots",       label:"Multiplication (dots)",    desc:"dot multiplication · S1 in order, then shuffled",              unlockDay:51,  op:"×",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"div-dots",       label:"Division (dots)",          desc:"dot division · S1 in order, then shuffled",                    unlockDay:66,  op:"÷",     showDots:true,  showNumerals:false, isEq:true  },
-  { id:"numerals",       label:"Numerals",                 desc:"numerals · range 0–100 · S1 in order, then shuffled",          unlockDay:81,  op:null,    showDots:false, showNumerals:true,  isEq:false },
-  { id:"add-nums",       label:"Addition (numerals)",      desc:"numeral addition · S1 in order, then shuffled",                unlockDay:101, op:"+",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"sub-nums",       label:"Subtraction (numerals)",   desc:"numeral subtraction · S1 in order, then shuffled",             unlockDay:116, op:"-",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"mul-nums",       label:"Multiplication (numerals)",desc:"numeral multiplication · S1 in order, then shuffled",          unlockDay:131, op:"×",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"div-nums",       label:"Division (numerals)",      desc:"numeral division · S1 in order, then shuffled",                unlockDay:146, op:"÷",     showDots:false, showNumerals:true,  isEq:true  },
-  { id:"eq-both",        label:"Equations (both)",         desc:"dots + numerals · all ops · S1 in order, then shuffled",       unlockDay:161, op:"mix",   showDots:true,  showNumerals:true,  isEq:true  },
+  { id:"add-dots",       label:"Addition (dots)",          desc:"dot addition · S1 in order, then shuffled",                    unlockDay:47,  op:"+",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"sub-dots",       label:"Subtraction (dots)",       desc:"dot subtraction · S1 in order, then shuffled",                 unlockDay:67,  op:"-",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"mul-dots",       label:"Multiplication (dots)",    desc:"dot multiplication · S1 in order, then shuffled",              unlockDay:87,  op:"×",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"div-dots",       label:"Division (dots)",          desc:"dot division · S1 in order, then shuffled",                    unlockDay:107, op:"÷",     showDots:true,  showNumerals:false, isEq:true  },
+  { id:"numerals",       label:"Numerals",                 desc:"numerals · range 0–100 · S1 in order, then shuffled",          unlockDay:127, op:null,    showDots:false, showNumerals:true,  isEq:false },
+  { id:"add-nums",       label:"Addition (numerals)",      desc:"numeral addition · S1 in order, then shuffled",                unlockDay:173, op:"+",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"sub-nums",       label:"Subtraction (numerals)",   desc:"numeral subtraction · S1 in order, then shuffled",             unlockDay:193, op:"-",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"mul-nums",       label:"Multiplication (numerals)",desc:"numeral multiplication · S1 in order, then shuffled",          unlockDay:213, op:"×",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"div-nums",       label:"Division (numerals)",      desc:"numeral division · S1 in order, then shuffled",                unlockDay:233, op:"÷",     showDots:false, showNumerals:true,  isEq:true  },
+  { id:"eq-both",        label:"Equations (both)",         desc:"dots + numerals · all ops · S1 in order, then shuffled",       unlockDay:253, op:"mix",   showDots:true,  showNumerals:true,  isEq:true  },
 ];
 
 // Return the single stage the child should be doing today.
@@ -106,6 +112,50 @@ function noteDisplayLabel(note) {
   const m = note.match(/^([A-G])([#b]?)\d$/);
   if (!m) return note;
   return m[1] + (m[2] === "#" ? "♯" : m[2] === "b" ? "♭" : "");
+}
+
+// Words that should always render with proper-noun capitalization on cards.
+// Curriculum stores everything lowercase ("usa", "canada", "japan") for
+// uniform downstream processing, but on the actual card display, country
+// names and proper nouns should look correct ("USA", "Canada", "Japan").
+// Special cases:
+//   - usa → "USA" (all caps acronym)
+//   - uk  → "UK"  (acronym)
+//   - mlk → "MLK" (acronym, knowledge card)
+// Everything else gets Title Case (first letter uppercase).
+const ALL_CAPS_WORDS = new Set([
+  "usa","uk","mlk","tv","suv",
+]);
+// Words that shouldn't be capitalized (common nouns that just happen to live
+// in country sets, etc.). Currently empty — nothing to exclude.
+const TITLE_CASE_WORDS = new Set([
+  // North America (M3 Set 9)
+  "usa","canada","mexico","cuba","guatemala",
+  // Asia flags (knowledge M1 Set 7)
+  "japan","china","korea","india","vietnam",
+  // European countries (knowledge M1 Set 2)
+  "italy","france","germany","spain",
+  // South America (knowledge M2 Set 6)
+  "brazil","argentina",
+  // People — proper names
+  "cleopatra","gandhi","mandela","einstein","mlk",
+  // Superheroes (treat as proper nouns/character names)
+  "superman","spiderman","batman","hulk","wonderwoman",
+  "captainamerica","thor","blackwidow","ironman","flash",
+  // Cities, regions, parks
+  "europe","asia","africa",
+]);
+
+function displayCardWord(word) {
+  if (!word || typeof word !== "string") return word;
+  // If already has uppercase letters, trust the curriculum's choice
+  if (/[A-Z]/.test(word)) return word;
+  const lower = word.toLowerCase();
+  if (ALL_CAPS_WORDS.has(lower)) return word.toUpperCase();
+  if (TITLE_CASE_WORDS.has(lower)) {
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }
+  return word;
 }
 
 // Note color associations — 12 distinct colors, one per pitch class (chromatic
@@ -222,13 +272,36 @@ function StaffNotation({ note, size = 220 }) {
           y2={bottomLineY - i * lineGap}
           stroke="#222" strokeWidth={0.6}/>
       ))}
-      {/* Clef glyph — using Unicode 𝄞 (treble) / 𝄢 (bass). Falls back to text
-          since SVG <text> renders these reliably. */}
-      <text x={9} y={clef === "treble" ? 65 : 50}
-        fontSize={clef === "treble" ? 56 : 38}
-        fontFamily="serif" fill="#222">
-        {clef === "treble" ? "\u{1D11E}" : "\u{1D122}"}
-      </text>
+      {/* Clef glyphs — drawn as SVG paths instead of Unicode glyphs so that
+          font rendering doesn't change positioning across devices. The bass
+          clef's two dots bracket the F line (4th line from bottom), which
+          is the standard "F-clef" definition. The treble clef curls around
+          the G line (2nd line from bottom). */}
+      {clef === "treble" ? (
+        // Treble clef — stylized G-clef. Centered around the G4 line (y = 52.5).
+        // Path drawn so the inner curl wraps the G line.
+        <g transform="translate(8, 28)" fill="#222">
+          {/* Upper loop */}
+          <path d="M 6 0 C 9 0, 12 3, 12 8 C 12 13, 8 17, 4 17 C 1 17, -1 14, -1 11 C -1 7, 3 5, 7 5 C 12 5, 16 9, 16 16 C 16 26, 8 32, 4 32 C 0 32, -3 30, -3 26"
+            stroke="#222" strokeWidth="2" fill="none"/>
+          {/* Center dot at G line */}
+          <circle cx="6" cy="24.5" r="2"/>
+        </g>
+      ) : (
+        // Bass clef — F-clef. Two dots bracket the F line (y = 37.5).
+        // Comma-shape body sits above the F line, dots are placed on either
+        // side of the F line at a fixed offset.
+        <g transform="translate(10, 30)" fill="#222">
+          {/* Curved comma body — main shape of the bass clef */}
+          <path d="M 0 0 C 8 -1, 14 4, 14 12 C 14 18, 9 22, 3 22"
+            stroke="#222" strokeWidth="2.5" fill="none"/>
+          {/* The two dots that define the F line. F3 is at y=37.5 in the
+              outer coordinate system. After translate(10, 30), local y = 7.5.
+              We place dots ABOVE and BELOW that line. */}
+          <circle cx="18" cy="5" r="1.6"/>
+          <circle cx="18" cy="10" r="1.6"/>
+        </g>
+      )}
       {/* Ledger lines for the note */}
       {ledgers.map((y, i) => (
         <line key={i} x1={noteX - 7} x2={noteX + 7} y1={y} y2={y}
@@ -1501,17 +1574,27 @@ function advancePositionAfterFinalSession(childId, category, language) {
       if (!monthData) return;
 
       const monthSets = monthData[cur.month];
+      // For knowledge: months 4-6 reuse months 1-3 content (facts mode pass)
+      const contentMonth = (posKey === "knowledge" && cur.month > 3) ? cur.month - 3 : cur.month;
+      const actualMonthSets = monthData[contentMonth];
       // Number of sets in the current month (some months may have null data)
-      const monthLen = monthSets ? monthSets.length : 0;
+      const monthLen = actualMonthSets ? actualMonthSets.length : (monthSets ? monthSets.length : 0);
       let nextMonth = cur.month;
       let nextSetIdx = cur.setIdx + 1;
-      // If we've passed the last set in the current month, roll to next month
-      // (skipping months with null data — e.g. couplets only has month 2).
+      // If we've passed the last set in the current month, roll to next month.
+      // Knowledge runs M1-M6 (M4-6 are facts-mode passes through M1-3 content).
+      // Other categories cap at M3.
+      const maxMonth = posKey === "knowledge" ? 6 : 3;
       if (nextSetIdx >= monthLen) {
-        // Find the next month that has data, up to month 3
+        // Find the next month that has data
         let m = cur.month + 1;
-        while (m <= 3 && !monthData[m]) m++;
-        if (m > 3) {
+        while (m <= maxMonth) {
+          // For knowledge M4-6, check the corresponding M1-3 content slot
+          const checkMonth = (posKey === "knowledge" && m > 3) ? m - 3 : m;
+          if (monthData[checkMonth]) break;
+          m++;
+        }
+        if (m > maxMonth) {
           // Curriculum complete for this category/language. Stay parked at the
           // final set so progress.isClassFullyComplete trips correctly and the
           // child can still review.
@@ -3090,7 +3173,13 @@ function photoUrlForWord(englishWord, photoKey) {
 async function fetchDailyKnowledge(child, language) {
   const pos = getChildPosition(child, "knowledge", language);
   if (!pos) return [];
-  const sets = getSetsForPosition(KNOWLEDGE_BY_MONTH, pos, pos.month);
+  // Knowledge curriculum has 6 logical months but only 3 months of content.
+  // Months 1-3 = identification mode (just the card name + photo).
+  // Months 4-6 = facts mode (same content, but with 3 facts per card).
+  // We map M4→M1, M5→M2, M6→M3 to fetch the right set data; the EncyclopediaSession
+  // gets a separate factsMode flag to decide rendering.
+  const contentMonth = pos.month > 3 ? pos.month - 3 : pos.month;
+  const sets = getSetsForPosition(KNOWLEDGE_BY_MONTH, pos, contentMonth);
   if (!sets || sets.length === 0) return [];
   const out = [];
   for (const s of sets) {
@@ -4522,7 +4611,12 @@ function ChildrenSheet({ children, activeId, onSelect, onAddNew, onEdit, onShare
             <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px",borderRadius:14,background:isActive?"#FFF0F1":"transparent",marginBottom:4}}>
               <button onClick={()=>onSelect(c.id)}
                 style={{flex:1,display:"flex",alignItems:"center",gap:12,background:"none",border:"none",cursor:"pointer",padding:"4px",textAlign:"left"}}>
-                <span style={{width:44,height:44,borderRadius:"50%",background:isActive?"#fff":"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,border:isActive?`2px solid ${RED}`:"2px solid transparent"}}>{c.emoji}</span>
+                {c.avatarPhoto ? (
+                  <img src={c.avatarPhoto} alt=""
+                    style={{width:44,height:44,borderRadius:"50%",objectFit:"cover",border:isActive?`2px solid ${RED}`:"2px solid transparent",background:"#f5f5f5"}}/>
+                ) : (
+                  <span style={{width:44,height:44,borderRadius:"50%",background:isActive?"#fff":"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,border:isActive?`2px solid ${RED}`:"2px solid transparent"}}>{c.emoji}</span>
+                )}
                 <div>
                   <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:17,color:isActive?RED:"#111"}}>{c.name}</div>
                   <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#aaa"}}>
@@ -5885,6 +5979,8 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
   const [tab, setTab] = useState(startOnFaq ? "faq" : "welcome");
 
   const tips = [
+    { emoji:"👨‍👩‍👧", title:"This app is for the caregiver, not the baby.", body:"You read the cards aloud to your baby — they don't tap or swipe. After each session, celebrate together! High-fives, claps, hugs. The app is your tool; your voice and presence are what your baby is actually learning from." },
+    { emoji:"📺", title:"Mirror to a TV for a bigger view.", body:"If you can, screen-mirror your phone to a TV or larger display so your baby can see the cards on a bigger medium. In our home, we mirror from the phone to the TV and turn the TV speakers off — the audio plays from the phone next to the caregiver. Limitless Babies is designed for minimal/low-screen families: the device is a delivery tool, not a babysitter." },
     { emoji:"✨", title:"Babies are truly limitless.", body:"Start from any age — the earlier the better, but it's never too late." },
     { emoji:"👨‍👩‍👧", title:"Upload family photos.", body:"In your child's profile, add photos of mom, dad, siblings, grandparents, and more. Your baby will see familiar faces when learning family words — so they can learn to recognize and name each person." },
     { emoji:"🌍", title:"Finish Sentences before starting a new language.", body:"Once your child has finished (not just reached) the Sentences stage, they can keep reading books in that language while you begin introducing a new one." },
@@ -6459,23 +6555,32 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
     title = "Knowledge";
     emoji = "🌍";
     const pos = langPos.knowledge || { month: 1, setIdx: 0 };
-    for (let m = 1; m <= 3; m++) {
-      const monthSets = KNOWLEDGE_BY_MONTH[m];
+    // Knowledge runs M1-6: M1-3 = identification (name only), M4-6 = facts.
+    // Months ahead of the current position are LOCKED. The roadmap shows all
+    // 12 sets × 6 months = 72 items so parents can see the full progression.
+    for (let m = 1; m <= 6; m++) {
+      // M4-6 reuse M1-3 content
+      const contentMonth = m > 3 ? m - 3 : m;
+      const monthSets = KNOWLEDGE_BY_MONTH[contentMonth];
       if (!monthSets) continue;
+      const modeLabel = m <= 3 ? "Identification" : "Facts";
       monthSets.forEach((s, i) => {
         const isCurrent = (m === pos.month) && (i === pos.setIdx);
         const isDone = (m < pos.month) || (m === pos.month && i < pos.setIdx);
+        const isLocked = m > pos.month; // anything past current month is locked
         items.push({
-          id: s.id,
+          id: `${s.id}-m${m}`,  // unique key across the two passes
           name: s.name,
-          desc: `Month ${m} · ${s.items.length} cards`,
-          emoji: "🌍",
+          desc: `Month ${m} · ${modeLabel} · ${s.items.length} cards`,
+          emoji: m <= 3 ? "🌍" : "📖",
           done: isDone,
           current: isCurrent,
+          locked: isLocked,
         });
       });
     }
-    todaySubtitle = `Currently on Month ${pos.month}, Set ${pos.setIdx + 1}`;
+    const modeLabel = pos.month <= 3 ? "Identification" : "Facts";
+    todaySubtitle = `Currently on Month ${pos.month} · ${modeLabel} · Set ${pos.setIdx + 1}`;
 
   } else if (category === "math") {
     const specificStage = MATH_STAGES.find(s => s.id === stageId);
@@ -6490,8 +6595,11 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
       // Child's absolute day in this language (1 if never used)
       const childAbsDay = getDayNumberForLanguage(activeChild?.id, lang);
       const currentOffsetDay = Math.max(1, childAbsDay - specificStage.unlockDay + 1);
-      // Show 20 windows — standard Doman rolling-window progression per stage
-      const WINDOWS_PER_STAGE = 20;
+      // Show 46 windows for dots and numerals (window 1 = 0–10, window 46 =
+      // 90–100). Equation stages have 20 windows since the difficulty there
+      // scales differently. Per Olivia: parents need to see the FULL 0–100
+      // progression in the roadmap, not just the early days.
+      const WINDOWS_PER_STAGE = (stageId === "dots" || stageId === "numerals") ? 46 : 20;
       for (let offsetDay = 1; offsetDay <= WINDOWS_PER_STAGE; offsetDay++) {
         const lo = (offsetDay - 1) * 2;
         const hi = lo + 10;
@@ -6608,16 +6716,16 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
         <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>curriculum path</div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {items.map((item, idx) => {
-            const statusColor = item.done ? "#8FBC8F" : item.current ? RED : "#ccc";
-            const statusIcon  = item.done ? "✓"       : item.current ? "●" : "○";
+            const statusColor = item.locked ? "#ccc" : item.done ? "#8FBC8F" : item.current ? RED : "#ccc";
+            const statusIcon  = item.locked ? "🔒" : item.done ? "✓" : item.current ? "●" : "○";
             return (
               <div key={`${item.id}-${idx}`}
-                style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:item.current?"#FFF0F1":"#fff",border:`${item.current?2:1}px solid ${item.current?RED:"#eee"}`,borderRadius:12}}>
-                <div style={{width:26,height:26,borderRadius:"50%",background:item.done?"#E8F5E9":item.current?"#FFF0F1":"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:statusColor,flexShrink:0,border:item.current?`2px solid ${RED}`:"none"}}>
+                style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:item.current?"#FFF0F1":item.locked?"#FAFAFA":"#fff",border:`${item.current?2:1}px solid ${item.current?RED:"#eee"}`,borderRadius:12,opacity:item.locked?0.55:1}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:item.locked?"#f5f5f5":item.done?"#E8F5E9":item.current?"#FFF0F1":"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:item.locked?12:13,fontWeight:900,color:statusColor,flexShrink:0,border:item.current?`2px solid ${RED}`:"none"}}>
                   {statusIcon}
                 </div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:item.done?"#888":item.current?"#111":"#444",textDecoration:item.done?"line-through":"none",textDecorationColor:"#aaa",lineHeight:1.3}}>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:item.locked?"#999":item.done?"#888":item.current?"#111":"#444",textDecoration:item.done?"line-through":"none",textDecorationColor:"#aaa",lineHeight:1.3}}>
                     {item.name}
                   </div>
                   {item.desc && (
@@ -6629,6 +6737,11 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
                 {item.current && (
                   <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:RED,textTransform:"uppercase",letterSpacing:.5,flexShrink:0}}>
                     now
+                  </div>
+                )}
+                {item.locked && (
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#aaa",textTransform:"uppercase",letterSpacing:.5,flexShrink:0}}>
+                    locked
                   </div>
                 )}
               </div>
@@ -6925,6 +7038,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
   // (because the next cards include "your home").
   const [showPersonalPrompt, setShowPersonalPrompt] = useState(false);
   const [dismissedPromptSetIds, setDismissedPromptSetIds] = useState(() => new Set());
+  const [promptUpcomingWord, setPromptUpcomingWord] = useState(null);
 
   useEffect(()=>{
     setIdx(0); setFrame(0); setFinished(false); setTransError(null);
@@ -6964,32 +7078,51 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
     run();
   },[language, words, sessionNum, gender]);
 
-  // After cards are built (and as idx advances), check if the CURRENT card
-  // references a personal word (home/child/elder/friend) AND the parent
-  // hasn't uploaded a photo yet AND we haven't already prompted for this
-  // set this session. Fire the prompt just-in-time.
+  // When `idx` advances into a NEW set (different setId from the previous
+  // card), check if that set contains any personal-word card (home/child/
+  // elder/friend) that the parent hasn't uploaded a photo for yet. If so,
+  // pause and show the prompt BEFORE the set begins — that way upload
+  // happens at a natural pause, not mid-flow when the personal card itself
+  // is about to render. Per Olivia's feedback.
+  //
+  // We track the most recently shown setId in a ref so we only fire the
+  // check once per set transition.
+  const lastSeenSetIdRef = useRef(null);
   useEffect(() => {
     if (cards.length === 0 || finished || translating) return;
     if (!childId) return;
     const card = cards[idx];
     if (!card) return;
-    const eng = (card.original || card.word || "").toLowerCase();
-    const PERSONAL_WORDS = ["home", "child", "elder", "friend"];
-    if (!PERSONAL_WORDS.includes(eng)) return;
-    // Don't re-prompt for a set we already prompted for
     const setId = card.setId || "_";
+    if (setId === lastSeenSetIdRef.current) return; // still in same set
+    lastSeenSetIdRef.current = setId;
     if (dismissedPromptSetIds.has(setId)) return;
-    // Check if a relevant photo exists. Aliases: child→baby, elder→grandma/grandpa
-    let hasPhoto = !!familyPhotos[eng];
-    if (eng === "child") hasPhoto = hasPhoto || !!familyPhotos.baby;
-    if (eng === "elder") {
-      hasPhoto = hasPhoto
-        || !!familyPhotos.grandma || !!familyPhotos.grandpa
-        || !!familyPhotos.grandma_paternal || !!familyPhotos.grandma_maternal
-        || !!familyPhotos.grandpa_paternal || !!familyPhotos.grandpa_maternal;
+
+    const PERSONAL_WORDS = ["home", "child", "elder", "friend"];
+    // Look ahead in the same set: find the first personal word with no photo.
+    let upcomingWord = null;
+    for (let i = idx; i < cards.length; i++) {
+      const c = cards[i];
+      if ((c.setId || "_") !== setId) break;
+      const eng = (c.original || c.word || "").toLowerCase();
+      if (!PERSONAL_WORDS.includes(eng)) continue;
+      let hasPhoto = !!familyPhotos[eng];
+      if (eng === "child") hasPhoto = hasPhoto || !!familyPhotos.baby;
+      if (eng === "elder") {
+        hasPhoto = hasPhoto
+          || !!familyPhotos.grandma || !!familyPhotos.grandpa
+          || !!familyPhotos.grandma_paternal || !!familyPhotos.grandma_maternal
+          || !!familyPhotos.grandpa_paternal || !!familyPhotos.grandpa_maternal;
+      }
+      if (!hasPhoto) {
+        upcomingWord = eng;
+        break;
+      }
     }
-    if (hasPhoto) return;
-    setShowPersonalPrompt(true);
+    if (upcomingWord) {
+      setPromptUpcomingWord(upcomingWord);
+      setShowPersonalPrompt(true);
+    }
   }, [cards, idx, childId, familyPhotos, finished, translating, dismissedPromptSetIds]);
 
   useEffect(()=>{
@@ -7046,8 +7179,11 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
       elder:  { emoji: "👵", label: "elder",  blurb: "a grandparent or older relative" },
       friend: { emoji: "🧑‍🤝‍🧑", label: "friend", blurb: "a friend of your child's or of your family" },
     };
+    // Use the looked-ahead word, not the current card. The prompt fires
+    // BEFORE the set begins, so cards[idx] is the FIRST card of the set
+    // (which may not be the personal word itself).
     const card = cards[idx] || {};
-    const eng = (card.original || card.word || "").toLowerCase();
+    const eng = promptUpcomingWord || (card.original || card.word || "").toLowerCase();
     const info = PERSONAL_WORD_INFO[eng];
     const setId = card.setId || "_";
     const photo = familyPhotos[eng];
@@ -7068,6 +7204,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
         return n;
       });
       setShowPersonalPrompt(false);
+      setPromptUpcomingWord(null);
     };
 
     return (
@@ -7081,10 +7218,10 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
         <div style={{flex:1,overflowY:"auto",padding:"24px 22px",display:"flex",flexDirection:"column",alignItems:"center"}}>
           <div style={{fontSize:64,marginTop:8,marginBottom:6}}>{info?.emoji || "📸"}</div>
           <h3 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:"0 0 6px",textAlign:"center",lineHeight:1.15}}>
-            The next card is "{info?.label || eng}"
+            Coming up: "{info?.label || eng}"
           </h3>
           <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:14,color:"#444",lineHeight:1.55,textAlign:"center",margin:"4px 0 14px",maxWidth:340}}>
-            Want to upload a photo of {info?.blurb || "this"}? Babies LOVE seeing things they recognize — it turns a flashcard into a real moment of connection. 💛
+            This set has a card for "{info?.label || eng}". Want to upload a photo of {info?.blurb || "this"}? Babies LOVE seeing things they recognize — it turns a flashcard into a real moment of connection. 💛
           </p>
 
           {/* Upload box */}
@@ -7150,7 +7287,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
   const WordDisplay = () => (
     <>
       <div style={{fontSize:wordSize,fontFamily:"'Fredoka One','Baloo 2',cursive",color:wordColor,textAlign:"center",lineHeight:1.1,letterSpacing:1}}>
-        {card.word}
+        {displayCardWord(card.word)}
       </div>
       {card.note && (
         <div style={{marginTop:8,fontFamily:"Nunito,sans-serif",fontWeight:800,color:"#999",fontSize:12,letterSpacing:.3,textAlign:"center",fontStyle:"italic"}}>{card.note}</div>
@@ -7191,7 +7328,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
                 return (
                   <div style={{width:"min(300px,82vw)",height:"min(300px,82vw)",borderRadius:22,boxShadow:"0 8px 32px rgba(0,0,0,.06)",background:"#FAFAFA",display:"flex",alignItems:"center",justifyContent:"center"}}>
                     <span style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:"min(72px,16vw)",color:wordColor,textAlign:"center",lineHeight:1.1,padding:"0 12px",wordBreak:"break-word"}}>
-                      {card.word}
+                      {displayCardWord(card.word)}
                     </span>
                   </div>
                 );
@@ -7628,6 +7765,11 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
   const cards = notes.map(n => ({ note: n, label: noteDisplayLabel(n) }));
 
   const [idx, setIdx] = useState(0);
+  // Each note has 2 frames per Olivia's spec — frame 0 shows the colored
+  // letter (like a reading word card), frame 1 shows the same note on the
+  // 5-line staff (like the reading photo card). Both frames play the same
+  // tone so the audio ↔ letter ↔ staff association reinforces three ways.
+  const [frame, setFrame] = useState(0);
   const [autoPlay, setAutoPlay] = useState(false);
   const [visible, setVisible] = useState(true);
   const [finished, setFinished] = useState(false);
@@ -7639,41 +7781,50 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
   const completedRef = useRef(false);
   const advanceTimerRef = useRef(null);
 
-  // Play the note + speak its name each time a card appears — but only AFTER
-  // the user has tapped to start (so audio context is unlocked).
+  // Play the note + speak its name each time a card+frame appears — but only
+  // AFTER the user has tapped to start (so audio context is unlocked).
+  // Speech only fires on frame 0 (the letter card) so the child hears the
+  // note name once per pair, not twice.
   useEffect(() => {
     if (!visible || finished || !started) return;
     const card = cards[idx];
     if (!card) return;
     try { playTone(card.note, 900); } catch {}
-    if (speechOn) {
+    if (speechOn && frame === 0) {
       setTimeout(() => { try { speak(card.label, language || "English"); } catch {} }, 50);
     }
-  }, [idx, visible, speechOn, cards, language, finished, started]);
+  }, [idx, frame, visible, speechOn, cards, language, finished, started]);
 
   const advance = useCallback(() => {
     if (finished) return;
     setVisible(false);
     if (advanceTimerRef.current) { clearTimeout(advanceTimerRef.current); advanceTimerRef.current = null; }
     setTimeout(() => {
-      if (idx >= cards.length - 1) {
+      if (frame < 1) {
+        // letter → staff (same note)
+        setFrame(f => f + 1);
+        setVisible(true);
+      } else if (idx >= cards.length - 1) {
+        // last note's staff card complete → finish session
         if (!completedRef.current) {
           completedRef.current = true;
           onComplete && onComplete();
         }
         setFinished(true);
       } else {
+        // next note, back to letter frame
+        setFrame(0);
         setIdx(i => i + 1);
         setVisible(true);
       }
     }, 120);
-  }, [idx, cards.length, onComplete, finished]);
+  }, [idx, frame, cards.length, onComplete, finished]);
 
   useEffect(() => {
     if (!autoPlay || !visible || finished || !started) return;
     advanceTimerRef.current = setTimeout(() => advance(), 1000);
     return () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current); };
-  }, [idx, autoPlay, visible, advance, finished, started]);
+  }, [idx, frame, autoPlay, visible, advance, finished, started]);
 
   if (finished) return <CompleteScreen category="music" sessionNum={sessionNum} onBack={onBack}/>;
 
@@ -7702,33 +7853,40 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
     advance();
   };
 
+  // Frame indicator dots — 2 dots per note (letter / staff), matching reading
+  const frameDots = (
+    <div style={{display:"flex",gap:5}}>
+      {[0,1].map(f=>(
+        <div key={f} style={{width:7,height:7,borderRadius:"50%",background:frame===f?RED:"#ddd",transition:"background .3s"}}/>
+      ))}
+    </div>
+  );
+
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} extraDots={frameDots}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px",cursor:"pointer"}}
         onClick={handleTap}>
         {/* Scale label at top */}
         <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.5,textTransform:"uppercase",marginBottom:16}}>
           {label}
         </div>
-        {visible && (
-          <>
-            {/* Note letter — rendered in the color associated with this pitch.
-                Olivia has been color-coding notes since the twins were born,
-                so the visual association is part of the curriculum. */}
-            <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:"min(180px,40vw)",color:noteColor(card.note),lineHeight:1,userSelect:"none"}}>
-              {card.label}
-            </div>
-            {/* Staff notation — shows where this note sits on a 5-line staff
-                with the appropriate clef. Reinforces the visual connection
-                between letter, color, and music notation. */}
-            <div style={{marginTop:18}}>
-              <StaffNotation note={card.note} size={Math.min(220, window.innerWidth * 0.55)}/>
-            </div>
-          </>
+        {visible && frame === 0 && (
+          // Frame 0: just the colored letter, big and centered (like a
+          // reading word card). The note tone plays simultaneously so the
+          // child links sound ↔ letter ↔ color.
+          <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:"min(240px,52vw)",color:noteColor(card.note),lineHeight:1,userSelect:"none"}}>
+            {card.label}
+          </div>
         )}
-        <p style={{marginTop:24,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
-          {started ? "tap to advance →" : "tap to begin · 🔊"}
+        {visible && frame === 1 && (
+          // Frame 1: the same note rendered on a 5-line staff. The tone
+          // plays again, but the child now sees WHERE this note lives in
+          // music notation. Treble clef for C4+, bass clef for B3 and below.
+          <StaffNotation note={card.note} size={Math.min(280, window.innerWidth * 0.7)}/>
+        )}
+        <p style={{marginTop:32,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
+          {!started ? "tap to begin · 🔊" : frame === 0 ? "tap to see staff →" : "tap for next note →"}
         </p>
       </div>
       <ProgressBar index={idx} total={cards.length}/>
@@ -7736,7 +7894,7 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
   );
 }
 
-function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack, onComplete }) {
+function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, factsMode, onBack, onComplete }) {
   const isPhonePortrait = useIsPhonePortrait();
   const [orientationDismissed, setOrientationDismissed] = useState(false);
   // Photo-only cards: the baby sees a big photograph, the parent (or the app
@@ -7769,14 +7927,23 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
   const [finished, setFinished] = useState(false);
   const [imgError, setImgError] = useState(false);
 
-  // Speak the card title aloud when it appears. Per Doman: photo + word only
-  // in the first months. Facts come later in the program. Speaks in the
-  // current language (title itself is already translated via titleForKnowledge).
+  // Speech behavior depends on mode:
+  //   identification mode (factsMode=false, M1-3): speak the card title only.
+  //   facts mode (factsMode=true, M4-6): speak the fact for this session
+  //     (session 1 = fact[0], session 2 = fact[1], session 3 = fact[2]).
+  //   Per Doman: M1-3 build identification; M4-6 build factual knowledge.
   useEffect(() => {
     if (!speechOn || !visible) return;
     const card = cards[idx];
-    if (card?.title) speak(card.title, language);
-  }, [idx, visible, speechOn, cards, language]);
+    if (!card) return;
+    if (factsMode) {
+      const factForSession = card.facts?.[factIndex];
+      if (factForSession) speak(factForSession, language);
+      else if (card.title) speak(card.title, language);
+    } else if (card.title) {
+      speak(card.title, language);
+    }
+  }, [idx, visible, speechOn, cards, language, factsMode, factIndex]);
 
   const advance = useCallback(() => {
     setVisible(false);
@@ -7820,12 +7987,21 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, onBack
           )}
         </div>
 
-        {/* Per Doman program: for the first months, cards are just photo + word.
-            Facts are introduced later in the program. The title is shown large
-            below the photo and spoken by the app. */}
+        {/* Title shown for both modes. In identification (M1-3), this is the
+            primary content. In facts mode (M4-6), the fact is read aloud +
+            shown below the title. */}
         {card.title && (
-          <div style={{marginTop:22,fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:32,color:RED,textAlign:"center",lineHeight:1.1,letterSpacing:.3}}>
+          <div style={{marginTop:22,fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:factsMode?28:32,color:RED,textAlign:"center",lineHeight:1.1,letterSpacing:.3}}>
             {card.title}
+          </div>
+        )}
+
+        {/* Facts display — only in facts mode. Each session within the day
+            (1, 2, 3) reads a different fact from the same card so over
+            three sessions the child hears all three facts. */}
+        {factsMode && factForSession && (
+          <div style={{marginTop:14,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:18,color:"#333",textAlign:"center",lineHeight:1.4,maxWidth:480,padding:"0 14px"}}>
+            {factForSession}
           </div>
         )}
 
@@ -8009,6 +8185,18 @@ export default function App() {
     try { const r=localStorage.getItem("lb-speech"); if(r!==null) setSpeechOn(r==="1"); } catch {}
   },[]);
 
+  // When activeChild or language changes, sync mathStage to that language's
+  // saved math position. This makes math progression per-language: Spanish
+  // and English each track independently. Falls back to "dots" if never set
+  // for this language.
+  useEffect(() => {
+    if (!activeChild || !language) return;
+    const pos = migratePosition(activeChild.position) || {};
+    const langPos = pos[language] || {};
+    const stageForThisLang = langPos.math || "dots";
+    setMathStage(stageForThisLang);
+  }, [activeChildId, language, activeChild]);
+
   // Reload daily content when active child changes, their position updates, or
   // language switches (since per-language position may differ).
   useEffect(() => {
@@ -8092,8 +8280,34 @@ export default function App() {
     setEditingChild(undefined);
   };
 
-  const handleMath = s=>{ setMathStage(s); try { localStorage.setItem("lb-math",s); } catch {} };
-  const handleLang = l=>{ setLanguage(l); /* not persisted globally anymore — it's per-child session */ };
+  const handleMath = s=>{
+    setMathStage(s);
+    // Persist per-language: store the chosen stage on the child's position
+    // for the current language, so switching language preserves each
+    // language's independent math progression. Per Olivia: math should track
+    // separately per language since the day-counter resets per language too.
+    if (activeChildId) {
+      setChildren(prev => prev.map(c => {
+        if (c.id !== activeChildId) return c;
+        const pos = migratePosition(c.position) || {};
+        const langPos = pos[language] || {};
+        return { ...c, position: { ...pos, [language]: { ...langPos, math: s } } };
+      }));
+    }
+    try { localStorage.setItem("lb-math",s); } catch {}
+  };
+  const handleLang = l=>{
+    setLanguage(l);
+    // When switching languages, restore THAT language's math stage. Each
+    // language has its own progression — Spanish might be on dots while
+    // English is already on add-dots.
+    if (activeChild) {
+      const pos = migratePosition(activeChild.position) || {};
+      const langPos = pos[l] || {};
+      const stageForThisLang = langPos.math || "dots";
+      setMathStage(stageForThisLang);
+    }
+  };
   const handleToggleSpeech = ()=>{
     setSpeechOn(v=>{
       const nv=!v;
@@ -8301,7 +8515,15 @@ export default function App() {
       {mode==="sentences"&& sessionStatus && <ReadingSession category="sentences" childId={activeChildId} words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
       {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("book")}/>}
       {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession childId={activeChildId} mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
-      {mode==="encyclopedia" && sessionStatus && <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>}
+      {mode==="encyclopedia" && sessionStatus && (() => {
+        // Knowledge curriculum runs through M1-M6:
+        //   M1-3 = identification (just card name + photo)
+        //   M4-6 = facts (same cards, but facts are read aloud + shown)
+        // Read the current month from the child's per-language position.
+        const pos = activeChild ? (migratePosition(activeChild.position)?.[language]?.knowledge || { month: 1 }) : { month: 1 };
+        const factsMode = pos.month > 3;
+        return <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} factsMode={factsMode} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>;
+      })()}
       {mode==="music" && sessionStatus && activeChild && <MusicSession content={getMusicContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("music")}/>}
       {mode==="rhythm" && sessionStatus && activeChild && <RhythmSession content={getRhythmContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("rhythm")}/>}
 
