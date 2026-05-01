@@ -273,6 +273,93 @@ function noteStaffPosition(note) {
   };
 }
 
+// ── CLEF GLYPHS ─────────────────────────────────────────────────────────
+// Simplified but properly-anchored SVG clefs. Each takes the y-coordinate
+// of its anchor line in the parent staff's coordinate space.
+//
+// Treble (G clef): The spiral curl wraps the G line (y = gLineY).
+// Bass (F clef):   The two dots straddle the F line (y = fLineY).
+//
+// These are NOT full engraving-quality clefs — they're stylized for kid
+// readability, but anatomically correct: the curl/dots land on the right
+// staff line, and the overall proportions match standard music notation.
+
+function TrebleClef({ gLineY, color = "#222" }) {
+  // The treble clef is anchored at x=8 so it sits in the leftmost part of
+  // the staff (which is 5..95 in our viewBox). The G-line passes through
+  // the inner spiral. We construct the clef from a few SVG path commands:
+  //   1. A vertical "spine" line that extends from above the staff down
+  //      below (this is the descender that loops below the bottom line)
+  //   2. An outer curl/loop around the G line (the spiral wrap)
+  //   3. A small inner spot/circle at the center of the spiral on the G line
+  // Coordinates are picked relative to gLineY so the whole shape moves
+  // correctly with whatever staff y-position we're given.
+  const cx = 12;          // horizontal center of the spiral
+  const r  = 6;           // radius of the spiral curl
+  return (
+    <g>
+      {/* Outer curl — the big swooping shape of the clef. We approximate
+          it with a single closed cubic bezier path that loops around the
+          G line and tapers off above and below. */}
+      <path
+        d={`
+          M ${cx} ${gLineY - 22}
+          C ${cx + 8} ${gLineY - 18}, ${cx + 9} ${gLineY - 6}, ${cx} ${gLineY - 2}
+          C ${cx - 8} ${gLineY + 2}, ${cx - 8} ${gLineY + 8}, ${cx - 1} ${gLineY + 9}
+          C ${cx + 6} ${gLineY + 10}, ${cx + 8} ${gLineY + 4}, ${cx + 4} ${gLineY}
+          C ${cx + 1} ${gLineY - 2}, ${cx - 2} ${gLineY - 1}, ${cx - 2} ${gLineY + 1}
+        `}
+        fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round"
+      />
+      {/* Lower descender + bottom hook — extends below the staff per
+          engraving convention. */}
+      <path
+        d={`
+          M ${cx + 1} ${gLineY + 9}
+          C ${cx + 1} ${gLineY + 14}, ${cx - 2} ${gLineY + 18}, ${cx - 5} ${gLineY + 19}
+          C ${cx - 8} ${gLineY + 20}, ${cx - 8} ${gLineY + 16}, ${cx - 5} ${gLineY + 16}
+        `}
+        fill="none" stroke={color} strokeWidth={1.4} strokeLinecap="round"
+      />
+      {/* Tiny center dot ON the G line — visual anchor point of the spiral. */}
+      <circle cx={cx} cy={gLineY} r={1.2} fill={color}/>
+    </g>
+  );
+}
+
+function BassClef({ fLineY, color = "#222" }) {
+  // Bass clef: a comma-shape body curving from above the F line down and
+  // around, plus two dots straddling the F line (one above, one below).
+  // The body's main curve passes through and wraps around the F line.
+  const cx = 14;          // horizontal anchor of the clef body
+  return (
+    <g>
+      {/* Comma-shape body — starts above the F line, curls down and to
+          the right around the F line. */}
+      <path
+        d={`
+          M ${cx - 4} ${fLineY - 9}
+          C ${cx + 2} ${fLineY - 11}, ${cx + 10} ${fLineY - 7}, ${cx + 8} ${fLineY}
+          C ${cx + 6} ${fLineY + 7}, ${cx} ${fLineY + 10}, ${cx - 6} ${fLineY + 10}
+        `}
+        fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round"
+      />
+      {/* Inner curve to give it more visual weight (looks like a small "hook") */}
+      <path
+        d={`
+          M ${cx - 1} ${fLineY - 7}
+          C ${cx + 3} ${fLineY - 6}, ${cx + 5} ${fLineY - 2}, ${cx + 3} ${fLineY + 2}
+        `}
+        fill="none" stroke={color} strokeWidth={1.4} strokeLinecap="round"
+      />
+      {/* Two dots straddling the F line. Top dot one half-step above (in the
+          space above the F line), bottom dot one half-step below. */}
+      <circle cx={cx + 12} cy={fLineY - 2.5} r={1.4} fill={color}/>
+      <circle cx={cx + 12} cy={fLineY + 2.5} r={1.4} fill={color}/>
+    </g>
+  );
+}
+
 // React component: render a 5-line staff with a clef and one note placed at
 // the right step. Standard music engraving conventions:
 //   - 5 horizontal lines, equally spaced
@@ -330,37 +417,23 @@ function StaffNotation({ note, size = 220 }) {
           y2={bottomLineY - i * lineGap}
           stroke="#222" strokeWidth={0.6}/>
       ))}
-      {/* Clef glyphs — Unicode music chars from "Musical Symbols" block.
-          On iOS Safari (Apple Symbols), Mac (Apple Symbols), and Windows
-          (Segoe UI Symbol) these render as proper clef shapes. We size
-          them generously to ensure readability on a small staff:
-            - Treble (𝄞): big curl spanning the full staff height + extending
-              above & below. Y baseline placed so the inner curl lands on
-              the G line (y=52.5).
-            - Bass (𝄢): comma shape with two dots; sits in the upper half
-              of the staff with dots bracketing the F line (y=37.5).
-          If a device lacks the Musical Symbols font, the glyph falls back
-          to the serif font (which on most platforms has approximations)
-          or shows an outlined missing-glyph box — still recognizable as
-          "where the clef goes". */}
+      {/* Clef glyphs rendered as SVG paths so we can anchor them precisely
+          to staff lines (Unicode music glyphs don't scale or position
+          consistently across platforms). Both clefs are simplified but
+          correctly anchored:
+            - Treble (G clef): the spiral curl wraps around the G line
+              (2nd line from bottom, y=52.5). The vertical body extends
+              well above and below the staff per engraving convention.
+            - Bass (F clef): the two dots are positioned on either side
+              of the F line (4th line from bottom, y=37.5). The main
+              comma-shape body sits above and around the F line.
+          These shapes are intentionally cleaner/more "kid-readable" than
+          a full engraving font would produce, while remaining recognizable
+          to anyone who reads music. */}
       {clef === "treble" ? (
-        <text
-          x={2}
-          y={bottomLineY + 12}
-          fontSize={56}
-          fontFamily="'Apple Symbols','Bravura Text','Noto Music','Segoe UI Symbol','Cambria Math',serif"
-          fill="#222"
-          style={{userSelect:"none"}}
-        >{"\u{1D11E}"}</text>
+        <TrebleClef gLineY={bottomLineY - 2 * stepSize} />
       ) : (
-        <text
-          x={4}
-          y={bottomLineY - 12}
-          fontSize={32}
-          fontFamily="'Apple Symbols','Bravura Text','Noto Music','Segoe UI Symbol','Cambria Math',serif"
-          fill="#222"
-          style={{userSelect:"none"}}
-        >{"\u{1D122}"}</text>
+        <BassClef fLineY={bottomLineY - 6 * stepSize} />
       )}
       {/* Ledger lines for the note */}
       {ledgers.map((y, i) => (
@@ -624,6 +697,17 @@ const NOTE_TYPE_META = {
   "sixteenth":      { beats: 0.25, filled: true,  stem: true,  flags: 2 },
 };
 
+// Rhythm patterns. Each pattern has:
+//   - id, label, notes[], optional beamGroups/triplet/beamed
+//   - introLabel: bool — if true, the pattern introduces a NEW concept
+//     (note value, beam pattern, etc.) and the word card should be shown
+//     after the rhythm. If false, the rhythm has been seen before in
+//     simpler form and the child has already learned its word, so we
+//     just show the notation. The runtime ALSO checks per-child learned
+//     state in localStorage so introLabel=true is only honored once per
+//     child (subsequent encounters skip the word card).
+//
+// Each time signature has ~10 patterns to give babies enough variety.
 const RHYTHM_STAGES = [
   {
     id: "basic-beats",
@@ -631,14 +715,14 @@ const RHYTHM_STAGES = [
     label: "Basic Beats",
     desc: "Introducing each note value · one card per type",
     patterns: [
-      { id: "basic-quarter",        label: "Quarter note",    notes: [{ type: "quarter" }] },
-      { id: "basic-half",           label: "Half note",       notes: [{ type: "half" }] },
-      { id: "basic-dotted-half",    label: "Dotted half",     notes: [{ type: "dotted-half" }] },
-      { id: "basic-whole",          label: "Whole note",      notes: [{ type: "whole" }] },
-      { id: "basic-eighth",         label: "Eighth notes",    notes: [{ type: "eighth" }, { type: "eighth" }], beamed: true },
-      { id: "basic-sixteenth",      label: "Sixteenth notes", notes: [{ type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }], beamed: true },
-      { id: "basic-triplet",        label: "Eighth triplet",  notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamed: true, triplet: true },
-      { id: "basic-dotted-quarter", label: "Dotted quarter",  notes: [{ type: "dotted-quarter" }] },
+      { id: "basic-quarter",        label: "Quarter note",    notes: [{ type: "quarter" }],                                                                       introLabel: true },
+      { id: "basic-half",           label: "Half note",       notes: [{ type: "half" }],                                                                          introLabel: true },
+      { id: "basic-dotted-half",    label: "Dotted half",     notes: [{ type: "dotted-half" }],                                                                   introLabel: true },
+      { id: "basic-whole",          label: "Whole note",      notes: [{ type: "whole" }],                                                                         introLabel: true },
+      { id: "basic-eighth",         label: "Eighth notes",    notes: [{ type: "eighth" }, { type: "eighth" }], beamed: true,                                       introLabel: true },
+      { id: "basic-sixteenth",      label: "Sixteenth notes", notes: [{ type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }], beamed: true, introLabel: true },
+      { id: "basic-triplet",        label: "Eighth triplet",  notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamed: true, triplet: true,    introLabel: true },
+      { id: "basic-dotted-quarter", label: "Dotted quarter",  notes: [{ type: "dotted-quarter" }],                                                                introLabel: true },
     ],
   },
   {
@@ -646,14 +730,18 @@ const RHYTHM_STAGES = [
     weekNum: 2,
     label: "2/4 Time",
     timeSignature: "2/4",
-    desc: "Patterns in 2-beat measures",
+    desc: "Patterns in 2-beat measures · 10 rhythms",
     patterns: [
-      { id: "24-qq",   label: "Quarter, Quarter",        notes: [{ type: "quarter" }, { type: "quarter" }] },
-      { id: "24-h",    label: "Half",                     notes: [{ type: "half" }] },
-      { id: "24-qee",  label: "Quarter, Two eighths",    notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[1, 2]] },
-      { id: "24-eeq",  label: "Two eighths, Quarter",    notes: [{ type: "eighth" }, { type: "eighth" }, { type: "quarter" }], beamGroups: [[0, 1]] },
-      { id: "24-eeee", label: "Four eighths",             notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[0, 1], [2, 3]] },
-      { id: "24-dqe",  label: "Dotted quarter, Eighth", notes: [{ type: "dotted-quarter" }, { type: "eighth" }] },
+      { id: "24-qq",    label: "Quarter, Quarter",        notes: [{ type: "quarter" }, { type: "quarter" }] },
+      { id: "24-h",     label: "Half",                    notes: [{ type: "half" }] },
+      { id: "24-qee",   label: "Quarter + two eighths",   notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[1, 2]] },
+      { id: "24-eeq",   label: "Two eighths + quarter",   notes: [{ type: "eighth" }, { type: "eighth" }, { type: "quarter" }], beamGroups: [[0, 1]] },
+      { id: "24-eeee",  label: "Four eighths",            notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[0, 1], [2, 3]] },
+      { id: "24-dqe",   label: "Dotted quarter, eighth",  notes: [{ type: "dotted-quarter" }, { type: "eighth" }] },
+      { id: "24-edq",   label: "Eighth, dotted quarter",  notes: [{ type: "eighth" }, { type: "dotted-quarter" }] },
+      { id: "24-ssss",  label: "Four sixteenths + quarter", notes: [{ type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }, { type: "quarter" }], beamGroups: [[0,1,2,3]] },
+      { id: "24-qssss", label: "Quarter + four sixteenths", notes: [{ type: "quarter" }, { type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }, { type: "sixteenth" }], beamGroups: [[1,2,3,4]] },
+      { id: "24-tripeq",label: "Triplet + quarter",       notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "quarter" }], beamGroups: [[0,1,2]], triplet: true },
     ],
   },
   {
@@ -661,14 +749,18 @@ const RHYTHM_STAGES = [
     weekNum: 3,
     label: "4/4 Time",
     timeSignature: "4/4",
-    desc: "Patterns in 4-beat measures",
+    desc: "Patterns in 4-beat measures · 10 rhythms",
     patterns: [
-      { id: "44-qqqq", label: "Four quarters",           notes: [{ type: "quarter" }, { type: "quarter" }, { type: "quarter" }, { type: "quarter" }] },
-      { id: "44-hh",   label: "Two halves",               notes: [{ type: "half" }, { type: "half" }] },
-      { id: "44-w",    label: "Whole note",               notes: [{ type: "whole" }] },
-      { id: "44-qqh",  label: "Quarter, Quarter, Half", notes: [{ type: "quarter" }, { type: "quarter" }, { type: "half" }] },
-      { id: "44-dhq",  label: "Dotted half, Quarter",   notes: [{ type: "dotted-half" }, { type: "quarter" }] },
-      { id: "44-mixed",label: "Quarters + eighths",     notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }, { type: "quarter" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[1, 2], [4, 5]] },
+      { id: "44-qqqq",  label: "Four quarters",            notes: [{ type: "quarter" }, { type: "quarter" }, { type: "quarter" }, { type: "quarter" }] },
+      { id: "44-hh",    label: "Two halves",               notes: [{ type: "half" }, { type: "half" }] },
+      { id: "44-w",     label: "Whole note",               notes: [{ type: "whole" }] },
+      { id: "44-qqh",   label: "Quarter, quarter, half",   notes: [{ type: "quarter" }, { type: "quarter" }, { type: "half" }] },
+      { id: "44-hqq",   label: "Half, quarter, quarter",   notes: [{ type: "half" }, { type: "quarter" }, { type: "quarter" }] },
+      { id: "44-dhq",   label: "Dotted half + quarter",    notes: [{ type: "dotted-half" }, { type: "quarter" }] },
+      { id: "44-qdh",   label: "Quarter + dotted half",    notes: [{ type: "quarter" }, { type: "dotted-half" }] },
+      { id: "44-mixed", label: "Quarters + eighths",       notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }, { type: "quarter" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[1, 2], [4, 5]] },
+      { id: "44-eight8",label: "Eight eighths",            notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[0,1],[2,3],[4,5],[6,7]] },
+      { id: "44-rumba", label: "Quarter + sixteenths mix", notes: [{ type: "quarter" }, { type: "sixteenth" }, { type: "sixteenth" }, { type: "eighth" }, { type: "quarter" }, { type: "quarter" }], beamGroups: [[1,2,3]] },
     ],
   },
   {
@@ -676,13 +768,18 @@ const RHYTHM_STAGES = [
     weekNum: 4,
     label: "3/4 Time",
     timeSignature: "3/4",
-    desc: "Waltz time · 3-beat measures",
+    desc: "Waltz time · 3-beat measures · 10 rhythms",
     patterns: [
-      { id: "34-qqq",  label: "Three quarters",          notes: [{ type: "quarter" }, { type: "quarter" }, { type: "quarter" }] },
-      { id: "34-dh",   label: "Dotted half",              notes: [{ type: "dotted-half" }] },
-      { id: "34-hq",   label: "Half, Quarter",           notes: [{ type: "half" }, { type: "quarter" }] },
-      { id: "34-qh",   label: "Quarter, Half",           notes: [{ type: "quarter" }, { type: "half" }] },
-      { id: "34-qeeq", label: "Quarter, Eighths, Quarter", notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }, { type: "quarter" }], beamGroups: [[1, 2]] },
+      { id: "34-qqq",   label: "Three quarters",           notes: [{ type: "quarter" }, { type: "quarter" }, { type: "quarter" }] },
+      { id: "34-dh",    label: "Dotted half",              notes: [{ type: "dotted-half" }] },
+      { id: "34-hq",    label: "Half + quarter",           notes: [{ type: "half" }, { type: "quarter" }] },
+      { id: "34-qh",    label: "Quarter + half",           notes: [{ type: "quarter" }, { type: "half" }] },
+      { id: "34-qeeq",  label: "Quarter, eighths, quarter",notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }, { type: "quarter" }], beamGroups: [[1, 2]] },
+      { id: "34-qqee",  label: "Quarters + eighths",       notes: [{ type: "quarter" }, { type: "quarter" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[2, 3]] },
+      { id: "34-eeqq",  label: "Eighths + quarters",       notes: [{ type: "eighth" }, { type: "eighth" }, { type: "quarter" }, { type: "quarter" }], beamGroups: [[0, 1]] },
+      { id: "34-eeeeqq",label: "Four eighths + quarter",   notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "quarter" }], beamGroups: [[0,1],[2,3]] },
+      { id: "34-dqq",   label: "Dotted quarter + eighth + quarter", notes: [{ type: "dotted-quarter" }, { type: "eighth" }, { type: "quarter" }] },
+      { id: "34-eight6",label: "Six eighths",              notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[0,1],[2,3],[4,5]] },
     ],
   },
   {
@@ -690,12 +787,18 @@ const RHYTHM_STAGES = [
     weekNum: 5,
     label: "6/8 Time",
     timeSignature: "6/8",
-    desc: "Compound meter · 6 eighths in groups of 3",
+    desc: "Compound meter · 6 eighths in groups of 3 · 10 rhythms",
     patterns: [
-      { id: "68-six",  label: "Six eighths",              notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[0, 1, 2], [3, 4, 5]] },
-      { id: "68-twodq",label: "Two dotted quarters",     notes: [{ type: "dotted-quarter" }, { type: "dotted-quarter" }] },
-      { id: "68-qeqe", label: "Quarter-eighth twice",    notes: [{ type: "quarter" }, { type: "eighth" }, { type: "quarter" }, { type: "eighth" }] },
-      { id: "68-dh",   label: "Dotted half",              notes: [{ type: "dotted-half" }] },
+      { id: "68-six",   label: "Six eighths",              notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[0, 1, 2], [3, 4, 5]] },
+      { id: "68-twodq", label: "Two dotted quarters",      notes: [{ type: "dotted-quarter" }, { type: "dotted-quarter" }] },
+      { id: "68-qeqe",  label: "Quarter-eighth twice",     notes: [{ type: "quarter" }, { type: "eighth" }, { type: "quarter" }, { type: "eighth" }] },
+      { id: "68-dh",    label: "Dotted half",              notes: [{ type: "dotted-half" }] },
+      { id: "68-eqqe",  label: "Eighth, quarter, quarter, eighth", notes: [{ type: "eighth" }, { type: "quarter" }, { type: "quarter" }, { type: "eighth" }] },
+      { id: "68-dqdq",  label: "Dotted quarter + 3 eighths", notes: [{ type: "dotted-quarter" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[1,2,3]] },
+      { id: "68-eeedq", label: "3 eighths + dotted quarter", notes: [{ type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "dotted-quarter" }], beamGroups: [[0,1,2]] },
+      { id: "68-qeeee", label: "Quarter + 4 eighths",      notes: [{ type: "quarter" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[1,2,3,4]] },
+      { id: "68-mixed", label: "Quarter, eighth, dotted quarter", notes: [{ type: "quarter" }, { type: "eighth" }, { type: "dotted-quarter" }] },
+      { id: "68-eqee",  label: "Eighth, quarter, eighths", notes: [{ type: "eighth" }, { type: "quarter" }, { type: "eighth" }, { type: "eighth" }], beamGroups: [[2,3]] },
     ],
   },
 ];
@@ -1061,6 +1164,17 @@ function getDomanWindow(dayNum, stageId) {
 
 // One session = 11 cards. Session 1 is always in-order to help babies
 // anchor the sequence. Sessions 2 and 3 are shuffled for variety.
+//
+// Equation stages: Per Olivia's pedagogy (Apr 2026), each equation displays
+// as 5 separate cards instead of one combined card:
+//   1. left operand (1)
+//   2. operator symbol (+) — speaks "plus"
+//   3. right operand (1) — speaks number
+//   4. equals sign (=) — speaks "equals"
+//   5. result (2) — speaks number
+// This matches Doman's flashcard methodology: one concept per card so the
+// baby can visually focus on each element. We expand the {op,a,b,result}
+// objects into 5-card sequences with `eqPart` markers for the renderer.
 function getMathCards(stageId, dayNum, sessionNum) {
   const stage = MATH_STAGES.find(s => s.id === stageId);
   if (!stage) return [];
@@ -1072,16 +1186,33 @@ function getMathCards(stageId, dayNum, sessionNum) {
   // Equation stages — keep the genEquations logic but optionally un-shuffle
   // for session 1 so the first daily session is pedagogically ordered.
   const eqs = genEquations(stageId, dayNum);
+  let orderedEqs;
   if (sessionNum === 1) {
-    // genEquations may pre-shuffle internally; sort by left-operand ascending
-    // to approximate a "session 1 in order" experience. Best effort.
-    return [...eqs].sort((a, b) => {
-      const av = a.left ?? a.n ?? 0;
-      const bv = b.left ?? b.n ?? 0;
+    // Sort by left-operand ascending to approximate "session 1 in order"
+    orderedEqs = [...eqs].sort((a, b) => {
+      const av = a.left ?? a.n ?? a.a ?? 0;
+      const bv = b.left ?? b.n ?? b.a ?? 0;
       return av - bv;
     });
+  } else {
+    orderedEqs = eqs;
   }
-  return eqs;
+
+  // Expand each equation into 5 cards. Each card gets:
+  //   - `eqPart`: which slot in the 5-card sequence ("left"|"op"|"right"|"eq"|"result")
+  //   - `eqIdx`:  which equation this is (0..N-1) — used for review, navigation
+  //   - `op`:     the operator string ("+", "-", "×", "÷")
+  //   - `n`:      the number to display (for left/right/result cards)
+  //   - `symbol`: the symbol to display (for op/eq cards)
+  const cards = [];
+  orderedEqs.forEach((eq, eqIdx) => {
+    cards.push({ eqPart: "left",   eqIdx, op: eq.op, n: eq.a });
+    cards.push({ eqPart: "op",     eqIdx, op: eq.op, symbol: eq.op });
+    cards.push({ eqPart: "right",  eqIdx, op: eq.op, n: eq.b });
+    cards.push({ eqPart: "eq",     eqIdx, op: eq.op, symbol: "=" });
+    cards.push({ eqPart: "result", eqIdx, op: eq.op, n: eq.result });
+  });
+  return cards;
 }
 
 // Get the day number based on when parent first opened the app.
@@ -1464,6 +1595,29 @@ function setFamilyPhoto(childId, word, dataUrl) {
     console.warn("Family photo storage failed:", e);
     return false;
   }
+}
+
+// Rhythm: track which pattern types each child has already been introduced
+// to (i.e. seen the word/concept card for). After they've learned it once,
+// future encounters of the same pattern just show the rhythm notation +
+// audio without the word card. This keeps sessions fun and focused on
+// CLAPPING THE RHYTHMS rather than re-learning vocabulary they already know.
+//
+// The "learned" key isn't pattern.id — different patterns can introduce the
+// same concept (e.g. "Quarter note" appears in both basic-beats and time-2-4).
+// We track by the pattern's `label` since labels are concept descriptions.
+function getRhythmLearned(childId) {
+  try {
+    const raw = localStorage.getItem(`lb-rhythm-learned-${childId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+function markRhythmLearned(childId, conceptKey) {
+  try {
+    const set = getRhythmLearned(childId);
+    set.add(conceptKey);
+    localStorage.setItem(`lb-rhythm-learned-${childId}`, JSON.stringify([...set]));
+  } catch {}
 }
 
 // Compress a File to a base64 data URL, max 600px wide, JPEG quality 0.8.
@@ -3492,7 +3646,65 @@ async function fetchDailySentences(child, language) {
   return out;
 }
 
-// ── FALLBACK DATA ─────────────────────────────────────────────────────────────
+// ── REVIEW MODE: fetch cards for a SPECIFIC past set ────────────────────
+// Used when parent taps a completed set in the roadmap to review it (e.g.
+// the family set with personal photos). Does NOT advance the child's
+// progress — combine with sessionStatus.isReplay=true to ensure that.
+//
+// stageType: "reading" | "couplets" | "sentences" | "knowledge"
+// month: 1-3 (or 1-6 for knowledge)
+// setIdx: 0-based index within that month
+async function fetchSetCards(stageType, month, setIdx) {
+  if (stageType === "reading") {
+    const monthSets = WORDS_BY_MONTH[month] || [];
+    const s = monthSets[setIdx];
+    if (!s) return [];
+    return s.items.map(item => ({
+      word: item.word,
+      emoji: emojiForWord(item.word),
+      setName: s.name,
+      setId: s.id,
+    }));
+  }
+  if (stageType === "couplets") {
+    const monthSets = COUPLETS_BY_MONTH[month] || [];
+    const s = monthSets[setIdx];
+    if (!s) return [];
+    return s.items.map(item => ({
+      words: item.words,
+      word: item.words.join(" "),
+      setName: s.name,
+      setId: s.id,
+    }));
+  }
+  if (stageType === "sentences") {
+    const monthSets = SENTENCES_BY_MONTH[month] || [];
+    const s = monthSets[setIdx];
+    if (!s) return [];
+    return s.items.map(item => ({
+      sentence: item.sentence,
+      word: item.sentence,
+      setName: s.name,
+      setId: s.id,
+    }));
+  }
+  if (stageType === "knowledge") {
+    // Knowledge maps M4→M1, M5→M2, M6→M3 (same content, facts mode).
+    const contentMonth = month > 3 ? month - 3 : month;
+    const monthSets = KNOWLEDGE_BY_MONTH[contentMonth] || [];
+    const s = monthSets[setIdx];
+    if (!s) return [];
+    return s.items.map(item => ({
+      id: item.id,
+      title: titleForKnowledge(item.id, "English"),
+      photoUrl: photoUrlForKnowledge(item.id),
+      setName: s.name,
+      setId: s.id,
+      facts: item.facts || [null, null, null],
+    }));
+  }
+  return [];
+}
 
 const FALLBACK_WORDS = [
   {word:"mama",emoji:"👩"},{word:"dada",emoji:"👨"},{word:"baby",emoji:"👶"},
@@ -3969,20 +4181,38 @@ function LanguagePicker({ selected, onSelect, onClose }) {
 }
 
 // Simpler language picker limited to the active child's enabled languages
-function ChildLanguagePicker({ languages, selected, onSelect, onEditLanguages, onClose }) {
+function ChildLanguagePicker({ languages, selected, onSelect, onEditLanguages, onClose, child }) {
+  // Show all of the child's languages — even those without class enrollments.
+  // When the user picks an unenrolled language, the home screen shows a clear
+  // "Not enrolled yet" CTA that points to the profile editor. (Per Olivia's
+  // request 2026-04: keep the picker complete; let the home screen do the
+  // explaining.)
   return (
     <Sheet onClose={onClose}>
       <div style={{padding:"22px 22px 14px",borderBottom:"1px solid #f0f0f0"}}>
-        <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:0}}>🌍 Language for this session</h2>
+        <h2 style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:24,color:"#111",margin:0}}>🌍 Language for this session</h2>
         <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#aaa",margin:"6px 0 0"}}>Choose from your child's languages</p>
       </div>
       <div style={{overflowY:"auto",flex:1,paddingBottom:16}}>
-        {languages.map(lang=>(
-          <button key={lang} onClick={()=>{onSelect(lang);onClose();}}
-            style={{display:"block",width:"100%",textAlign:"left",padding:"13px 22px",border:"none",background:selected===lang?"#FFF0F1":"transparent",color:selected===lang?RED:"#333",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:15,cursor:"pointer",borderLeft:selected===lang?`4px solid ${RED}`:"4px solid transparent"}}>
-            {lang}{selected===lang?" ✓":""}
-          </button>
-        ))}
+        {languages.map(lang=>{
+          const enrolledLangs = child ? getEnrolledLanguages(child) : languages;
+          const enrolled = enrolledLangs.includes(lang);
+          return (
+            <button key={lang} onClick={()=>{onSelect(lang);onClose();}}
+              style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",textAlign:"left",padding:"13px 22px",border:"none",background:selected===lang?"#FFF0F1":"transparent",color:selected===lang?RED:"#333",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:15,cursor:"pointer",borderLeft:selected===lang?`4px solid ${RED}`:"4px solid transparent"}}>
+              <span style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:15}}>{flagFor(lang)}</span>
+                <span>{lang}</span>
+                {!enrolled && (
+                  <span style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#bbb",letterSpacing:.4,textTransform:"uppercase",marginLeft:4}}>
+                    not enrolled
+                  </span>
+                )}
+              </span>
+              {selected===lang && <span style={{fontSize:14}}>✓</span>}
+            </button>
+          );
+        })}
       </div>
       <div style={{padding:"12px 22px 22px",borderTop:"1px solid #f0f0f0"}}>
         <button onClick={()=>{onClose();onEditLanguages();}}
@@ -4092,6 +4322,22 @@ function isClassEnrolled(child, classId, language) {
 function getClassLanguages(child, classId) {
   const map = getEnrollmentMap(child);
   return map[classId] || [];
+}
+
+// Returns the unique set of languages this child is enrolled in for ANY
+// class. Used to filter the home-screen language picker so parents don't
+// see languages with zero enrollments. Music is excluded from the
+// per-language enrollment set since music is English-only and would
+// otherwise pollute the list.
+function getEnrolledLanguages(child) {
+  if (!child) return [];
+  const map = getEnrollmentMap(child);
+  const langs = new Set();
+  for (const [classId, classLangs] of Object.entries(map)) {
+    if (classId === "music") continue;
+    for (const l of (classLangs || [])) langs.add(l);
+  }
+  return [...langs];
 }
 
 // Auto-detect whether a class is fully complete based on actual progress.
@@ -6343,7 +6589,46 @@ function LanguageLevelSheet({ child, language, onSave, onClose }) {
 // app (via localStorage flag "lb-seen-welcome") and available anytime via the
 // "?" button in the home header.
 function WelcomeSheet({ onClose, startOnFaq = false }) {
-  const [tab, setTab] = useState(startOnFaq ? "faq" : "welcome");
+  // Tabs: "start" (NEW — videos & primer for parents new to Doman),
+  //       "welcome" (tips), "faq", "about"
+  // Default landing tab is "start" so first-time users see the educational
+  // content before the operational tips. startOnFaq still routes to FAQ
+  // when triggered from a "?" deep-link.
+  const [tab, setTab] = useState(startOnFaq ? "faq" : "start");
+
+  // ── Start Here: Doman primer videos and reading ───────────────────────
+  // Olivia is creating how-to videos to onboard parents who've never heard
+  // of the Doman method. The video URLs below are placeholders to be
+  // replaced when Olivia sends YouTube links. Each video has a title,
+  // optional description, and a YouTube embed URL.
+  // ----------------------------------------------------------------------
+  const startHereVideos = [
+    {
+      title: "What is the Doman method?",
+      desc: "A 5-minute primer on Glenn Doman's flashcard methodology and why it works.",
+      url: null,  // replace with YouTube embed URL when available
+    },
+    {
+      title: "How to run a session",
+      desc: "Step-by-step demo of a reading session with my twins. Watch how I move through the cards.",
+      url: null,
+    },
+    {
+      title: "Why minimal/low-screen?",
+      desc: "How to use Limitless Babies WITHOUT it becoming a babysitter app.",
+      url: null,
+    },
+    {
+      title: "Family photos & personalization",
+      desc: "Setting up family photos so your baby learns their loved ones by name.",
+      url: null,
+    },
+    {
+      title: "Multilingual babies — getting started",
+      desc: "How to introduce multiple languages, when to add a new one, and what to expect.",
+      url: null,
+    },
+  ];
 
   const tips = [
     { emoji:"👨‍👩‍👧", title:"This app is for the caregiver, not the baby.", body:"You read the cards aloud to your baby — they don't tap or swipe. After each session, celebrate together! High-fives, claps, hugs. The app is your tool; your voice and presence are what your baby is actually learning from." },
@@ -6373,33 +6658,92 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
   return (
     <Sheet onClose={onClose}>
       <div style={{padding:"22px 22px 0",borderBottom:"1px solid #f0f0f0"}}>
-        <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:0}}>
-          {tab === "welcome" ? "Before we get started" : tab === "faq" ? "FAQ" : "About"}
+        <h2 style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:24,color:"#111",margin:0}}>
+          {tab === "start" ? "Start here" : tab === "welcome" ? "Before we get started" : tab === "faq" ? "FAQ" : "About"}
         </h2>
         <p style={{fontFamily:"Nunito,sans-serif",fontSize:12,color:"#888",fontWeight:700,marginTop:6,marginBottom:14,lineHeight:1.4}}>
-          {tab === "welcome"
-            ? "A few things to know before you dive in."
-            : tab === "faq"
-              ? "Quick answers to common questions."
-              : "The story behind Limitless Babies."}
+          {tab === "start"
+            ? "Brand-new to Doman? Watch these short videos first."
+            : tab === "welcome"
+              ? "A few things to know before you dive in."
+              : tab === "faq"
+                ? "Quick answers to common questions."
+                : "The story behind Limitless Babies."}
         </p>
-        <div style={{display:"flex",gap:4,marginBottom:0}}>
+        <div style={{display:"flex",gap:4,marginBottom:0,flexWrap:"wrap"}}>
+          <button onClick={()=>setTab("start")}
+            style={{flex:1,minWidth:74,background:tab==="start"?RED:"#f5f5f5",color:tab==="start"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,cursor:"pointer"}}>
+            🎬 start
+          </button>
           <button onClick={()=>setTab("welcome")}
-            style={{flex:1,background:tab==="welcome"?RED:"#f5f5f5",color:tab==="welcome"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,cursor:"pointer"}}>
+            style={{flex:1,minWidth:74,background:tab==="welcome"?RED:"#f5f5f5",color:tab==="welcome"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,cursor:"pointer"}}>
             ✨ tips
           </button>
           <button onClick={()=>setTab("faq")}
-            style={{flex:1,background:tab==="faq"?RED:"#f5f5f5",color:tab==="faq"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,cursor:"pointer"}}>
+            style={{flex:1,minWidth:74,background:tab==="faq"?RED:"#f5f5f5",color:tab==="faq"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,cursor:"pointer"}}>
             ❓ FAQ
           </button>
           <button onClick={()=>setTab("about")}
-            style={{flex:1,background:tab==="about"?RED:"#f5f5f5",color:tab==="about"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,cursor:"pointer"}}>
+            style={{flex:1,minWidth:74,background:tab==="about"?RED:"#f5f5f5",color:tab==="about"?"#fff":"#666",border:"none",borderRadius:"50px 50px 0 0",padding:"10px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,cursor:"pointer"}}>
             💛 about
           </button>
         </div>
       </div>
 
       <div style={{overflowY:"auto",flex:1,padding:"16px 20px 20px"}}>
+        {/* START HERE: Doman primer + how-to videos */}
+        {tab === "start" && (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{padding:"14px 16px",background:"linear-gradient(135deg,#FFF0F1 0%,#FFE4E6 100%)",border:`1px solid ${RED}33`,borderRadius:16}}>
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:17,color:"#111",lineHeight:1.2,marginBottom:8}}>
+                👋 New to Doman? Welcome.
+              </div>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#444",lineHeight:1.55}}>
+                Limitless Babies is built around the methodology of Glenn Doman, a pioneer of early childhood development. The idea is simple: babies' brains are extraordinarily plastic in the first 3 years, and they can learn to read, do math, and recognize knowledge categories far earlier than we typically expect — IF the input is delivered the right way.
+                <br/><br/>
+                These videos walk you through everything you need to know. Watch them in order before your first session.
+              </div>
+            </div>
+
+            {startHereVideos.map((v, i) => (
+              <div key={i} style={{padding:"14px",background:"#fff",border:"1px solid #eee",borderRadius:14,boxShadow:"0 1px 6px rgba(0,0,0,.04)"}}>
+                <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:v.url?12:0}}>
+                  <span style={{display:"flex",alignItems:"center",justifyContent:"center",width:28,height:28,borderRadius:"50%",background:"#FFF0F1",color:RED,fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:14,flexShrink:0}}>
+                    {i + 1}
+                  </span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:14,color:"#111",lineHeight:1.25,marginBottom:4}}>
+                      {v.title}
+                    </div>
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#666",lineHeight:1.5}}>
+                      {v.desc}
+                    </div>
+                  </div>
+                </div>
+                {v.url ? (
+                  <div style={{position:"relative",paddingBottom:"56.25%",height:0,overflow:"hidden",borderRadius:10,marginTop:10,background:"#000"}}>
+                    <iframe
+                      src={v.url}
+                      title={v.title}
+                      style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:0}}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  </div>
+                ) : (
+                  <div style={{padding:"10px 12px",background:"#fafafa",border:"1px dashed #ddd",borderRadius:10,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#aaa",textAlign:"center"}}>
+                    🎬 Video coming soon
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div style={{padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#666",lineHeight:1.5,textAlign:"center",marginTop:6}}>
+              📚 For deeper reading: search "Glenn Doman How To Teach Your Baby To Read" or check the <a href="https://gentlerevolutionpress.com" target="_blank" rel="noopener noreferrer" style={{color:RED,fontWeight:800}}>Gentle Revolution Press</a>.
+            </div>
+          </div>
+        )}
+
         {tab === "welcome" && (
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             {tips.map((t, i) => (
@@ -6632,8 +6976,22 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
   })();
 
   // Build CTA label based on what's next
+  // Three "no nextUp" cases:
+  //   1. categoryStatuses is empty → child not enrolled in any class for this language
+  //   2. all done for today (every category completed)
+  //   3. transient empty (rare) — same as #2
+  const noEnrollments = categoryStatuses.length === 0;
   let ctaLabel, ctaSubtitle, ctaAction, ctaBg, ctaBorder, ctaColor, ctaEmoji;
-  if (!nextUp) {
+  if (noEnrollments) {
+    // No categories at all for this language — direct parent to enroll
+    ctaLabel = "Not enrolled yet";
+    ctaSubtitle = `Add ${language} classes from your child's profile`;
+    ctaAction = () => onEditActiveChild && onEditActiveChild();
+    ctaBg = "#FFF8E6";
+    ctaBorder = "#FFB347";
+    ctaColor = "#B8860B";
+    ctaEmoji = "📚";
+  } else if (!nextUp) {
     // All done for today
     ctaLabel = "All done for today!";
     ctaSubtitle = `Great work today · day ${dayNum}`;
@@ -6730,6 +7088,17 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
             {ctaSubtitle}
           </div>
         </button>
+
+        {/* "Where to click" hint when child has no enrollments in this language.
+            Points to the child editor (which the CTA also opens), but also
+            shows where to access it via the profile/avatar at top-left in
+            case the parent doesn't tap the CTA. */}
+        {noEnrollments && (
+          <div style={{width:"100%",maxWidth:380,padding:"10px 12px",background:"#FFFAF0",border:"1.5px dashed #FFB347",borderRadius:12,marginBottom:10,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#8B6F1A",lineHeight:1.5,flexShrink:0,textAlign:"center"}}>
+            <strong style={{display:"block",marginBottom:2,fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:13,color:"#B8860B"}}>👆 tap the orange box above</strong>
+            or your child's avatar (top-left) → <em>edit profile</em> → enroll in classes for {language}
+          </div>
+        )}
 
         <div style={{width:"100%",maxWidth:380,flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
           {/* Family photo onboarding prompt — gentle, dismissable, auto-hides
@@ -6880,7 +7249,7 @@ function MusicMenu({ activeChild, onOpenPitch, onOpenRhythm, onBack }) {
   );
 }
 
-function RoadmapView({ stageId, category, activeChild, language, onBack, onStart }) {
+function RoadmapView({ stageId, category, activeChild, language, onBack, onStart, onReviewSet }) {
   const lang = language || "English";
   const langPos = migratePosition(activeChild?.position)[lang] || {};
 
@@ -6914,41 +7283,65 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
           emoji: "📚",
           done: isDone,
           current: isCurrent,
+          // Keep coords so we can review this exact set on tap
+          month: m,
+          setIdx: i,
+          stageType: stageId,  // "reading" | "couplets" | "sentences"
         });
       });
     }
     todaySubtitle = `Currently on Month ${pos.month}, Set ${pos.setIdx + 1}`;
 
-  } else if (stageId === "knowledge" || stageId === "encyclopedia") {
-    title = "Knowledge";
-    emoji = "🌍";
+  } else if (stageId === "knowledge" || stageId === "encyclopedia" || stageId === "encyclopedia-facts") {
+    // Knowledge has two distinct stages (Apr 2026, revised):
+    //   - encyclopedia (Subjects): M1-3 — identification mode
+    //   - encyclopedia-facts (Facts): same M1-3 content + facts mode
+    // Internally we still store the position as months 1-6 (M4-6 = the
+    // facts pass through M1-3 content), but in the UI we display the
+    // Facts stage's months as "M1, M2, M3" so parents see a clean parallel
+    // structure: Subjects M1/M2/M3 → Facts M1/M2/M3 (same content, second
+    // time through with facts).
+    const isFacts = stageId === "encyclopedia-facts";
+    title = isFacts ? "Facts" : "Subjects";
+    emoji = isFacts ? "📖" : "🌍";
     const pos = langPos.knowledge || { month: 1, setIdx: 0 };
-    // Knowledge runs M1-6: M1-3 = identification (name only), M4-6 = facts.
-    // Months ahead of the current position are LOCKED. The roadmap shows all
-    // 12 sets × 6 months = 72 items so parents can see the full progression.
-    for (let m = 1; m <= 6; m++) {
-      // M4-6 reuse M1-3 content
+    const startMonth = isFacts ? 4 : 1;
+    const endMonth   = isFacts ? 6 : 3;
+    for (let m = startMonth; m <= endMonth; m++) {
+      // M4-6 reuse M1-3 content (same data, different rendering mode).
+      // displayMonth is what the parent sees in the UI (1-3 always).
+      // m is the internal position number used for done/current/locked logic.
       const contentMonth = m > 3 ? m - 3 : m;
+      const displayMonth = contentMonth;
       const monthSets = KNOWLEDGE_BY_MONTH[contentMonth];
       if (!monthSets) continue;
-      const modeLabel = m <= 3 ? "Identification" : "Facts";
       monthSets.forEach((s, i) => {
         const isCurrent = (m === pos.month) && (i === pos.setIdx);
         const isDone = (m < pos.month) || (m === pos.month && i < pos.setIdx);
-        const isLocked = m > pos.month; // anything past current month is locked
+        const isLocked = m > pos.month; // anything past current internal month is locked
         items.push({
           id: `${s.id}-m${m}`,  // unique key across the two passes
           name: s.name,
-          desc: `Month ${m} · ${modeLabel} · ${s.items.length} cards`,
-          emoji: m <= 3 ? "🌍" : "📖",
+          desc: `Month ${displayMonth} · ${s.items.length} cards`,
+          emoji: isFacts ? "📖" : "🌍",
           done: isDone,
           current: isCurrent,
           locked: isLocked,
+          month: m,           // internal month (used for review fetch)
+          setIdx: i,
+          stageType: "knowledge",
         });
       });
     }
-    const modeLabel = pos.month <= 3 ? "Identification" : "Facts";
-    todaySubtitle = `Currently on Month ${pos.month} · ${modeLabel} · Set ${pos.setIdx + 1}`;
+    // "Currently on" subtitle uses display-month (1-3) for parent clarity.
+    if (pos.month >= startMonth && pos.month <= endMonth) {
+      const dispMonth = pos.month > 3 ? pos.month - 3 : pos.month;
+      todaySubtitle = `Currently on Month ${dispMonth}, Set ${pos.setIdx + 1}`;
+    } else if (pos.month < startMonth) {
+      todaySubtitle = isFacts ? "Unlocks after finishing Subjects" : "Unlocks at Month 1";
+    } else {
+      todaySubtitle = "Already complete!";
+    }
 
   } else if (category === "math") {
     const specificStage = MATH_STAGES.find(s => s.id === stageId);
@@ -7081,18 +7474,28 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
         </div>
 
         {/* Roadmap list */}
-        <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111",marginBottom:10,paddingLeft:4}}>curriculum path</div>
+        <div style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:15,color:"#111",marginBottom:6,paddingLeft:4}}>curriculum path</div>
+        <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginBottom:10,paddingLeft:4,lineHeight:1.4}}>
+          {onReviewSet ? "Tap any completed set to review it. Family cards are popular favorites." : ""}
+        </div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {items.map((item, idx) => {
             const statusColor = item.locked ? "#ccc" : item.done ? "#8FBC8F" : item.current ? RED : "#ccc";
             const statusIcon  = item.locked ? "🔒" : item.done ? "✓" : item.current ? "●" : "○";
-            return (
-              <div key={`${item.id}-${idx}`}
-                style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:item.current?"#FFF0F1":item.locked?"#FAFAFA":"#fff",border:`${item.current?2:1}px solid ${item.current?RED:"#eee"}`,borderRadius:12,opacity:item.locked?0.55:1}}>
+            // Reviewable: completed sets (and the current one) are tappable
+            // for review when onReviewSet is provided and the item has month
+            // / setIdx info (reading/couplets/sentences/knowledge stages).
+            const reviewable = !!onReviewSet && !item.locked && item.month != null
+                             && (item.done || item.current);
+            const handleClick = () => {
+              if (reviewable) onReviewSet(item.stageType, item.month, item.setIdx);
+            };
+            const ItemContent = (
+              <>
                 <div style={{width:26,height:26,borderRadius:"50%",background:item.locked?"#f5f5f5":item.done?"#E8F5E9":item.current?"#FFF0F1":"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:item.locked?12:13,fontWeight:900,color:statusColor,flexShrink:0,border:item.current?`2px solid ${RED}`:"none"}}>
                   {statusIcon}
                 </div>
-                <div style={{flex:1,minWidth:0}}>
+                <div style={{flex:1,minWidth:0,textAlign:"left"}}>
                   <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:item.locked?"#999":item.done?"#888":item.current?"#111":"#444",textDecoration:item.done?"line-through":"none",textDecorationColor:"#aaa",lineHeight:1.3}}>
                     {item.name}
                   </div>
@@ -7112,6 +7515,27 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
                     locked
                   </div>
                 )}
+                {reviewable && !item.current && (
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#888",letterSpacing:.5,flexShrink:0}}>
+                    review ▸
+                  </div>
+                )}
+              </>
+            );
+            const baseStyle = {display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:item.current?"#FFF0F1":item.locked?"#FAFAFA":"#fff",border:`${item.current?2:1}px solid ${item.current?RED:"#eee"}`,borderRadius:12,opacity:item.locked?0.55:1,width:"100%",textAlign:"left"};
+            if (reviewable) {
+              return (
+                <button key={`${item.id}-${idx}`} onClick={handleClick}
+                  style={{...baseStyle,cursor:"pointer",fontFamily:"inherit"}}
+                  onMouseEnter={e=>{if(!item.current)e.currentTarget.style.borderColor="#ddd";}}
+                  onMouseLeave={e=>{if(!item.current)e.currentTarget.style.borderColor="#eee";}}>
+                  {ItemContent}
+                </button>
+              );
+            }
+            return (
+              <div key={`${item.id}-${idx}`} style={baseStyle}>
+                {ItemContent}
               </div>
             );
           })}
@@ -7177,8 +7601,18 @@ function CategoryMenu({ category, activeChild, language, words, couplets, senten
     categoryIcon = "🌍";
     categoryLabel = "Knowledge";
     categoryColor = "#F0FFF4";
+    // Two stages mirror the Reading category's structure for consistency:
+    //   Subjects (M1-3 of content): identification mode — name + photo
+    //   Facts    (M1-3 of content, second pass): facts mode — adds 3 facts
+    // Internally both share a single `knowledge` position slot. The position
+    // tracks months 1-6, where 1-3 = Subjects pass and 4-6 = Facts pass
+    // (which read M1-3 content). The UI displays Facts months as "M1, M2, M3"
+    // so parents see the intuitive "same content, second time through" model.
+    // Facts unlocks at day 91 by default (3 months in) so families with daily
+    // sessions hit it naturally as Subjects completes.
     stages = [
-      { id:"encyclopedia", label:"Knowledge Cards", emoji:"🌍", desc:knowledgeDesc, unlockDay:1, posKey:"knowledge" },
+      { id:"encyclopedia",       label:"Subjects", emoji:"🌍", desc:"name + photo identification · 3 sessions a day", unlockDay:1,  posKey:"knowledge", knowledgeMode:"subjects" },
+      { id:"encyclopedia-facts", label:"Facts",    emoji:"📖", desc:"same subjects + 3 facts each · 3 sessions a day", unlockDay:91, posKey:"knowledge", knowledgeMode:"facts" },
     ];
   }
 
@@ -7199,7 +7633,16 @@ function CategoryMenu({ category, activeChild, language, words, couplets, senten
       if (!setStage) return false;
       return s.unlockDay <= setStage.unlockDay;
     }
-    // For reading/knowledge: any non-null position unlocks the stage
+    // For knowledge: Subjects (M1-3) and Facts (M4-6) share one posKey but
+    // belong to different stages. Subjects always unlocks if there's any
+    // knowledge position. Facts unlocks only if the position has reached M4+.
+    if (s.posKey === "knowledge") {
+      const kPos = langPos.knowledge;
+      if (!kPos) return false;
+      if (s.knowledgeMode === "facts") return (kPos.month || 1) > 3;
+      return true; // Subjects unlocks for any non-null knowledge position
+    }
+    // For reading: any non-null position unlocks the stage
     return hasPos(s.posKey);
   };
 
@@ -7527,6 +7970,26 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
     }, 230);
   },[frame, idx, cards.length, onComplete]);
 
+  // Go back: undo the last advance. If we're on the photo frame, go back
+  // to the word frame of the same card. If we're on the word frame, go
+  // back to the photo frame of the previous card. Useful when the parent
+  // accidentally taps through too quickly. Disabled at the very first card.
+  const goBack = useCallback(()=>{
+    if (idx === 0 && frame === 0) return;
+    setVisible(false);
+    setTimeout(()=>{
+      if (frame > 0) {
+        // photo → word (same card)
+        setFrame(f => f - 1);
+      } else {
+        // word → previous card's photo frame
+        setIdx(i => Math.max(0, i - 1));
+        setFrame(1);
+      }
+      setVisible(true);
+    }, 200);
+  },[frame, idx]);
+
   useEffect(()=>{
     if (!autoPlay||translating||finished) return;
     // Quick flash: 1 second per frame (word → photo → word)
@@ -7727,6 +8190,16 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
           {frame===0 ? "tap to see picture →" : "tap for next word →"}
         </p>
       </div>
+
+      {/* Back button — fixed bottom-left, lets parent re-show the previous
+          card if baby wasn't ready. Disabled at the very first card+frame. */}
+      {(idx > 0 || frame > 0) && (
+        <button onClick={(e)=>{ e.stopPropagation(); goBack(); }}
+          style={{position:"fixed",bottom:24,left:18,background:"#fff",border:"2px solid #eee",borderRadius:50,padding:"9px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#666",boxShadow:"0 2px 10px rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:6,zIndex:10}}>
+          ← back
+        </button>
+      )}
+
       <ProgressBar index={idx} total={cards.length}/>
     </div>
   );
@@ -7746,16 +8219,39 @@ function MathSession({ childId, mathStage, language, speechOn, sessionNum, onBac
   const [idx, setIdx]     = useState(0);
   const [visible, setVisible] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
-  const [revealed, setRevealed] = useState(false);
   const [finished, setFinished] = useState(false);
   const isEq = stage.isEq;
 
-  useEffect(()=>setRevealed(false),[idx]);
-
+  // Speak the current card's content.
+  // - Number cards: speak the number
+  // - "+" card: speak "plus"  ·  "−" card: "minus"  ·  "×": "times"  ·  "÷": "divided by"
+  // - "=" card: speak "equals"
   useEffect(()=>{
-    if (!speechOn || !visible || isEq) return;
+    if (!speechOn || !visible) return;
     const card = cards[idx];
-    if (card?.n !== undefined) speak(String(card.n), language);
+    if (!card) return;
+    if (isEq) {
+      // Equation 5-card sequence — speak based on which part of the equation
+      if (card.eqPart === "left" || card.eqPart === "right" || card.eqPart === "result") {
+        speak(String(card.n), language);
+      } else if (card.eqPart === "op") {
+        const opWord = card.op === "+" ? "plus"
+                     : card.op === "-" ? "minus"
+                     : card.op === "×" ? "times"
+                     : card.op === "÷" ? "divided by"
+                     : card.op;
+        // Intentionally use English voice for operator words — these are
+        // taught as fixed mathematical vocabulary regardless of the child's
+        // active language. Localizing "plus" → "plus/más/più/etc." can be
+        // a future enhancement when we have verified translations.
+        speak(opWord, "English");
+      } else if (card.eqPart === "eq") {
+        speak("equals", "English");
+      }
+    } else {
+      // Quantity stage (dots or numerals) — just speak the number
+      if (card.n !== undefined) speak(String(card.n), language);
+    }
   }, [idx, visible, speechOn, language, isEq, cards]);
 
   const advance = useCallback(()=>{
@@ -7771,75 +8267,116 @@ function MathSession({ childId, mathStage, language, speechOn, sessionNum, onBac
     }, 250);
   },[idx, cards.length, onComplete]);
 
+  // Go back one card. Used when parent accidentally advances. Not exposed in
+  // CompleteScreen; only during the session itself.
+  const goBack = useCallback(()=>{
+    if (idx <= 0) return;
+    setVisible(false);
+    setTimeout(()=>{
+      setIdx(i => Math.max(0, i - 1));
+      setVisible(true);
+    }, 200);
+  },[idx]);
+
   useEffect(()=>{
-    if (!autoPlay||isEq||finished) return;
-    const t=setTimeout(advance,1800); return ()=>clearTimeout(t);
+    // Auto-play advances every ~1.4s (slightly faster for equations since
+    // each card has just one element). Disabled when finished or paused.
+    if (!autoPlay || finished) return;
+    const t=setTimeout(advance, isEq ? 1400 : 1800);
+    return ()=>clearTimeout(t);
   },[autoPlay,idx,advance,isEq,finished]);
 
   if (finished) return <CompleteScreen category="math" sessionNum={sessionNum} onBack={onBack}/>;
 
   const card=cards[idx]||{};
-  const showDots = stage.showDots && stage.isEq;  // only show dots in equation mode if stage config says so
-  const showNums = stage.showNumerals && stage.isEq;
-  const bigN={fontSize:showDots?22:50,fontFamily:"'Fredoka One','Baloo 2',cursive",color:RED,textAlign:"center",lineHeight:1};
-  const opSty={fontSize:showDots?28:52,fontFamily:"'Fredoka One','Baloo 2',cursive",color:"#222",lineHeight:1,padding:"0 4px"};
+  // For equation cards: detect which slot of the 5-card sequence we're in
+  // so we can render dots/numerals or the operator symbol accordingly.
+  const isOpCard = isEq && (card.eqPart === "op" || card.eqPart === "eq");
+  const showDots = stage.showDots;
+  const showNums = stage.showNumerals;
 
-  const Qty=({n})=>(
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-      {showDots&&<MiniDots count={n} size={Math.min(95,Math.max(55,95-n))}/>}
-      {showNums&&<div style={bigN}>{n}</div>}
-    </div>
-  );
-
-  const winLo = Math.max(0, (Math.max(1, dayNum - stage.unlockDay + 1) - 1) * 2);
+  // For non-equation stages (just dots, just numerals)
+  const winLo = !isEq ? Math.max(0, (Math.max(1, dayNum - stage.unlockDay + 1) - 1) * 2) : 0;
   const winHi = winLo + 10;
 
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={isEq ? null : sessionNum}
-        autoPlay={autoPlay} onAutoPlay={isEq?null:()=>setAutoPlay(a=>!a)}/>
+      <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum}
+        autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
 
       <div style={{textAlign:"center",padding:"4px 0 0",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#bbb",letterSpacing:.5}}>
         {stage.label.toLowerCase()}{!isEq ? ` · range ${winLo}–${winHi} · shuffled` : ""}
       </div>
 
-      <div onClick={isEq?undefined:advance}
-        style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:isEq?"default":"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
+      <div onClick={advance}
+        style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
 
+        {/* Stage: dot quantities only */}
         {mathStage==="dots" && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
             <ScatteredDots count={card.n} size={300}/>
-            <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#d0d0d0",lineHeight:1,letterSpacing:1}}>
+            <div style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:22,color:"#d0d0d0",lineHeight:1,letterSpacing:1}}>
               {card.n}
             </div>
           </div>
         )}
 
+        {/* Stage: numerals only */}
         {mathStage==="numerals" && (
-          <div style={{fontSize:140,fontFamily:"'Fredoka One','Baloo 2',cursive",color:RED,lineHeight:1}}>{card.n}</div>
+          <div style={{fontSize:140,fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",color:RED,lineHeight:1}}>{card.n}</div>
         )}
 
-        {isEq && (
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,width:"100%"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:showDots?6:14,flexWrap:"wrap"}}>
-              <Qty n={card.a}/><div style={opSty}>{card.op}</div><Qty n={card.b}/>
+        {/* Stage: equation 5-card sequence */}
+        {isEq && isOpCard && (
+          // Operator card — big symbol, color-coded
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:14}}>
+            <div style={{
+              fontSize:180,
+              fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",
+              color: card.eqPart === "op" ? "#222" : RED,
+              lineHeight:1,
+            }}>
+              {card.symbol}
             </div>
-            <div style={opSty}>=</div>
-            {revealed
-              ? <>
-                  <Qty n={card.result}/>
-                  <button onClick={advance} style={{marginTop:14,background:"#f5f5f5",border:"none",borderRadius:18,padding:"8px 20px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#666"}}>next →</button>
-                </>
-              : <button onClick={()=>setRevealed(true)}
-                  style={{background:"#FFF0F1",border:`2px dashed ${RED}`,borderRadius:14,padding:"11px 26px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:RED}}>
-                  tap to reveal ✦
-                </button>
-            }
+            <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#aaa",letterSpacing:.5,textTransform:"uppercase"}}>
+              {card.symbol === "+" && "plus"}
+              {card.symbol === "-" && "minus"}
+              {card.symbol === "×" && "times"}
+              {card.symbol === "÷" && "divided by"}
+              {card.symbol === "=" && "equals"}
+            </div>
           </div>
         )}
 
-        {!isEq && <p style={{marginTop:28,color:"#e0e0e0",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>tap to advance →</p>}
+        {isEq && !isOpCard && (
+          // Number card (left/right/result) — show dots and/or numerals
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:18}}>
+            {showDots && <ScatteredDots count={card.n} size={Math.min(280, 60 + card.n * 18)}/>}
+            {showNums && (
+              <div style={{fontSize:140,fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",color: card.eqPart === "result" ? RED : "#222",lineHeight:1}}>
+                {card.n}
+              </div>
+            )}
+            {showDots && !showNums && (
+              <div style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:22,color:"#d0d0d0",lineHeight:1,letterSpacing:1}}>
+                {card.n}
+              </div>
+            )}
+          </div>
+        )}
+
+        <p style={{marginTop:28,color:"#e0e0e0",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>tap to advance →</p>
       </div>
+
+      {/* Back button — bottom-left, lets parent re-show the previous card if
+          baby wasn't ready or they tapped through too quickly. Disabled at idx=0. */}
+      {idx > 0 && (
+        <button onClick={(e)=>{ e.stopPropagation(); goBack(); }}
+          style={{position:"fixed",bottom:24,left:18,background:"#fff",border:"2px solid #eee",borderRadius:50,padding:"9px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#666",boxShadow:"0 2px 10px rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:6,zIndex:10}}>
+          ← back
+        </button>
+      )}
+
       <ProgressBar index={idx} total={cards.length}/>
     </div>
   );
@@ -8005,11 +8542,34 @@ function RhythmNotation({ pattern, timeSignature }) {
 // ── RHYTHM SESSION ───────────────────────────────────────────────────────────
 // Flash-card session for rhythm. Shows musical notation while playing the
 // rhythm. Manual-advance by default (parent controls pace). Celebrates at end.
-function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComplete }) {
+function RhythmSession({ childId, content, language, speechOn, sessionNum, onBack, onComplete }) {
   const { patterns, label, stage } = content || { patterns: [], label: "", stage: null };
   const timeSignature = stage?.timeSignature;
 
+  // Read the child's rhythm-learned set ONCE on mount. We snapshot it so that
+  // mid-session learning (marked at the end) doesn't change which cards we
+  // show this session — the parent gets a stable, predictable flow.
+  const learnedSetRef = useRef(null);
+  if (learnedSetRef.current === null) {
+    learnedSetRef.current = childId ? getRhythmLearned(childId) : new Set();
+  }
+  const learnedSet = learnedSetRef.current;
+
+  // Each pattern shows 1 or 2 frames per Olivia's spec (Apr 2026):
+  //   Frame 0: rhythm notation + audio  (always shown — this is THE rhythm)
+  //   Frame 1: word/concept label        (shown only if introLabel=true AND
+  //                                       this concept hasn't been learned yet)
+  // After the session completes, all introduced concepts are marked learned
+  // so future sessions skip the word card for already-known patterns.
+  // This keeps sessions focused on CLAPPING rhythms, which babies love.
+  const showsWordCard = (pattern) => {
+    if (!pattern.introLabel) return false;
+    if (learnedSet.has(pattern.label)) return false;
+    return true;
+  };
+
   const [idx, setIdx] = useState(0);
+  const [frame, setFrame] = useState(0); // 0 = beat, 1 = word card
   const [autoPlay, setAutoPlay] = useState(false);
   const [visible, setVisible] = useState(true);
   const [finished, setFinished] = useState(false);
@@ -8018,57 +8578,108 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
   const advanceTimerRef = useRef(null);
   const cancelPlayRef = useRef(null);
 
-  // Play the rhythm + speak its label when a card appears (after first tap).
+  // Play the rhythm audio when frame 0 appears (after first tap).
+  // Speak the label only if we'll show frame 1 (i.e. introducing a new concept).
   useEffect(() => {
     if (!visible || finished || !started) return;
     const pattern = patterns[idx];
     if (!pattern) return;
-    try {
-      if (cancelPlayRef.current) cancelPlayRef.current();
-      cancelPlayRef.current = playRhythm(pattern, 80);
-    } catch {}
-    if (speechOn) {
-      setTimeout(() => { try { speak(pattern.label, "English"); } catch {} }, 100);
+    if (frame === 0) {
+      // Beat frame: always play the rhythm audio
+      try {
+        if (cancelPlayRef.current) cancelPlayRef.current();
+        cancelPlayRef.current = playRhythm(pattern, 80);
+      } catch {}
+    }
+    if (frame === 1) {
+      // Word frame: speak the concept name
+      if (speechOn) {
+        try { speak(pattern.label, "English"); } catch {}
+      }
     }
     return () => {
       if (cancelPlayRef.current) { try { cancelPlayRef.current(); } catch {} }
     };
-  }, [idx, visible, speechOn, patterns, finished, started]);
+  }, [idx, frame, visible, speechOn, patterns, finished, started]);
 
   const advance = useCallback(() => {
     if (finished) return;
     if (cancelPlayRef.current) { try { cancelPlayRef.current(); } catch {} cancelPlayRef.current = null; }
-    setVisible(false);
     if (advanceTimerRef.current) { clearTimeout(advanceTimerRef.current); advanceTimerRef.current = null; }
+    setVisible(false);
     setTimeout(() => {
-      if (idx >= patterns.length - 1) {
-        if (!completedRef.current) {
-          completedRef.current = true;
-          onComplete && onComplete();
-        }
-        setFinished(true);
-      } else {
-        setIdx(i => i + 1);
+      const pattern = patterns[idx];
+      const wantsWord = pattern && showsWordCard(pattern);
+      if (frame === 0 && wantsWord) {
+        // beat → word
+        setFrame(1);
         setVisible(true);
+      } else {
+        // advance to next pattern (or finish)
+        if (idx >= patterns.length - 1) {
+          // Mark all introduced concepts in this session as learned, so the
+          // next session won't show those word cards again.
+          if (childId) {
+            for (const p of patterns) {
+              if (p.introLabel) markRhythmLearned(childId, p.label);
+            }
+          }
+          if (!completedRef.current) {
+            completedRef.current = true;
+            onComplete && onComplete();
+          }
+          setFinished(true);
+        } else {
+          setIdx(i => i + 1);
+          setFrame(0);
+          setVisible(true);
+        }
       }
     }, 120);
-  }, [idx, patterns.length, onComplete, finished]);
+  }, [idx, frame, patterns, onComplete, finished, childId]);
+
+  // Go back: undo the last advance. Useful for accidental taps.
+  const goBack = useCallback(() => {
+    if (idx === 0 && frame === 0) return;
+    if (cancelPlayRef.current) { try { cancelPlayRef.current(); } catch {} cancelPlayRef.current = null; }
+    setVisible(false);
+    setTimeout(() => {
+      if (frame > 0) {
+        setFrame(0);
+      } else {
+        // Go to previous pattern. If it had a word card (introLabel + not learned),
+        // show its frame 1 so the parent ends on the same screen they had before.
+        const prevIdx = Math.max(0, idx - 1);
+        const prevPattern = patterns[prevIdx];
+        const prevWantsWord = prevPattern && showsWordCard(prevPattern);
+        setIdx(prevIdx);
+        setFrame(prevWantsWord ? 1 : 0);
+      }
+      setVisible(true);
+    }, 120);
+  }, [idx, frame, patterns]);
 
   useEffect(() => {
     if (!autoPlay || !visible || finished || !started) return;
     const pattern = patterns[idx];
     if (!pattern) return;
-    let totalBeats = 0;
-    for (const n of pattern.notes) {
-      const m = NOTE_TYPE_META[n.type];
-      if (m) totalBeats += m.beats;
+    if (frame === 0) {
+      // Auto-advance after the rhythm has played out
+      let totalBeats = 0;
+      for (const n of pattern.notes) {
+        const m = NOTE_TYPE_META[n.type];
+        if (m) totalBeats += m.beats;
+      }
+      if (pattern.triplet) totalBeats = totalBeats * (2 / 3);
+      const beatMs = 60000 / 80;
+      const patternMs = totalBeats * beatMs;
+      advanceTimerRef.current = setTimeout(() => advance(), patternMs + 400);
+    } else {
+      // Word frame: hold for ~1.4s before advancing
+      advanceTimerRef.current = setTimeout(() => advance(), 1400);
     }
-    if (pattern.triplet) totalBeats = totalBeats * (2 / 3);
-    const beatMs = 60000 / 80;
-    const patternMs = totalBeats * beatMs;
-    advanceTimerRef.current = setTimeout(() => advance(), patternMs + 400);
     return () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current); };
-  }, [idx, autoPlay, visible, advance, finished, patterns, started]);
+  }, [idx, frame, autoPlay, visible, advance, finished, patterns, started]);
 
   if (finished) return <CompleteScreen category="rhythm" sessionNum={sessionNum} onBack={onBack}/>;
 
@@ -8082,6 +8693,8 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
   }
 
   const pattern = patterns[idx];
+  const onWordFrame = frame === 1;
+
   // First tap = start (unlocks audio AND plays first pattern); subsequent taps = advance
   const handleTap = () => {
     if (!started) {
@@ -8090,9 +8703,6 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
         if (cancelPlayRef.current) cancelPlayRef.current();
         cancelPlayRef.current = playRhythm(pattern, 80);
       } catch {}
-      if (speechOn) {
-        setTimeout(() => { try { speak(pattern.label, "English"); } catch {} }, 100);
-      }
       setStarted(true);
       return;
     }
@@ -8108,21 +8718,36 @@ function RhythmSession({ content, language, speechOn, sessionNum, onBack, onComp
         <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#999",letterSpacing:.5,textTransform:"uppercase",marginBottom:16}}>
           {label}
         </div>
-        {/* Pattern notation — centered horizontally, large */}
-        {visible && (
-          <>
-            <div style={{width:"100%",maxWidth:560,padding:"0 20px",marginBottom:20,display:"flex",justifyContent:"center"}}>
-              <RhythmNotation pattern={pattern} timeSignature={timeSignature}/>
-            </div>
-            <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:RED,textAlign:"center",userSelect:"none"}}>
+        {/* Frame 0: notation. Frame 1: word card (only when introducing). */}
+        {visible && !onWordFrame && (
+          <div style={{width:"100%",maxWidth:560,padding:"0 20px",marginBottom:20,display:"flex",justifyContent:"center"}}>
+            <RhythmNotation pattern={pattern} timeSignature={timeSignature}/>
+          </div>
+        )}
+        {visible && onWordFrame && (
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:14}}>
+            <div style={{fontSize:64,opacity:.5,lineHeight:1}}>🥁</div>
+            <div style={{fontFamily:fontStackForText(pattern.label),fontSize:36,color:RED,textAlign:"center",userSelect:"none",lineHeight:1.15,padding:"0 20px"}}>
               {(pattern.label || "").toLowerCase()}
             </div>
-          </>
+            <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#bbb",letterSpacing:.5,textTransform:"uppercase"}}>
+              new rhythm
+            </div>
+          </div>
         )}
         <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
-          {started ? "tap to advance →" : "tap to begin · 🔊"}
+          {!started ? "tap to begin · 🔊" : onWordFrame ? "tap for next →" : "tap to advance →"}
         </p>
       </div>
+
+      {/* Back button — same pattern as Reading/Math/Encyclopedia sessions */}
+      {(idx > 0 || frame > 0) && started && (
+        <button onClick={(e)=>{ e.stopPropagation(); goBack(); }}
+          style={{position:"fixed",bottom:24,left:18,background:"#fff",border:"2px solid #eee",borderRadius:50,padding:"9px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#666",boxShadow:"0 2px 10px rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:6,zIndex:10}}>
+          ← back
+        </button>
+      )}
+
       <ProgressBar index={idx} total={patterns.length}/>
     </div>
   );
@@ -8327,6 +8952,17 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, factsM
     }, 250);
   }, [idx, cards.length, onComplete]);
 
+  // Go back one card. For accidental taps / when baby wasn't ready to move on.
+  const goBack = useCallback(() => {
+    if (idx <= 0) return;
+    setVisible(false);
+    setImgError(false);
+    setTimeout(() => {
+      setIdx(i => Math.max(0, i - 1));
+      setVisible(true);
+    }, 200);
+  }, [idx]);
+
   useEffect(() => {
     if (!autoPlay || finished) return;
     // Knowledge cards stay up ~4s so parents can read the fact
@@ -8375,6 +9011,15 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, factsM
 
         <p style={{marginTop:22,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>tap to advance →</p>
       </div>
+
+      {/* Back button — fixed bottom-left, lets parent re-show the previous card. */}
+      {idx > 0 && (
+        <button onClick={(e)=>{ e.stopPropagation(); goBack(); }}
+          style={{position:"fixed",bottom:24,left:18,background:"#fff",border:"2px solid #eee",borderRadius:50,padding:"9px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#666",boxShadow:"0 2px 10px rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:6,zIndex:10}}>
+          ← back
+        </button>
+      )}
+
       <ProgressBar index={idx} total={cards.length}/>
     </div>
   );
@@ -8446,6 +9091,12 @@ function BookSession({ book, speechOn, language, sessionNum, onBack, onComplete 
 export default function App() {
   const [mode, setMode]               = useState(null);
   const [sessionStatus, setSessionStatus] = useState(null);
+  // Review mode: when parent taps a past set in the roadmap, we load that
+  // set's cards into reviewCards and open the matching session. The session
+  // uses sessionStatus.isReplay=true so it doesn't advance the child's
+  // progress. Cleared on session exit. The reviewCards object also carries
+  // a label like "Family · Month 1, Set 1" for the session header chip.
+  const [reviewCards, setReviewCards] = useState(null); // null | { stageType, cards, label, month, setIdx }
   const [children, setChildren]       = useState([]);
   const [activeChildId, setActive]    = useState(null);
   const [language, setLanguage]       = useState("English");
@@ -8721,11 +9372,43 @@ export default function App() {
     setMode(`roadmap:${stageId}`);
   };
 
+  // Review a previously completed set. Loads cards for that specific set
+  // (e.g. "Family" from Month 1, Set 1) and opens the matching session in
+  // replay mode so it doesn't advance the child's curriculum position.
+  // stageType: "reading" | "couplets" | "sentences" | "knowledge"
+  const handleReviewSet = async (stageType, month, setIdx) => {
+    if (!activeChildId) return;
+    try {
+      const cards = await fetchSetCards(stageType, month, setIdx);
+      if (!cards || cards.length === 0) return;
+      // Build a friendly label for display in the session header
+      const monthSets =
+        stageType === "reading" ? WORDS_BY_MONTH[month] :
+        stageType === "couplets" ? COUPLETS_BY_MONTH[month] :
+        stageType === "sentences" ? SENTENCES_BY_MONTH[month] :
+        KNOWLEDGE_BY_MONTH[month > 3 ? month - 3 : month];
+      const setName = monthSets?.[setIdx]?.name || "Set";
+      // Display month: knowledge M4-6 are the Facts-mode pass through M1-3
+      // content. Show parents the displayed month (1-3) instead of internal.
+      const displayMonth = (stageType === "knowledge" && month > 3) ? month - 3 : month;
+      const label = `Reviewing: ${setName} (M${displayMonth})`;
+      setReviewCards({ stageType, cards, label, month, setIdx });
+      // Use sessionNum=1 to keep ordering stable; isReplay so completion
+      // doesn't add to today's count or advance position.
+      setSessionStatus({ sessionNum: 1, locked: false, reason: "review", isReplay: true, secondsUntilReady: 0 });
+      // Knowledge review goes to encyclopedia mode; everything else maps directly
+      const targetMode = stageType === "knowledge" ? "encyclopedia" : stageType;
+      setMode(targetMode);
+    } catch (err) {
+      console.error("review fetch failed", err);
+    }
+  };
+
   const handleStartSession = (stageId) => {
     if (!activeChildId) return;
     // For math, the stageId IS the stage (e.g., "dots", "add-dots", "numerals")
     // For reading, it's one of: reading, couplets, sentences, book
-    // For knowledge, it's "encyclopedia"
+    // For knowledge, it's "encyclopedia" (Subjects M1-3) or "encyclopedia-facts" (Facts M4-6)
 
     // Determine the category this stage belongs to (for session tracking key)
     let sessionCategory = stageId;
@@ -8734,6 +9417,13 @@ export default function App() {
       sessionCategory = "math";
       setMathStage(stageId);
       try { localStorage.setItem("lb-math", stageId); } catch {}
+    }
+    // Knowledge: both Subjects and Facts stages share one "encyclopedia" session
+    // quota per day, so a parent who does Subjects + Facts both count toward the
+    // 3-sessions-per-day limit. The actual mode (subjects vs facts) is decided
+    // at render time from `mode` itself.
+    if (stageId === "encyclopedia-facts") {
+      sessionCategory = "encyclopedia";
     }
     // Rhythm stages share one "rhythm" session quota per day
     if (RHYTHM_STAGES.find(s => s.id === stageId)) {
@@ -8750,7 +9440,7 @@ export default function App() {
     setMode(stageId);
   };
 
-  // Back from session → return to the category menu they came from
+  // Back from session → return to the category menu (or roadmap if review)
   const handleBackFromSession = () => {
     // Refresh children from storage — markSessionComplete may have advanced
     // the child's curriculum position. We do it on session-exit (instead of
@@ -8761,13 +9451,22 @@ export default function App() {
       const fresh = loadChildren();
       setChildren(fresh);
     } catch {}
+    // If we were reviewing a past set, return to the roadmap that launched it
+    // so parents can pick another set easily.
+    if (reviewCards) {
+      const roadmapStageId = reviewCards.stageType === "knowledge" ? "encyclopedia" : reviewCards.stageType;
+      setReviewCards(null);
+      setSessionStatus(null);
+      setMode(`roadmap:${roadmapStageId}`);
+      return;
+    }
     // Figure out which category menu to return to based on the current mode
     let returnTo = null;
     if (mode === "reading" || mode === "couplets" || mode === "sentences" || mode === "book") {
       returnTo = "menu:reading";
     } else if (MATH_STAGES.find(s => s.id === mode)) {
       returnTo = "menu:math";
-    } else if (mode === "encyclopedia") {
+    } else if (mode === "encyclopedia" || mode === "encyclopedia-facts") {
       returnTo = "menu:knowledge";
     } else if (mode === "music") {
       returnTo = "menu:music";  // back to music sub-menu
@@ -8860,7 +9559,7 @@ export default function App() {
         // Determine which CategoryMenu to return to (reading / math / knowledge / music)
         let parentCategory = "reading";
         if (MATH_STAGES.find(s=>s.id===stageId)) parentCategory = "math";
-        else if (stageId === "encyclopedia" || stageId === "knowledge") parentCategory = "knowledge";
+        else if (stageId === "encyclopedia" || stageId === "encyclopedia-facts" || stageId === "knowledge") parentCategory = "knowledge";
         else if (MUSIC_SCALES.find(s=>s.id===stageId) || stageId === "music") parentCategory = "music";
         else if (RHYTHM_STAGES.find(s=>s.id===stageId) || stageId === "rhythm") parentCategory = "rhythm";
         return <RoadmapView
@@ -8874,26 +9573,37 @@ export default function App() {
             else setMode(`menu:${parentCategory}`);
           }}
           onStart={() => handleStartSession(stageId)}
+          onReviewSet={handleReviewSet}
         />;
       })()}
 
       {mode==="progress" && <ProgressScreen child={activeChild} onBack={handleBackToHome}/>}
-      {mode==="reading"  && sessionStatus && <ReadingSession category="reading"   childId={activeChildId} words={dailyWords} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
-      {mode==="couplets" && sessionStatus && <ReadingSession category="couplets"  childId={activeChildId} words={dailyCouplets} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
-      {mode==="sentences"&& sessionStatus && <ReadingSession category="sentences" childId={activeChildId} words={dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
+      {mode==="reading"  && sessionStatus && <ReadingSession category="reading"   childId={activeChildId} words={reviewCards?.stageType==="reading"   ? reviewCards.cards : dailyWords}     language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("reading")}/>}
+      {mode==="couplets" && sessionStatus && <ReadingSession category="couplets"  childId={activeChildId} words={reviewCards?.stageType==="couplets"  ? reviewCards.cards : dailyCouplets}  language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
+      {mode==="sentences"&& sessionStatus && <ReadingSession category="sentences" childId={activeChildId} words={reviewCards?.stageType==="sentences" ? reviewCards.cards : dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
       {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("book")}/>}
       {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession childId={activeChildId} mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
-      {mode==="encyclopedia" && sessionStatus && (() => {
-        // Knowledge curriculum runs through M1-M6:
-        //   M1-3 = identification (just card name + photo)
-        //   M4-6 = facts (same cards, but facts are read aloud + shown)
-        // Read the current month from the child's per-language position.
+      {(mode==="encyclopedia" || mode==="encyclopedia-facts") && sessionStatus && (() => {
+        // Knowledge has two stages now (Apr 2026):
+        //   - "encyclopedia" (Subjects): identification mode — name + photo
+        //   - "encyclopedia-facts" (Facts): facts mode — name + photo + 3 facts
+        // Both stages use the same underlying card data (M1-3 content); the
+        // difference is just whether facts are shown. We force factsMode=true
+        // for the explicit Facts stage; for the Subjects stage we use the
+        // child's per-language position (M1-3 = subjects, M4-6 historically
+        // mapped to facts but with the new split most testers will use the
+        // explicit Facts stage instead).
         const pos = activeChild ? (migratePosition(activeChild.position)?.[language]?.knowledge || { month: 1 }) : { month: 1 };
-        const factsMode = pos.month > 3;
-        return <EncyclopediaSession knowledge={dailyKnow} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} factsMode={factsMode} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>;
+        const isReview = reviewCards?.stageType === "knowledge";
+        const isFactsStage = mode === "encyclopedia-facts";
+        const factsMode = isReview ? (reviewCards.month > 3)
+                        : isFactsStage ? true
+                        : (pos.month > 3);
+        const cardsToUse = isReview ? reviewCards.cards : dailyKnow;
+        return <EncyclopediaSession knowledge={cardsToUse} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} factsMode={factsMode} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>;
       })()}
       {mode==="music" && sessionStatus && activeChild && <MusicSession content={getMusicContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("music")}/>}
-      {mode==="rhythm" && sessionStatus && activeChild && <RhythmSession content={getRhythmContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("rhythm")}/>}
+      {mode==="rhythm" && sessionStatus && activeChild && <RhythmSession childId={activeChildId} content={getRhythmContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("rhythm")}/>}
 
       {showLang && activeChild && (
         <ChildLanguagePicker
@@ -8902,6 +9612,7 @@ export default function App() {
           onSelect={handleLang}
           onEditLanguages={()=>setEditingChild(activeChild)}
           onClose={()=>setShowLang(false)}
+          child={activeChild}
         />
       )}
       {showMath && <MathStagePicker selected={mathStage} onSelect={handleMath} onClose={()=>setShowMath(false)}/>}
