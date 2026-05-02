@@ -360,13 +360,102 @@ function BassClef({ fLineY, color = "#222" }) {
   );
 }
 
-// React component: render a 5-line staff with a clef and one note placed at
-// the right step. Standard music engraving conventions:
-//   - 5 horizontal lines, equally spaced
-//   - Whole notes are open ovals; quarter notes are filled with a stem
-//   - Ledger lines drawn through notes that fall above/below the staff
-//   - Sharp/flat sign drawn to the left of the notehead
+// ── NOTE IMAGE URLS ──────────────────────────────────────────────────────
+// Olivia provided photo references (Apr 2026) for each pitch instead of
+// the hand-drawn SVG staff. We use the photos when available and fall back
+// to the SVG StaffNotation for notes without a photo. Enharmonic equivalents
+// share images (A#3 ↔ Bb3, C#4 ↔ Db4, etc.) since they sit on the same
+// staff position with the same accidental glyph.
+const NOTE_IMAGE_URLS = {
+  // Bass clef notes (B3 and below)
+  "F3":  "https://www.musictheoryacademy.com/wp-content/uploads/2020/06/Bass-Clef-Notes-Quiz-F.jpg",
+  "F#3": "https://o.quizlet.com/dUSWI-6mGNLt2ddOKc9lUQ.png",
+  "Gb3": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/g-flat-music-note-in-bass-clef.png",
+  "G3":  "https://o.quizlet.com/dUSWI-6mGNLt2ddOKc9lUQ.png",
+  "G#3": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/g-sharp-music-note-in-bass-clef.png",
+  "Ab3": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/a-flat-music-note-bass-clef.png",
+  "A3":  "https://www.musictheoryacademy.com/wp-content/uploads/2020/06/Bass-Clef-Notes-Quiz-upper-A.jpg",
+  // A#3 / Bb3 — Olivia: missing, fall through to SVG for now
+  "B3":  "https://i0.wp.com/www.easypiano.com.au/wp-content/uploads/2015/07/lowb.gif",
+
+  // Treble clef notes (C4 and above)
+  "C4":  "https://upload.wikimedia.org/wikipedia/commons/0/03/Middle_C.png",
+  "C#4": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/c-sharp-music-note-in-treble-clef.png",
+  "Db4": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/d-flat-music-note-in-treble-clef.png",
+  "D4":  "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/D-note-treble-clef.png",
+  "D#4": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/d-sharp-music-note-in-treble-clef.png",
+  "Eb4": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/e-flat-music-note-in-treble-clef.png",
+  "E4":  "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/E-note-music-note-treble-clef.png",
+  "F4":  "https://www.musictheoryacademy.com/wp-content/uploads/2020/06/Treble-Clef-Notes-Quiz-low-F.jpg",
+  "F#4": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/f-sharp-music-note-in-treble-clef.png",
+  "Gb4": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/g-flat-music-note-in-treble-clef.png",
+  // G4 — Olivia didn't supply; fall through
+  "A4":  "https://www.musictheoryacademy.com/wp-content/uploads/2020/06/Treble-Clef-Notes-Quiz-A.jpg",
+  "A#4": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/a-sharp-music-note-in-treble-clef.png",
+  "Bb4": "https://jadebultitude.b-cdn.net/wp-content/uploads/2023/08/B-flat-music-note-in-treble-clef.png",
+  "B4":  "https://www.musictheoryacademy.com/wp-content/uploads/2020/06/Treble-Clef-Notes-Quiz-B.jpg",
+  "C5":  "https://o.quizlet.com/Rn6GPUDdfi7ReCix1IbE-w.png",
+};
+
+// Look up image URL with enharmonic-equivalent fallback. Two notes that
+// SOUND the same and are notated at the same staff position with the same
+// accidental can share an image. (E.g. C# and Db — same staff line, same
+// accidental glyph just labelled differently.)
+const ENHARMONIC_EQUIVALENTS = {
+  "A#3": "Bb3", "Bb3": "A#3",
+  "C#4": "Db4", "Db4": "C#4",
+  "D#4": "Eb4", "Eb4": "D#4",
+  "F#4": "Gb4", "Gb4": "F#4",
+  "G#4": "Ab4", "Ab4": "G#4",
+  "A#4": "Bb4", "Bb4": "A#4",
+  "C#5": "Db5", "Db5": "C#5",
+  "D#5": "Eb5", "Eb5": "D#5",
+  "F#3": "Gb3", "Gb3": "F#3",
+  "G#3": "Ab3", "Ab3": "G#3",
+};
+function getNoteImageUrl(note) {
+  if (NOTE_IMAGE_URLS[note]) return NOTE_IMAGE_URLS[note];
+  const eq = ENHARMONIC_EQUIVALENTS[note];
+  if (eq && NOTE_IMAGE_URLS[eq]) return NOTE_IMAGE_URLS[eq];
+  return null;
+}
+
+// Renders a music note using a real photo when available, falling back to
+// the SVG staff for notes without photo references. Both produce the same
+// visual outcome (a 5-line staff with the note positioned correctly), but
+// photos are typically clearer and more recognizable.
+function NoteImage({ note, size = 220 }) {
+  const url = getNoteImageUrl(note);
+  const [errored, setErrored] = useState(false);
+  if (!url || errored) {
+    // SVG fallback for missing or failed-to-load notes
+    return <StaffNotation note={note} size={size}/>;
+  }
+  return (
+    <img
+      src={url}
+      alt={note}
+      onError={() => setErrored(true)}
+      style={{
+        width: size,
+        maxWidth: "85vw",
+        height: "auto",
+        objectFit: "contain",
+        background: "#fff",
+        userSelect: "none",
+      }}
+      draggable={false}
+    />
+  );
+}
+
 function StaffNotation({ note, size = 220 }) {
+  // React component: render a 5-line staff with a clef and one note placed at
+  // the right step. Standard music engraving conventions:
+  //   - 5 horizontal lines, equally spaced
+  //   - Whole notes are open ovals; quarter notes are filled with a stem
+  //   - Ledger lines drawn through notes that fall above/below the staff
+  //   - Sharp/flat sign drawn to the left of the notehead
   const pos = noteStaffPosition(note);
   if (!pos) return null;
   const { clef, step, accidental } = pos;
@@ -1065,14 +1154,42 @@ function scatterDots(count, W=300, H=300) {
       }
     return pts;
   }
-  const minD=r*2.7, margin=r+8, placed=[];
-  let att=0;
-  while (placed.length<count && att<count*400) {
-    const x=margin+Math.random()*(W-margin*2), y=margin+Math.random()*(H-margin*2);
-    if (!placed.some(p=>Math.hypot(p.x-x,p.y-y)<minD)) placed.push({x,y});
-    att++;
+  // Random placement with relaxing minimum distance: start with a generous
+  // spacing, then if we can't fit all dots, reduce the spacing and try again.
+  // This guarantees we always return exactly `count` dots, even when the
+  // viewBox is small relative to the requested count.
+  const margin = r + 4;
+  const placeWithMinD = (minD) => {
+    const placed = [];
+    let att = 0;
+    const maxAtt = count * 600;
+    while (placed.length < count && att < maxAtt) {
+      const x = margin + Math.random() * (W - margin * 2);
+      const y = margin + Math.random() * (H - margin * 2);
+      if (!placed.some(p => Math.hypot(p.x - x, p.y - y) < minD)) placed.push({ x, y });
+      att++;
+    }
+    return placed;
+  };
+  // Try with progressively smaller min-distance until we fit all dots.
+  for (const ratio of [2.7, 2.4, 2.1, 1.8, 1.5, 1.2, 1.0]) {
+    const minD = r * ratio;
+    const placed = placeWithMinD(minD);
+    if (placed.length >= count) return placed.slice(0, count);
   }
-  return placed;
+  // Last resort: place on a regular grid (guaranteed to fit). This branch
+  // should only run for pathologically small viewBoxes; we still want the
+  // baby to see the right number of dots.
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols);
+  const cW = W / cols, cH = H / rows, pts = [];
+  let n = 0;
+  for (let row = 0; row < rows && n < count; row++)
+    for (let col = 0; col < cols && n < count; col++) {
+      pts.push({ x: (col + .5) * cW, y: (row + .5) * cH });
+      n++;
+    }
+  return pts;
 }
 
 function ScatteredDots({ count, size=300 }) {
@@ -1144,6 +1261,41 @@ function genEquations(stageId, dayNum) {
     out.push({ op, a, b, result });
   }
   return out;
+}
+
+// ── MATH POSITION HELPERS (Apr 2026) ─────────────────────────────────────
+// The per-language math position can be one of two shapes:
+//   1. A bare string: "dots" (legacy; the child's day-window is derived from
+//      their absolute day count in this language)
+//   2. An object: { stageId: "dots", offsetDay: 26 } (granular; pins the
+//      child to a specific day within the stage, e.g. window 50-60)
+//
+// Helpers below normalize either format. Parents use the granular form when
+// they explicitly tell the app "my baby is on Dots day 26" via the level
+// picker. Otherwise the legacy day-driven form keeps progressing naturally.
+function getMathStageId(pos) {
+  if (!pos) return null;
+  if (typeof pos === "string") return pos;
+  if (typeof pos === "object" && pos.stageId) return pos.stageId;
+  return null;
+}
+function getMathOffsetDay(pos) {
+  if (!pos || typeof pos !== "object") return null;
+  if (pos.offsetDay && pos.offsetDay >= 1) return pos.offsetDay;
+  return null;
+}
+// Resolve the actual dayNum to use for math windows. If the parent has set
+// a granular offsetDay for the current stage, use that. Otherwise compute
+// from absolute day. This way switching to a granular position immediately
+// snaps the child to that window without affecting other categories.
+function resolveMathDayNum(absoluteDayNum, mathPos) {
+  const stageId = getMathStageId(mathPos);
+  const offsetDay = getMathOffsetDay(mathPos);
+  if (stageId && offsetDay) {
+    const stage = MATH_STAGES.find(s => s.id === stageId);
+    if (stage) return stage.unlockDay + offsetDay - 1;
+  }
+  return absoluteDayNum;
 }
 
 // Doman rolling window: start 0-10, each day drop 2 lowest and add 2 higher.
@@ -1911,8 +2063,37 @@ function advancePositionAfterFinalSession(childId, category, language) {
       kids[idx].position[lang] = langPos;
       localStorage.setItem("lb-children", JSON.stringify(kids));
     }
-    // Math: no advance here — getDomanWindow uses the day number, which
-    // advances automatically as the calendar rolls forward.
+    // Math: if the parent has pinned a granular position {stageId, offsetDay},
+    // advance the offsetDay by 1 once the child completes their daily cadence
+    // (this function fires after the FINAL session of the day per the
+    // markSessionComplete logic). This keeps the pin behaving like a "starting
+    // point" rather than a permanent freeze. If math is in the legacy bare-
+    // string format, we skip — the day-driven formula handles progression.
+    if (category === "math") {
+      const cur = langPos.math;
+      if (cur && typeof cur === "object" && cur.stageId && cur.offsetDay) {
+        const stage = MATH_STAGES.find(s => s.id === cur.stageId);
+        if (stage) {
+          const isQuantityStage = !stage.isEq;
+          const maxDay = isQuantityStage ? 46 : 20;
+          const nextDay = cur.offsetDay + 1;
+          if (nextDay > maxDay) {
+            // Roll to the next stage at default day-driven mode (drop the pin)
+            const stageIdx = MATH_STAGES.findIndex(s => s.id === cur.stageId);
+            if (stageIdx >= 0 && stageIdx < MATH_STAGES.length - 1) {
+              langPos.math = MATH_STAGES[stageIdx + 1].id;
+            } else {
+              // Already on the last stage — keep the pin at maxDay
+              langPos.math = { stageId: cur.stageId, offsetDay: maxDay };
+            }
+          } else {
+            langPos.math = { stageId: cur.stageId, offsetDay: nextDay };
+          }
+          kids[idx].position[lang] = langPos;
+          localStorage.setItem("lb-children", JSON.stringify(kids));
+        }
+      }
+    }
   } catch {}
 }
 
@@ -4398,7 +4579,7 @@ function isClassFullyComplete(child, classId) {
       const bookDone = hasCompletedBook(lang);
       return wordsDone && coupletsDone && sentencesDone && bookDone;
     }
-    if (cls === "math") return (lp.math === "eq-both");
+    if (cls === "math") return (getMathStageId(lp.math) === "eq-both");
     if (cls === "knowledge") {
       const k = lp.knowledge;
       if (!k) return false;
@@ -4459,7 +4640,7 @@ function getGraduatedLanguages(child, classId) {
       const bookDone = hasCompletedBook(lang);
       return wordsDone && coupletsDone && sentencesDone && bookDone;
     }
-    if (classId === "math") return lp.math === "eq-both";
+    if (classId === "math") return getMathStageId(lp.math) === "eq-both";
     if (classId === "knowledge") {
       const k = lp.knowledge;
       return k && k.month >= 3 && k.setIdx >= finalSetIdxFor("knowledge", 3);
@@ -6367,28 +6548,131 @@ function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, prem
 // of set names so parent can tap their child's current position.
 function PositionPicker({ category, current, onSelect, onClear, onClose }) {
   const isFlatStages = category.type === "math" || category.type === "music" || category.type === "rhythm";
+  const isMath = category.type === "math";
 
-  // Flat-stage list (math, music): stages are an array of {id,label,desc}, current is a stageId string
+  // Math gets a 2-level picker: stage → specific day-window. Per Olivia's
+  // request (Apr 2026), parents need to set granular positions like "Dots
+  // day 26 = window 50-60", not just "Dots done". We expose this only for
+  // dots and numerals stages (the equation stages don't have day-windows).
+  // The selected math position is either:
+  //   - A bare stageId string (treated as "default day-driven" — child on
+  //     this stage but window comes from absolute day count)
+  //   - { stageId, offsetDay } object — pinned to that specific window
+  const [mathDrillStage, setMathDrillStage] = useState(null); // null | stageId
+
   if (isFlatStages) {
+    const currentStageId = isMath ? getMathStageId(current) : current;
+    const currentOffsetDay = isMath ? getMathOffsetDay(current) : null;
+
+    // ── DRILL: math day-window picker for a specific stage ───────────────
+    if (isMath && mathDrillStage) {
+      const stage = MATH_STAGES.find(s => s.id === mathDrillStage);
+      // dots/numerals have 46 windows; equation stages have 20
+      const isQuantityStage = !!stage && !stage.isEq;
+      const WINDOWS_PER_STAGE = isQuantityStage ? 46 : 20;
+      // Show more windows for parents who need precise positioning
+      return (
+        <Sheet onClose={onClose}>
+          <div style={{padding:"18px 22px 12px",borderBottom:"1px solid #f0f0f0"}}>
+            <button onClick={()=>setMathDrillStage(null)}
+              style={{background:"none",border:"none",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#999",padding:"0 0 8px",display:"flex",alignItems:"center",gap:4}}>
+              ← back to stages
+            </button>
+            <h2 style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:20,color:"#111",margin:0}}>
+              {stage?.label || "Math"}
+            </h2>
+            <p style={{fontFamily:"Nunito,sans-serif",fontSize:12,color:"#888",fontWeight:700,marginTop:4,marginBottom:0,lineHeight:1.4}}>
+              Pick the specific day your child is on. <strong>"Default"</strong> lets the app pick the day-window automatically based on how long they've been on this stage.
+            </p>
+          </div>
+          <div style={{overflowY:"auto",flex:1,padding:"12px 14px 8px"}}>
+            {/* Default option — clears any pinned offsetDay */}
+            <button onClick={()=>onSelect(mathDrillStage)}
+              style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:(currentStageId===mathDrillStage && !currentOffsetDay)?"#FFF0F1":"#fff",border:(currentStageId===mathDrillStage && !currentOffsetDay)?`2px solid ${RED}`:"1px solid #eee",borderRadius:12,padding:"11px 14px",cursor:"pointer",marginBottom:8,textAlign:"left"}}>
+              <span style={{fontSize:18}}>⚙️</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:13,color:(currentStageId===mathDrillStage && !currentOffsetDay)?RED:"#111"}}>
+                  Default (auto-progress)
+                </div>
+                <div style={{fontFamily:"Nunito,sans-serif",fontSize:11,fontWeight:700,color:"#888",marginTop:2}}>
+                  Day-window advances naturally with daily sessions
+                </div>
+              </div>
+              {(currentStageId===mathDrillStage && !currentOffsetDay) && <span style={{color:RED,fontSize:16}}>✓</span>}
+            </button>
+            <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#bbb",letterSpacing:.5,textTransform:"uppercase",margin:"12px 6px 6px"}}>
+              Or pick a specific day:
+            </div>
+            {Array.from({length: WINDOWS_PER_STAGE}, (_, i) => i + 1).map(offsetDay => {
+              const lo = (offsetDay - 1) * 2;
+              const hi = lo + 10;
+              const selected = currentStageId===mathDrillStage && currentOffsetDay === offsetDay;
+              return (
+                <button key={offsetDay} onClick={()=>onSelect({ stageId: mathDrillStage, offsetDay })}
+                  style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:selected?"#FFF0F1":"#fff",border:selected?`2px solid ${RED}`:"1px solid #eee",borderRadius:12,padding:"10px 14px",cursor:"pointer",marginBottom:5,textAlign:"left"}}>
+                  <div style={{minWidth:48,fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:12,color:selected?RED:"#bbb"}}>
+                    Day {offsetDay}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:selected?RED:"#222"}}>
+                      {isQuantityStage ? `${lo}–${hi}` : `Equations · level ${offsetDay}`}
+                    </div>
+                  </div>
+                  {selected && <span style={{color:RED,fontSize:14}}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{padding:"12px 22px 22px",borderTop:"1px solid #f0f0f0",display:"flex",gap:10}}>
+            <button onClick={()=>setMathDrillStage(null)}
+              style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"11px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#666"}}>
+              ← back
+            </button>
+            <button onClick={onClose}
+              style={{flex:1,background:RED,border:"none",borderRadius:50,padding:"11px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#fff"}}>
+              done
+            </button>
+          </div>
+        </Sheet>
+      );
+    }
+
+    // ── STAGE LIST (math/music/rhythm) ───────────────────────────────────
     return (
       <Sheet onClose={onClose}>
         <div style={{padding:"22px 22px 12px",borderBottom:"1px solid #f0f0f0"}}>
-          <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:22,color:"#111",margin:0}}>{category.label}</h2>
+          <h2 style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:22,color:"#111",margin:0}}>{category.label}</h2>
           <p style={{fontFamily:"Nunito,sans-serif",fontSize:12,color:"#888",fontWeight:700,marginTop:4,marginBottom:0}}>
-            Which {category.label.toLowerCase()} level is your child currently on?
+            {isMath
+              ? "Tap a stage to see specific day-windows."
+              : `Which ${category.label.toLowerCase()} level is your child currently on?`}
           </p>
         </div>
         <div style={{overflowY:"auto",flex:1,padding:"14px 14px 8px"}}>
           {category.stages.map((s) => {
-            const selected = current === s.id;
+            const selected = currentStageId === s.id;
+            // For math, show a chevron + extra info about the pinned day
+            // when applicable.
+            const detail = (isMath && selected && currentOffsetDay)
+              ? `📍 pinned to day ${currentOffsetDay}`
+              : s.desc;
             return (
-              <button key={s.id} onClick={()=>onSelect(s.id)}
+              <button key={s.id} onClick={()=>{
+                if (isMath) {
+                  // Drill into the math stage to pick a day-window. If parent
+                  // taps the stage they're already on, drill straight in.
+                  setMathDrillStage(s.id);
+                } else {
+                  onSelect(s.id);
+                }
+              }}
                 style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:selected?"#FFF0F1":"#fff",border:selected?`2px solid ${RED}`:"1px solid #eee",borderRadius:12,padding:"11px 14px",cursor:"pointer",marginBottom:6,textAlign:"left"}}>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:13,color:selected?RED:"#111"}}>{s.label}</div>
-                  <div style={{fontFamily:"Nunito,sans-serif",fontSize:11,fontWeight:700,color:"#888",marginTop:2}}>{s.desc}</div>
+                  <div style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:13,color:selected?RED:"#111"}}>{s.label}</div>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontSize:11,fontWeight:700,color:"#888",marginTop:2}}>{detail}</div>
                 </div>
-                {selected && <span style={{color:RED,fontSize:16}}>✓</span>}
+                {selected && !isMath && <span style={{color:RED,fontSize:16}}>✓</span>}
+                {isMath && <span style={{color:"#bbb",fontSize:14}}>›</span>}
               </button>
             );
           })}
@@ -6538,6 +6822,23 @@ function LanguageLevelSheet({ child, language, onSave, onClose }) {
                     : ""
                 }`
               : "not started";
+          } else if (cat.type === "math") {
+            // Math can be a bare stageId or {stageId, offsetDay}. Show the
+            // stage label, plus the pinned day-window if granular.
+            const stageId = getMathStageId(pos);
+            const offsetDay = getMathOffsetDay(pos);
+            const stage = cat.stages.find(s => s.id === stageId);
+            if (!stage) {
+              summary = "not started";
+            } else if (offsetDay) {
+              const lo = (offsetDay - 1) * 2;
+              const hi = lo + 10;
+              summary = stage.isEq
+                ? `${stage.label} · day ${offsetDay}`
+                : `${stage.label} · day ${offsetDay} (${lo}–${hi})`;
+            } else {
+              summary = `${stage.label} · default`;
+            }
           } else {
             const stage = cat.stages.find(s => s.id === pos);
             summary = stage ? stage.label : "not started";
@@ -6546,7 +6847,7 @@ function LanguageLevelSheet({ child, language, onSave, onClose }) {
             <button key={cat.key} onClick={()=>setEditingCat(cat)}
               style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid #eee",borderRadius:12,padding:"12px 14px",cursor:"pointer",marginBottom:8,textAlign:"left"}}>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:15,color:"#111"}}>{cat.label}</div>
+                <div style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:15,color:"#111"}}>{cat.label}</div>
                 <div style={{fontFamily:"Nunito,sans-serif",fontSize:12,fontWeight:700,color:"#888",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{summary}</div>
               </div>
               <span style={{fontSize:16,color:"#ccc"}}>›</span>
@@ -7350,12 +7651,18 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
       // Doman method shifts the window by 2 each day, starting at 0–10.
       title = specificStage.label;
       emoji = specificStage.showDots ? "🔴" : "🔢";
-      const currentStageIdx = MATH_STAGES.findIndex(s => s.id === (langPos.math || "dots"));
+      const currentStageIdx = MATH_STAGES.findIndex(s => s.id === (getMathStageId(langPos.math) || "dots"));
       const thisStageIdx = MATH_STAGES.findIndex(s => s.id === stageId);
       const isChildOnThisStage = thisStageIdx === currentStageIdx;
       // Child's absolute day in this language (1 if never used)
       const childAbsDay = getDayNumberForLanguage(activeChild?.id, lang);
-      const currentOffsetDay = Math.max(1, childAbsDay - specificStage.unlockDay + 1);
+      // If parent has set a granular position (offsetDay) for the current
+      // stage, that overrides the day-driven offset. Otherwise compute from
+      // absolute day.
+      const granularOffsetDay = (isChildOnThisStage ? getMathOffsetDay(langPos.math) : null);
+      const currentOffsetDay = granularOffsetDay
+        ? granularOffsetDay
+        : Math.max(1, childAbsDay - specificStage.unlockDay + 1);
       // Show 46 windows for dots and numerals (window 1 = 0–10, window 46 =
       // 90–100). Equation stages have 20 windows since the difficulty there
       // scales differently. Per Olivia: parents need to see the FULL 0–100
@@ -7375,6 +7682,10 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
           emoji: specificStage.showDots ? "🔴" : "🔢",
           done: isDone,
           current: isCurrent,
+          // Review: replay this specific window (Doman day) within the stage.
+          stageType: "math-window",
+          mathStageId: stageId,
+          offsetDay,
         });
       }
       if (thisStageIdx < currentStageIdx) {
@@ -7389,7 +7700,7 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
       // or general math roadmap).
       title = specificStage ? specificStage.label : "Math";
       emoji = "🔢";
-      const currentStageId = langPos.math || "dots";
+      const currentStageId = getMathStageId(langPos.math) || "dots";
       const currentIdx = MATH_STAGES.findIndex(s => s.id === currentStageId);
       MATH_STAGES.forEach((s, i) => {
         items.push({
@@ -7399,6 +7710,9 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
           emoji: s.isEq ? "🧮" : (s.showDots ? "🔴" : "🔢"),
           done: i < currentIdx,
           current: i === currentIdx,
+          // Review: replay any past math stage at the child's current dayNum.
+          stageType: "math-stage",
+          mathStageId: s.id,
         });
       });
       todaySubtitle = `Currently on ${MATH_STAGES[currentIdx]?.label || "Dots"}`;
@@ -7417,6 +7731,9 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
         emoji: "🎵",
         done: i < currentIdx,
         current: i === currentIdx,
+        // Review: replay any past scale's major sequence.
+        stageType: "music-scale",
+        musicScaleId: s.id,
       });
     });
     todaySubtitle = `Currently on Week ${MUSIC_SCALES[currentIdx]?.weekNum || 1}`;
@@ -7434,6 +7751,9 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
         emoji: "🥁",
         done: i < currentIdx,
         current: i === currentIdx,
+        // Review: replay any past rhythm stage's patterns.
+        stageType: "rhythm-stage",
+        rhythmStageId: s.id,
       });
     });
     todaySubtitle = `Currently on ${RHYTHM_STAGES[currentIdx]?.label || "Basic Beats"}`;
@@ -7482,13 +7802,31 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
           {items.map((item, idx) => {
             const statusColor = item.locked ? "#ccc" : item.done ? "#8FBC8F" : item.current ? RED : "#ccc";
             const statusIcon  = item.locked ? "🔒" : item.done ? "✓" : item.current ? "●" : "○";
-            // Reviewable: completed sets (and the current one) are tappable
-            // for review when onReviewSet is provided and the item has month
-            // / setIdx info (reading/couplets/sentences/knowledge stages).
-            const reviewable = !!onReviewSet && !item.locked && item.month != null
+            // Reviewable when onReviewSet is wired AND the item carries
+            // enough info to identify what to replay. Items with `month`
+            // are reading/couplets/sentences/knowledge sets. Items with
+            // `mathStageId`, `musicScaleId`, or `rhythmStageId` are math
+            // windows, music scales, or rhythm stages respectively.
+            const hasReviewIdentity = item.month != null
+                                   || item.mathStageId
+                                   || item.musicScaleId
+                                   || item.rhythmStageId;
+            const reviewable = !!onReviewSet && !item.locked && hasReviewIdentity
                              && (item.done || item.current);
             const handleClick = () => {
-              if (reviewable) onReviewSet(item.stageType, item.month, item.setIdx);
+              if (!reviewable) return;
+              if (item.stageType === "math-window") {
+                onReviewSet(item.stageType, { mathStageId: item.mathStageId, offsetDay: item.offsetDay });
+              } else if (item.stageType === "math-stage") {
+                onReviewSet(item.stageType, { mathStageId: item.mathStageId });
+              } else if (item.stageType === "music-scale") {
+                onReviewSet(item.stageType, { musicScaleId: item.musicScaleId });
+              } else if (item.stageType === "rhythm-stage") {
+                onReviewSet(item.stageType, { rhythmStageId: item.rhythmStageId });
+              } else {
+                // Reading/couplets/sentences/knowledge use month + setIdx
+                onReviewSet(item.stageType, item.month, item.setIdx);
+              }
             };
             const ItemContent = (
               <>
@@ -7627,7 +7965,7 @@ function CategoryMenu({ category, activeChild, language, words, couplets, senten
     // For math: the "math" posKey holds the current stageId — unlock only that
     // specific stage and earlier (lower unlockDay) ones.
     if (s.posKey === "math") {
-      const mathStageId = langPos.math;  // e.g. "add-dots" or null
+      const mathStageId = getMathStageId(langPos.math);  // e.g. "add-dots" or null
       if (!mathStageId) return false;
       const setStage = MATH_STAGES.find(ms => ms.id === mathStageId);
       if (!setStage) return false;
@@ -8207,13 +8545,17 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
 
 // ── MATH SESSION ──────────────────────────────────────────────────────────────
 
-function MathSession({ childId, mathStage, language, speechOn, sessionNum, onBack, onComplete }) {
-  // Use the per-language day number — math windows are scoped to each
-  // language Elara is learning. Switching from English to Cantonese should
-  // restart at day 1 (window 0–10) for Cantonese, not continue from English's
-  // day count. Previously this used the global getDayNumber() which mixed
-  // all languages together and produced wrong windows after language switches.
-  const dayNum = useMemo(()=>getDayNumberForLanguage(childId, language), [childId, language]);
+function MathSession({ childId, mathStage, mathPos, language, speechOn, sessionNum, reviewDayNum, onBack, onComplete }) {
+  // Use the per-language day number for normal sessions. When reviewing
+  // (reviewDayNum prop set), use that instead so we generate cards for the
+  // reviewed window/stage rather than today's. When `mathPos` is granular
+  // ({stageId, offsetDay}), the parent has explicitly set the level — use
+  // that resolved dayNum instead of the absolute day count.
+  const dayNum = useMemo(() => {
+    if (reviewDayNum != null) return reviewDayNum;
+    const absoluteDay = getDayNumberForLanguage(childId, language);
+    return resolveMathDayNum(absoluteDay, mathPos);
+  }, [childId, language, reviewDayNum, mathPos]);
   const stage = useMemo(()=>MATH_STAGES.find(s => s.id === mathStage) || MATH_STAGES[0], [mathStage]);
   const cards = useMemo(()=>getMathCards(mathStage, dayNum, sessionNum), [mathStage, dayNum, sessionNum]);
   const [idx, setIdx]     = useState(0);
@@ -8349,9 +8691,13 @@ function MathSession({ childId, mathStage, language, speechOn, sessionNum, onBac
         )}
 
         {isEq && !isOpCard && (
-          // Number card (left/right/result) — show dots and/or numerals
+          // Number card (left/right/result) — show dots and/or numerals.
+          // Size is fixed at 240 regardless of count, so even count=1 has
+          // plenty of viewBox to render the dot. (Previously we scaled by
+          // count, which produced a too-tight box for small counts and
+          // sometimes failed to place the requested number of dots.)
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:18}}>
-            {showDots && <ScatteredDots count={card.n} size={Math.min(280, 60 + card.n * 18)}/>}
+            {showDots && <ScatteredDots count={card.n} size={240}/>}
             {showNums && (
               <div style={{fontSize:140,fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",color: card.eqPart === "result" ? RED : "#222",lineHeight:1}}>
                 {card.n}
@@ -8813,6 +9159,23 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
     }, 120);
   }, [idx, frame, cards.length, onComplete, finished]);
 
+  // Go back: undo the last advance. Frame 1 → frame 0 (same note); frame 0 →
+  // previous note's frame 1. Lets the parent recover from accidental taps.
+  const goBack = useCallback(() => {
+    if (idx === 0 && frame === 0) return;
+    if (advanceTimerRef.current) { clearTimeout(advanceTimerRef.current); advanceTimerRef.current = null; }
+    setVisible(false);
+    setTimeout(() => {
+      if (frame > 0) {
+        setFrame(f => f - 1);
+      } else {
+        setIdx(i => Math.max(0, i - 1));
+        setFrame(1);
+      }
+      setVisible(true);
+    }, 120);
+  }, [idx, frame]);
+
   useEffect(() => {
     if (!autoPlay || !visible || finished || !started) return;
     advanceTimerRef.current = setTimeout(() => advance(), 1000);
@@ -8875,13 +9238,24 @@ function MusicSession({ content, language, speechOn, sessionNum, onBack, onCompl
         {visible && frame === 1 && (
           // Frame 1: the same note rendered on a 5-line staff. The tone
           // plays again, but the child now sees WHERE this note lives in
-          // music notation. Treble clef for C4+, bass clef for B3 and below.
-          <StaffNotation note={card.note} size={Math.min(280, window.innerWidth * 0.7)}/>
+          // music notation. We use real photo references when available
+          // (most notes), falling back to the hand-drawn SVG staff for
+          // notes without a photo (a few high notes in advanced scales).
+          <NoteImage note={card.note} size={Math.min(280, window.innerWidth * 0.7)}/>
         )}
         <p style={{marginTop:32,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
           {!started ? "tap to begin · 🔊" : frame === 0 ? "tap to see staff →" : "tap for next note →"}
         </p>
       </div>
+
+      {/* Back button — fixed bottom-left, only when there's something to undo. */}
+      {(idx > 0 || frame > 0) && started && (
+        <button onClick={(e)=>{ e.stopPropagation(); goBack(); }}
+          style={{position:"fixed",bottom:24,left:18,background:"#fff",border:"2px solid #eee",borderRadius:50,padding:"9px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#666",boxShadow:"0 2px 10px rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:6,zIndex:10}}>
+          ← back
+        </button>
+      )}
+
       <ProgressBar index={idx} total={cards.length}/>
     </div>
   );
@@ -9056,6 +9430,16 @@ function BookSession({ book, speechOn, language, sessionNum, onBack, onComplete 
     }, 250);
   }, [idx, pages.length, onComplete]);
 
+  // Go back one page. Useful for accidental taps and re-reading favorite pages.
+  const goBack = useCallback(() => {
+    if (idx <= 0) return;
+    setVisible(false);
+    setTimeout(() => {
+      setIdx(i => Math.max(0, i - 1));
+      setVisible(true);
+    }, 200);
+  }, [idx]);
+
   useEffect(() => {
     if (!autoPlay || finished) return;
     const t = setTimeout(advance, 4200); // books are held slightly longer
@@ -9076,13 +9460,22 @@ function BookSession({ book, speechOn, language, sessionNum, onBack, onComplete 
       <div onClick={advance}
         style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,cursor:"pointer",opacity:visible?1:0,transform:visible?"scale(1)":"scale(.96)",transition:"opacity .22s, transform .22s"}}>
         <div style={{fontSize:140,marginBottom:24,lineHeight:1}}>{page.emoji}</div>
-        <div style={{fontSize:40,fontFamily:"'Fredoka One','Baloo 2',cursive",color:"#111",textAlign:"center",lineHeight:1.2,letterSpacing:.5,maxWidth:340}}>
+        <div style={{fontSize:40,fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",color:"#111",textAlign:"center",lineHeight:1.2,letterSpacing:.5,maxWidth:340}}>
           {page.text}
         </div>
         <p style={{marginTop:36,color:"#e8e8e8",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12}}>
           {idx < pages.length - 1 ? "tap for next page →" : "tap to finish →"}
         </p>
       </div>
+
+      {/* Back button — fixed bottom-left, only when there's something to undo. */}
+      {idx > 0 && (
+        <button onClick={(e)=>{ e.stopPropagation(); goBack(); }}
+          style={{position:"fixed",bottom:24,left:18,background:"#fff",border:"2px solid #eee",borderRadius:50,padding:"9px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#666",boxShadow:"0 2px 10px rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:6,zIndex:10}}>
+          ← back
+        </button>
+      )}
+
       <ProgressBar index={idx} total={pages.length}/>
     </div>
   );
@@ -9212,7 +9605,7 @@ export default function App() {
     if (!activeChild || !language) return;
     const pos = migratePosition(activeChild.position) || {};
     const langPos = pos[language] || {};
-    const stageForThisLang = langPos.math || "dots";
+    const stageForThisLang = getMathStageId(langPos.math) || "dots";
     setMathStage(stageForThisLang);
   }, [activeChildId, language, activeChild]);
 
@@ -9323,7 +9716,7 @@ export default function App() {
     if (activeChild) {
       const pos = migratePosition(activeChild.position) || {};
       const langPos = pos[l] || {};
-      const stageForThisLang = langPos.math || "dots";
+      const stageForThisLang = getMathStageId(langPos.math) || "dots";
       setMathStage(stageForThisLang);
     }
   };
@@ -9372,31 +9765,85 @@ export default function App() {
     setMode(`roadmap:${stageId}`);
   };
 
-  // Review a previously completed set. Loads cards for that specific set
-  // (e.g. "Family" from Month 1, Set 1) and opens the matching session in
-  // replay mode so it doesn't advance the child's curriculum position.
-  // stageType: "reading" | "couplets" | "sentences" | "knowledge"
-  const handleReviewSet = async (stageType, month, setIdx) => {
+  // Review previously completed content. Two calling conventions, distinguished
+  // by the second argument's shape:
+  //
+  //   Set-based review (reading/couplets/sentences/knowledge):
+  //     handleReviewSet("reading", month, setIdx)
+  //     handleReviewSet("knowledge", month, setIdx)
+  //
+  //   Stage-based review (math/music/rhythm):
+  //     handleReviewSet("math-window", { mathStageId, offsetDay })
+  //     handleReviewSet("math-stage",  { mathStageId })
+  //     handleReviewSet("music-scale", { musicScaleId })
+  //     handleReviewSet("rhythm-stage",{ rhythmStageId })
+  //
+  // All set sessionStatus.isReplay=true so completion doesn't advance the
+  // child's curriculum position. The session UI itself works identically to
+  // a regular session — same cards, same audio, same back button.
+  const handleReviewSet = async (stageType, monthOrOpts, setIdx) => {
     if (!activeChildId) return;
+
+    // ── STAGE-BASED REVIEWS (math/music/rhythm) ──────────────────────────
+    if (stageType === "math-window" || stageType === "math-stage") {
+      const opts = monthOrOpts || {};
+      const stage = MATH_STAGES.find(s => s.id === opts.mathStageId);
+      if (!stage) return;
+      // For math, we don't pre-bake card data — MathSession generates cards
+      // from (stageId, dayNum, sessionNum). For "math-window" reviews we
+      // synthesize a dayNum that produces the requested window. For
+      // "math-stage" reviews we use the child's current day in this language
+      // (so the parent gets a sample of where the stage stands today).
+      const childDay = getDayNumberForLanguage(activeChildId, language);
+      const reviewDayNum = (stageType === "math-window" && opts.offsetDay)
+        ? stage.unlockDay + opts.offsetDay - 1   // produces window N within stage
+        : Math.max(stage.unlockDay, childDay);
+      // Build a friendly label
+      const winLabel = (stageType === "math-window" && opts.offsetDay)
+        ? ` · day ${opts.offsetDay}` : "";
+      const label = `Reviewing: ${stage.label}${winLabel}`;
+      setReviewCards({ stageType, label, mathStageId: opts.mathStageId, reviewDayNum });
+      setSessionStatus({ sessionNum: 1, locked: false, reason: "review", isReplay: true, secondsUntilReady: 0 });
+      // Math sessions use the stage id as the mode (e.g. "dots", "add-dots")
+      setMode(opts.mathStageId);
+      return;
+    }
+    if (stageType === "music-scale") {
+      const opts = monthOrOpts || {};
+      const scale = MUSIC_SCALES.find(s => s.id === opts.musicScaleId);
+      if (!scale) return;
+      const label = `Reviewing: ${scale.majorLabel}`;
+      setReviewCards({ stageType, label, musicScaleId: opts.musicScaleId });
+      setSessionStatus({ sessionNum: 1, locked: false, reason: "review", isReplay: true, secondsUntilReady: 0 });
+      setMode("music");
+      return;
+    }
+    if (stageType === "rhythm-stage") {
+      const opts = monthOrOpts || {};
+      const rstage = RHYTHM_STAGES.find(s => s.id === opts.rhythmStageId);
+      if (!rstage) return;
+      const label = `Reviewing: ${rstage.label}`;
+      setReviewCards({ stageType, label, rhythmStageId: opts.rhythmStageId });
+      setSessionStatus({ sessionNum: 1, locked: false, reason: "review", isReplay: true, secondsUntilReady: 0 });
+      setMode("rhythm");
+      return;
+    }
+
+    // ── SET-BASED REVIEWS (reading/couplets/sentences/knowledge) ─────────
+    const month = monthOrOpts;
     try {
       const cards = await fetchSetCards(stageType, month, setIdx);
       if (!cards || cards.length === 0) return;
-      // Build a friendly label for display in the session header
       const monthSets =
         stageType === "reading" ? WORDS_BY_MONTH[month] :
         stageType === "couplets" ? COUPLETS_BY_MONTH[month] :
         stageType === "sentences" ? SENTENCES_BY_MONTH[month] :
         KNOWLEDGE_BY_MONTH[month > 3 ? month - 3 : month];
       const setName = monthSets?.[setIdx]?.name || "Set";
-      // Display month: knowledge M4-6 are the Facts-mode pass through M1-3
-      // content. Show parents the displayed month (1-3) instead of internal.
       const displayMonth = (stageType === "knowledge" && month > 3) ? month - 3 : month;
       const label = `Reviewing: ${setName} (M${displayMonth})`;
       setReviewCards({ stageType, cards, label, month, setIdx });
-      // Use sessionNum=1 to keep ordering stable; isReplay so completion
-      // doesn't add to today's count or advance position.
       setSessionStatus({ sessionNum: 1, locked: false, reason: "review", isReplay: true, secondsUntilReady: 0 });
-      // Knowledge review goes to encyclopedia mode; everything else maps directly
       const targetMode = stageType === "knowledge" ? "encyclopedia" : stageType;
       setMode(targetMode);
     } catch (err) {
@@ -9451,10 +9898,19 @@ export default function App() {
       const fresh = loadChildren();
       setChildren(fresh);
     } catch {}
-    // If we were reviewing a past set, return to the roadmap that launched it
-    // so parents can pick another set easily.
+    // If we were reviewing a past set/stage, return to the roadmap that
+    // launched it so parents can pick another item easily.
     if (reviewCards) {
-      const roadmapStageId = reviewCards.stageType === "knowledge" ? "encyclopedia" : reviewCards.stageType;
+      // Map the reviewed stageType to the roadmap stageId we should return to
+      let roadmapStageId;
+      switch (reviewCards.stageType) {
+        case "knowledge":     roadmapStageId = "encyclopedia"; break;
+        case "math-window":
+        case "math-stage":    roadmapStageId = reviewCards.mathStageId || "dots"; break;
+        case "music-scale":   roadmapStageId = "music"; break;
+        case "rhythm-stage":  roadmapStageId = "rhythm"; break;
+        default:              roadmapStageId = reviewCards.stageType; // reading/couplets/sentences
+      }
       setReviewCards(null);
       setSessionStatus(null);
       setMode(`roadmap:${roadmapStageId}`);
@@ -9582,7 +10038,13 @@ export default function App() {
       {mode==="couplets" && sessionStatus && <ReadingSession category="couplets"  childId={activeChildId} words={reviewCards?.stageType==="couplets"  ? reviewCards.cards : dailyCouplets}  language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("couplets")}/>}
       {mode==="sentences"&& sessionStatus && <ReadingSession category="sentences" childId={activeChildId} words={reviewCards?.stageType==="sentences" ? reviewCards.cards : dailySentences} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} gender={activeChild?.gender} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("sentences")}/>}
       {mode==="book"     && sessionStatus && <BookSession book={SAMPLE_BOOK} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("book")}/>}
-      {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && <MathSession childId={activeChildId} mathStage={mode} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>}
+      {MATH_STAGES.find(s=>s.id===mode) && sessionStatus && (() => {
+        // Read the granular math position (if any) so MathSession can pin the
+        // session to a specific day-window when the parent has set one.
+        const pos = activeChild ? (migratePosition(activeChild.position)?.[language] || {}) : {};
+        const mathPos = pos.math;
+        return <MathSession childId={activeChildId} mathStage={mode} mathPos={mathPos} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} reviewDayNum={reviewCards?.stageType === "math-window" || reviewCards?.stageType === "math-stage" ? reviewCards.reviewDayNum : null} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("math")}/>;
+      })()}
       {(mode==="encyclopedia" || mode==="encyclopedia-facts") && sessionStatus && (() => {
         // Knowledge has two stages now (Apr 2026):
         //   - "encyclopedia" (Subjects): identification mode — name + photo
@@ -9602,8 +10064,27 @@ export default function App() {
         const cardsToUse = isReview ? reviewCards.cards : dailyKnow;
         return <EncyclopediaSession knowledge={cardsToUse} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} factsMode={factsMode} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("encyclopedia")}/>;
       })()}
-      {mode==="music" && sessionStatus && activeChild && <MusicSession content={getMusicContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("music")}/>}
-      {mode==="rhythm" && sessionStatus && activeChild && <RhythmSession childId={activeChildId} content={getRhythmContent(activeChild, language, sessionStatus.sessionNum)} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("rhythm")}/>}
+      {mode==="music" && sessionStatus && activeChild && (() => {
+        // For review, build content from the requested scale; otherwise from
+        // the child's current position.
+        const content = (reviewCards?.stageType === "music-scale")
+          ? (() => {
+              const scale = MUSIC_SCALES.find(s => s.id === reviewCards.musicScaleId) || MUSIC_SCALES[0];
+              return { stageId: scale.id, scale, sessionType: "major", notes: scale.majorNotes, label: scale.majorLabel };
+            })()
+          : getMusicContent(activeChild, language, sessionStatus.sessionNum);
+        return <MusicSession content={content} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("music")}/>;
+      })()}
+      {mode==="rhythm" && sessionStatus && activeChild && (() => {
+        // Same pattern as music — review picks a specific stage.
+        const content = (reviewCards?.stageType === "rhythm-stage")
+          ? (() => {
+              const stage = RHYTHM_STAGES.find(s => s.id === reviewCards.rhythmStageId) || RHYTHM_STAGES[0];
+              return { stageId: stage.id, stage, patterns: stage.patterns, label: stage.label };
+            })()
+          : getRhythmContent(activeChild, language, sessionStatus.sessionNum);
+        return <RhythmSession childId={activeChildId} content={content} language={language} speechOn={speechOn} sessionNum={sessionStatus.sessionNum} onBack={handleBackFromSession} onComplete={()=>handleSessionComplete("rhythm")}/>;
+      })()}
 
       {showLang && activeChild && (
         <ChildLanguagePicker
