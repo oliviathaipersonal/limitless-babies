@@ -18,7 +18,8 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAFACAYAAABT
 const LANGUAGES = [
   "Afrikaans","Albanian","Amharic","Arabic","Armenian","Azerbaijani","Basque",
   "Belarusian","Bengali","Bosnian","Bulgarian","Catalan","Cebuano",
-  "Chinese (Cantonese-T)","Chinese (Cantonese-S)","Chinese (Mandarin-S)","Chinese (Mandarin-T)","Croatian","Czech","Danish","Dutch",
+  "Chinese (Cantonese-Simplified)","Chinese (Cantonese-Traditional)","Chinese (Mandarin-Simplified)","Chinese (Mandarin-Traditional)","Chinese (Shanghainese)","Chinese (Teochew)","Chinese (Toisanese)",
+  "Croatian","Czech","Danish","Dutch",
   "English","Esperanto","Estonian","Tagalog","Finnish","French","Galician",
   "Georgian","German","Greek","Gujarati","Haitian Creole","Hausa","Hawaiian",
   "Hebrew","Hindi","Hmong","Hungarian","Icelandic","Igbo","Indonesian","Irish",
@@ -28,7 +29,7 @@ const LANGUAGES = [
   "Norwegian","Pashto","Persian","Polish","Portuguese","Portuguese (Brazil)","Punjabi","Romanian",
   "Russian","Samoan","Scottish Gaelic","Serbian","Sesotho","Shona","Sinhala",
   "Slovak","Slovenian","Somali","Spanish","Swahili","Swedish","Taiwanese","Tajik","Tamil",
-  "Telugu","Thai","Turkish","Ukrainian","Urdu","Uzbek","Vietnamese","Vietnamese (Northern)","Vietnamese (Southern)","Chinese (Shanghainese)","Chinese (Toisanese)","Chinese (Teochew)","Welsh",
+  "Telugu","Thai","Turkish","Ukrainian","Urdu","Uzbek","Vietnamese (Northern)","Vietnamese (Southern)","Welsh",
   "Xhosa","Yiddish","Yoruba","Zulu"
 ];
 
@@ -952,14 +953,14 @@ const SPEECH_LANG = {
   English:"en-US", Spanish:"es-ES",
   French:"fr-FR", German:"de-DE", Italian:"it-IT",
   Portuguese:"pt-PT", "Portuguese (Brazil)":"pt-BR", Russian:"ru-RU",
-  // Chinese variants — Cantonese-T and Cantonese-S both speak HK Cantonese
-  // (zh-HK voice). Mandarin-S uses zh-CN (PRC standard), Mandarin-T uses zh-TW
+  // Chinese variants — Cantonese-Traditional and Cantonese-Simplified both speak HK Cantonese
+  // (zh-HK voice). Mandarin-Simplified uses zh-CN (PRC standard), Mandarin-Traditional uses zh-TW
   // (Taiwan standard). The script (Trad/Simp) is a written distinction;
   // pronunciation maps to the regional voice. Keep legacy keys as aliases
   // so older saved children don't break before migration runs.
   "Chinese (Mandarin)":"zh-CN", "Chinese (Cantonese)":"zh-HK",
-  "Chinese (Cantonese-T)":"zh-HK", "Chinese (Cantonese-S)":"zh-HK",
-  "Chinese (Mandarin-S)":"zh-CN", "Chinese (Mandarin-T)":"zh-TW",
+  "Chinese (Cantonese-Traditional)":"zh-HK", "Chinese (Cantonese-Simplified)":"zh-HK",
+  "Chinese (Mandarin-Simplified)":"zh-CN", "Chinese (Mandarin-Traditional)":"zh-TW",
   Japanese:"ja-JP", Korean:"ko-KR", Hebrew:"he-IL",
   Arabic:"ar-SA", Hindi:"hi-IN", Vietnamese:"vi-VN", Thai:"th-TH", Turkish:"tr-TR",
   Greek:"el-GR", Polish:"pl-PL", Dutch:"nl-NL", Swedish:"sv-SE", Danish:"da-DK",
@@ -990,8 +991,8 @@ const LANGUAGE_FLAGS = {
   French:"🇫🇷", German:"🇩🇪", Italian:"🇮🇹",
   Portuguese:"🇵🇹", "Portuguese (Brazil)":"🇧🇷", Russian:"🇷🇺",
   "Chinese (Mandarin)":"🇨🇳", "Chinese (Cantonese)":"🇭🇰",
-  "Chinese (Cantonese-T)":"🇭🇰", "Chinese (Cantonese-S)":"🇭🇰",
-  "Chinese (Mandarin-S)":"🇨🇳", "Chinese (Mandarin-T)":"🇹🇼",
+  "Chinese (Cantonese-Traditional)":"🇭🇰", "Chinese (Cantonese-Simplified)":"🇭🇰",
+  "Chinese (Mandarin-Simplified)":"🇨🇳", "Chinese (Mandarin-Traditional)":"🇹🇼",
   "Chinese (Shanghainese)":"🇨🇳", "Chinese (Toisanese)":"🇨🇳", "Chinese (Teochew)":"🇨🇳",
   Taiwanese:"🇹🇼",
   Japanese:"🇯🇵", Korean:"🇰🇷", Hebrew:"🇮🇱", Arabic:"🇸🇦", Hindi:"🇮🇳",
@@ -1455,9 +1456,18 @@ function loadChildren() {
     // Pre-fork users had "Chinese (Cantonese)" and "Chinese (Mandarin)" in
     // their child.languages arrays, position keys, and history. Map them
     // to the new variant names so existing testers don't lose progress.
+    // ── Chinese rename migration (May 2026) ───────────────────────────────
+    // T/S suffixes were renamed to Traditional/Simplified for clarity.
+    // ── Vietnamese consolidation (May 2026) ───────────────────────────────
+    // Plain "Vietnamese" maps to Northern (the literary standard).
     const LEGACY_CN_MAP = {
-      "Chinese (Cantonese)": "Chinese (Cantonese-T)",
-      "Chinese (Mandarin)":  "Chinese (Mandarin-S)",
+      "Chinese (Cantonese)":  "Chinese (Cantonese-Traditional)",
+      "Chinese (Mandarin)":   "Chinese (Mandarin-Simplified)",
+      "Chinese (Cantonese-T)": "Chinese (Cantonese-Traditional)",
+      "Chinese (Cantonese-S)": "Chinese (Cantonese-Simplified)",
+      "Chinese (Mandarin-T)":  "Chinese (Mandarin-Traditional)",
+      "Chinese (Mandarin-S)":  "Chinese (Mandarin-Simplified)",
+      "Vietnamese":            "Vietnamese (Northern)",
       // Spanish was briefly split (Apr 2026) into 3 variants and then
       // collapsed back (May 2026). Map any existing variant entries back
       // to the single "Spanish" so existing testers keep their progress.
@@ -1954,6 +1964,30 @@ function getSessionStatus(childId, category, language) {
   }
 }
 
+// Per-set session counter — separate from the daily count. Advancement
+// is tied to "have we done 3 sessions ON THIS SET" rather than "have
+// we done 3 sessions TODAY". This way, missing a day doesn't make the
+// curriculum stop advancing: yesterday's incomplete session count
+// carries over to today, and the set graduates as soon as 3 cumulative
+// sessions are done — which might span 1, 2, or even 3 calendar days.
+//
+// Daily count (sessionKey) is still used for cooldown and "you've done
+// your 3 today" UI gating, but does NOT trigger advancement on its own.
+function setProgressKey(childId, category, language) {
+  return `lb-set-progress-${childId}-${category}-${language || "English"}`;
+}
+function getSetProgress(childId, category, language) {
+  try {
+    const raw = localStorage.getItem(setProgressKey(childId, category, language));
+    if (!raw) return 0;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(2, n)) : 0;
+  } catch { return 0; }
+}
+function setSetProgress(childId, category, language, n) {
+  try { localStorage.setItem(setProgressKey(childId, category, language), String(n)); } catch {}
+}
+
 function markSessionComplete(childId, category, language) {
   try {
     const dk = todayKey();
@@ -1972,19 +2006,41 @@ function markSessionComplete(childId, category, language) {
     hist[dk][dayKey] = (hist[dk][dayKey] || 0) + 1;
     localStorage.setItem(histKey, JSON.stringify(hist));
 
-    // Auto-advance the curriculum position when the FINAL session of the day
-    // is completed. Per Doman, the rolling window shifts forward by 1 set
-    // each day. Without this advancement, the child sees the same cards
-    // every day forever — which is what the user reported.
-    if (data.count >= MAX_SESSIONS_PER_DAY) {
+    // Per-set advancement (May 2026): a set graduates when it has
+    // accumulated 3 sessions, regardless of which calendar days those
+    // sessions fell on. This is what makes the carryover behavior work:
+    // if yesterday ended with 2/3 sessions on Set N, today's first
+    // session is the 3rd and graduates the set; remaining sessions
+    // today (if any) advance into Set N+1.
+    const newSetCount = getSetProgress(childId, category, language) + 1;
+    if (newSetCount >= 3) {
+      // Set complete → reset and advance position
+      setSetProgress(childId, category, language, 0);
       advancePositionAfterFinalSession(childId, category, language);
+    } else {
+      setSetProgress(childId, category, language, newSetCount);
+    }
+
+    // Track first-ever Day 1 completion so we can prompt the parent to
+    // upload extended-family photos (grandma/grandpa/aunt/uncle —
+    // these words appear ~Day 30 in the curriculum). Daily-count is
+    // the right trigger here (not set-count): we want to celebrate the
+    // first time they finish all 3 sessions in one day.
+    if (data.count >= MAX_SESSIONS_PER_DAY) {
+      try {
+        const promptKey = `lb-day1-complete-${childId}`;
+        if (!localStorage.getItem(promptKey)) {
+          localStorage.setItem(promptKey, String(Date.now()));
+        }
+      } catch {}
     }
   } catch {}
 }
 
 // Advance the per-language curriculum position forward by one unit. Called
-// when the child completes the 3rd (final) session of the day for a given
-// (category, language) pair. The unit of advancement varies by category:
+// from markSessionComplete when the per-SET session counter hits 3 (a set's
+// 3 sessions may span multiple calendar days — that's the whole point of
+// per-set counting). The unit of advancement varies by category:
 //   reading/couplets/sentences: setIdx += 1, wrapping to next month
 //   knowledge: same as reading
 //   math: day-number-driven; position (stage) only advances when the child
@@ -1992,10 +2048,9 @@ function markSessionComplete(childId, category, language) {
 //     conservatively — only when an explicit unlock day is reached. For now
 //     math doesn't advance here; it advances naturally via the day-number
 //     formula in getDomanWindow().
-//   music/rhythm: weekly cadence; only advance after 7 sessions in a week,
-//     which we approximate as "advance after every 21 sessions completed
-//     (3/day × 7 days)". To keep things simple, we increment a per-language
-//     session counter and roll forward on hitting 21.
+//   music/rhythm: per-set advancement (May 2026) — each scale/stage rolls
+//     forward to the next after 3 sessions. Previous "weekly cadence"
+//     (21 sessions per scale) was perceived as stagnant by parents.
 function advancePositionAfterFinalSession(childId, category, language) {
   try {
     const kids = JSON.parse(localStorage.getItem("lb-children") || "[]");
@@ -2070,29 +2125,24 @@ function advancePositionAfterFinalSession(childId, category, language) {
     }
 
     if (category === "music" || category === "rhythm") {
-      // Weekly cadence: advance after ~21 sessions (3/day × 7 days).
-      // Track a per-language session counter under a synthetic key.
-      const counterKey = category === "music" ? "_musicSessions" : "_rhythmSessions";
-      const c = (langPos[counterKey] || 0) + 1;
-      langPos[counterKey] = c;
-      if (c >= 21) {
-        // Roll forward to next stage
-        if (category === "music") {
-          const stages = MUSIC_SCALES;
-          const curId = langPos.music || stages[0].id;
-          const i = stages.findIndex(s => s.id === curId);
-          if (i >= 0 && i < stages.length - 1) {
-            langPos.music = stages[i + 1].id;
-            langPos[counterKey] = 0;
-          }
-        } else {
-          const stages = RHYTHM_STAGES;
-          const curId = langPos.rhythm || stages[0].id;
-          const i = stages.findIndex(s => s.id === curId);
-          if (i >= 0 && i < stages.length - 1) {
-            langPos.rhythm = stages[i + 1].id;
-            langPos[counterKey] = 0;
-          }
+      // Per-set advancement (May 2026): each scale/stage graduates after
+      // the standard 3 sessions, same as reading. This means music advances
+      // to the next scale every full day of practice (rather than the
+      // original 7-day weekly cadence). Per Olivia, music should feel
+      // like daily forward progress, not stagnation.
+      if (category === "music") {
+        const stages = MUSIC_SCALES;
+        const curId = langPos.music || stages[0].id;
+        const i = stages.findIndex(s => s.id === curId);
+        if (i >= 0 && i < stages.length - 1) {
+          langPos.music = stages[i + 1].id;
+        }
+      } else {
+        const stages = RHYTHM_STAGES;
+        const curId = langPos.rhythm || stages[0].id;
+        const i = stages.findIndex(s => s.id === curId);
+        if (i >= 0 && i < stages.length - 1) {
+          langPos.rhythm = stages[i + 1].id;
         }
       }
       kids[idx].position[lang] = langPos;
@@ -2325,14 +2375,14 @@ async function translateWords(words, lang) {
   //   "Chinese (Mandarin)"  — already in simplified script (PRC standard)
   //
   // User-facing variants:
-  //   Cantonese-T (HK)       → reads (Cantonese) directly. HK vocab+script.
-  //   Cantonese-S (mainland) → reads (Mandarin) directly. Mainland Cantonese
+  //   Cantonese-Traditional (HK)       → reads (Cantonese) directly. HK vocab+script.
+  //   Cantonese-Simplified (mainland) → reads (Mandarin) directly. Mainland Cantonese
   //                            speakers read written Chinese in the standard
   //                            (Mandarin-style) form, but pronounce it in
   //                            Cantonese phonology. So written form = Mandarin,
   //                            speech = zh-HK voice.
-  //   Mandarin-S (PRC)       → reads (Mandarin) directly. PRC standard.
-  //   Mandarin-T (Taiwan)    → reads (Mandarin), simpToTrad, + TW vocab overrides.
+  //   Mandarin-Simplified (PRC)       → reads (Mandarin) directly. PRC standard.
+  //   Mandarin-Traditional (Taiwan)    → reads (Mandarin), simpToTrad, + TW vocab overrides.
   //                            Taiwan speakers natively use traditional script
   //                            and a substantial set of distinct vocabulary.
   //
@@ -2410,27 +2460,27 @@ async function translateWords(words, lang) {
   };
 
   const CHINESE_VARIANT_CONFIG = {
-    // Cantonese-T = HK style: traditional + HK conversational vocabulary
-    "Chinese (Cantonese-T)": {
+    // Cantonese-Traditional = HK style: traditional + HK conversational vocabulary
+    "Chinese (Cantonese-Traditional)": {
       dataKey: "Chinese (Cantonese)",
       transform: null,
       twOverrides: false,
     },
-    // Cantonese-S = mainland: written Chinese as Mandarin speakers write it,
+    // Cantonese-Simplified = mainland: written Chinese as Mandarin speakers write it,
     // but pronounced with Cantonese phonology. Reads from Mandarin data.
-    "Chinese (Cantonese-S)": {
+    "Chinese (Cantonese-Simplified)": {
       dataKey: "Chinese (Mandarin)",
       transform: null,
       twOverrides: false,
     },
-    // Mandarin-S = PRC standard: simplified script, mainland vocabulary
-    "Chinese (Mandarin-S)": {
+    // Mandarin-Simplified = PRC standard: simplified script, mainland vocabulary
+    "Chinese (Mandarin-Simplified)": {
       dataKey: "Chinese (Mandarin)",
       transform: null,
       twOverrides: false,
     },
-    // Mandarin-T = Taiwan: traditional script + TW vocabulary
-    "Chinese (Mandarin-T)": {
+    // Mandarin-Traditional = Taiwan: traditional script + TW vocabulary
+    "Chinese (Mandarin-Traditional)": {
       dataKey: "Chinese (Mandarin)",
       transform: simpToTrad,
       twOverrides: true,
@@ -3403,7 +3453,7 @@ const WORD_PHOTO_URLS = {
   rabbit:     "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/4-Week-Old_Netherlands_Dwarf_Rabbit.JPG/250px-4-Week-Old_Netherlands_Dwarf_Rabbit.JPG",
 
   // Set 3 — Fruit (strawberry was renamed to "berries")
-  apple:      "https://upload.wikimedia.org/wikipedia/commons/a/a6/Pink_lady_and_cross_section.jpg",
+  apple:      "https://cdn.pixabay.com/photo/2016/09/29/08/33/apple-1702316_1280.jpg",
   banana:     "https://upload.wikimedia.org/wikipedia/commons/d/de/Bananavarieties.jpg",
   orange:     "https://upload.wikimedia.org/wikipedia/commons/e/e3/Oranges_-_whole-halved-segment.jpg",
   grapes:     "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Grapes%2C_Rostov-on-Don%2C_Russia.jpg/1280px-Grapes%2C_Rostov-on-Don%2C_Russia.jpg",
@@ -3561,9 +3611,9 @@ const WORD_PHOTO_URLS = {
   loud:       "https://www.shutterstock.com/image-photo/young-businessman-suffering-loud-noise-260nw-2586707745.jpg",
 
   // Set 25 — Body Parts 2
-  knee:       "https://www.shutterstock.com/image-photo/closeup-man-touching-his-painful-260nw-2667461405.jpg",
-  elbow:      "https://static.vecteezy.com/system/resources/thumbnails/017/555/810/small/close-up-man-holding-on-elbow-and-feeling-a-pain-studio-shot-isolated-on-grey-background-with-copy-space-for-text-free-photo.JPG",
-  shoulder:   "https://static.vecteezy.com/system/resources/thumbnails/026/797/621/small/professional-man-struggling-with-fatigue-anxiety-and-neck-pain-on-white-background-office-syndrome-management-and-wellness-strategies-free-photo.jpg",
+  knee:        "https://st.depositphotos.com/1262430/2721/i/450/depositphotos_27210101-stock-photo-young-woman-having-knee-pain.jpg",
+  elbow:       "https://thumbs.dreamstime.com/b/elbow-pain-isolated-white-background-38435575.jpg",
+  shoulder:    "https://www.shutterstock.com/image-photo/woman-experiencing-shoulder-pain-touching-260nw-2631107139.jpg",
   ankle:      "https://static.vecteezy.com/system/resources/thumbnails/059/953/472/small/woman-experiencing-ankle-pain-touching-sore-area-indicating-injury-photo.jpg",
   wrist:      "https://www.shutterstock.com/image-photo/carpal-tunnel-syndrome-wrist-pain-260nw-2732188407.jpg",
 
@@ -3798,6 +3848,177 @@ const WORD_PHOTO_URLS = {
   orangutan:  "https://plus.unsplash.com/premium_photo-1661821205919-aa973dad0529?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8b3Jhbmd1dGFufGVufDB8fDB8fHww",
   bonobo:     "https://plus.unsplash.com/premium_photo-1664298009705-3bd5d9b1eaa4?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OXx8Ym9ub2JvfGVufDB8fDB8fHww",
   gibbon:     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQU0w5G74PkRitmcU6k7EA2h2oBE5eomGEOdA&s",
+
+  // ── M3 Set 15 — At the Beach ─────────────────────────────────────
+  sand:        "https://www.shutterstock.com/image-photo/beach-sand-on-white-isolated-260nw-2474934225.jpg",
+  seashell:    "https://media.istockphoto.com/id/471843685/photo/ocean-shell.jpg?s=612x612&w=0&k=20&c=x5kv7MFFjNNi2sF4yICv11-BdG1PgYl4RwQEvIMKEZU=",
+  wave:        "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSikLV0cngpK8txKadfz97reG7kqmybLZdVoQ&s",
+  umbrella:    "https://thumbs.dreamstime.com/b/yellow-beach-umbrella-relax-sea-resort-relax-comfort-beaches-vertical-view-summer-vacations-travel-seaside-438741708.jpg",
+  towel:       "https://thumbs.dreamstime.com/b/beach-towels-2985393.jpg",
+
+  // ── M3 Set 16 — Environments ─────────────────────────────────────
+  forest:      "https://t4.ftcdn.net/jpg/02/55/17/43/360_F_255174366_ojDuATz84e5h7lIlxh2moUJa9Kpd5wKk.jpg",
+  jungle:      "https://previews.123rf.com/images/kamchatka/kamchatka1802/kamchatka180200829/95801861-jungle-in-hawaii.jpg",
+  tundra:      "https://thumbs.dreamstime.com/b/arctic-summer-landscape-reindeer-tundra-16084571.jpg",
+  savanna:     "https://static.vecteezy.com/system/resources/thumbnails/054/643/613/small/lonely-acacia-tree-dominating-the-african-savanna-at-sunset-with-kilimanjaro-in-the-background-photo.jpg",
+  wetland:     "https://static.vecteezy.com/system/resources/thumbnails/031/727/204/small/preserving-vital-ecosystems-celebrating-world-wetlands-day-photo.jpg",
+
+  // ── M3 Set 17 — Nature 2 ─────────────────────────────────────────
+  cloud:       "https://images.unsplash.com/photo-1601370552761-d129028bd833?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8Y2xvdWR8ZW58MHx8MHx8fDA%3D",
+  rainbow:     "https://static.vecteezy.com/system/resources/thumbnails/075/054/650/small/a-rainbow-is-seen-in-the-sky-over-a-field-of-blue-flowers-photo.jpg",
+  lightning:   "https://thumbs.dreamstime.com/b/thunderstorm-lightning-bolts-storm-clouds-striking-rain-night-168765331.jpg",
+  thunder:     "https://www.shutterstock.com/image-photo/thunderstorm-thunder-lightning-bolts-clouds-260nw-2520993551.jpg",
+  wind:        "https://static.vecteezy.com/system/resources/thumbnails/079/375/079/small/intricate-swirling-cloud-formations-against-a-clear-blue-sky-background-photo.jpeg",
+
+  // ── M3 Set 18 — At the Airport ───────────────────────────────────
+  airplane:    "https://www.stockvault.net/data/2009/08/10/109807/thumb16.jpg",
+  gate:        "https://thumbs.dreamstime.com/b/airport-gate-24832786.jpg",
+  pilot:       "https://static.vecteezy.com/system/resources/thumbnails/029/237/888/small/male-pilot-standing-near-private-jet-in-airport-generative-ai-photo.jpg",
+  luggage:     "https://media.istockphoto.com/id/1499540657/photo/blue-suitcase.jpg?s=612x612&w=0&k=20&c=3wzny4sjc_ztf5gctpx5nW_lV2TLG58_7v_eQuW_nVs=",
+  runway:      "https://www.shutterstock.com/image-photo/wide-view-empty-airport-runway-260nw-2666856093.jpg",
+
+  // ── M3 Set 19 — Actions 3 ────────────────────────────────────────
+  climb:       "https://media.istockphoto.com/id/1216123246/photo/two-year-old-child-climbs-stairs-on-gymnastic-complex-at-home.jpg?s=612x612&w=0&k=20&c=1LZ2FBjP0WnhZAEbpHwsh3j5qlo4_Mc0ZCdV9aHiF3w=",
+  swim:        "https://thumbs.dreamstime.com/b/mother-teaching-baby-swimming-pool-healthy-family-74905092.jpg",
+  dance:       "https://thumbs.dreamstime.com/b/happy-beautiful-baby-girl-dancer-dancing-hip-hop-dance-modern-52630725.jpg",
+  leap:        "https://www.shutterstock.com/image-photo/full-body-side-profile-view-600nw-2631282507.jpg",
+  spin:        "https://media.istockphoto.com/id/1152439668/photo/child-is-playing-with-parent.jpg?s=612x612&w=0&k=20&c=t37Us6ZFHr8a-QC2B3sC46J2micumnJUpRQD5HpBrQw=",
+
+  // ── M3 Set 20 — Verbs (think/feel/know/wonder/imagine) — noPhoto in curriculum ──
+
+  // ── M3 Set 21 — Babies ───────────────────────────────────────────
+  newborn:     "https://static.vecteezy.com/system/resources/thumbnails/069/691/513/small/newborn-baby-angel-free-photo.jpeg",
+  infant:      "https://thumbs.dreamstime.com/b/attentive-infant-7768075.jpg",
+  toddler:     "https://media.istockphoto.com/id/1076514954/photo/happy-little-girl-in-a-yellow-dress-sitting.jpg?s=612x612&w=0&k=20&c=5xP43KqHriqDQDC2ccZrn9KSVE4IpJwIzgyhAe8omGM=",
+  preschooler: "https://static.vecteezy.com/system/resources/thumbnails/024/654/910/small/smiling-kids-playing-with-multi-colored-toy-blocks-generated-by-ai-free-photo.jpg",
+  diaper:      "https://media.istockphoto.com/id/989447660/photo/cute-baby-using-diapers.jpg?s=612x612&w=0&k=20&c=xfHwkZemXNuEmAre4ROnCbT3GoIJbhuWUb-xRpaJspA=",
+
+  // ── M3 Set 22 — Love ─────────────────────────────────────────────
+  hug:         "https://www.shutterstock.com/image-photo/two-women-share-warm-hug-600nw-2682555101.jpg",
+  kiss:        "https://media.istockphoto.com/id/1353379432/photo/cute-little-girl-kissing-mother-on-cheek.jpg?s=612x612&w=0&k=20&c=6Yw_E5zNOV8wMFPtw2A3FIl8KLvdxVZ6vjmChn-yMdY=",
+  cuddle:      "https://www.shutterstock.com/image-photo/young-asian-mother-baby-600nw-2660872813.jpg",
+  snuggle:     "https://img.freepik.com/free-photo/top-view-baby-with-stuffed-toy_23-2150573800.jpg?semt=ais_hybrid&w=740&q=80",
+  embrace:     "https://www.shutterstock.com/image-photo/young-couple-shares-warm-embrace-260nw-2744467227.jpg",
+
+  // ── M3 Set 23 — Asian Countries ──────────────────────────────────
+  china:       "https://t3.ftcdn.net/jpg/02/87/61/46/360_F_287614643_DfHlLcuAuNTd71EcxB8tlrcHOHCecRlg.jpg",
+  japan:       "https://cdn.pixabay.com/photo/2013/05/22/18/00/japan-112722_1280.jpg",
+  korea:       "https://www.shutterstock.com/image-vector/map-north-south-korea-territories-260nw-2681197719.jpg",
+  vietnam:     "https://cdn.vectorstock.com/i/1000v/98/88/vietnam-flag-and-map-vector-17049888.jpg",
+  thailand:    "https://fvmstatic.s3.amazonaws.com/maps/m/TH-EPS-02-4001.png",
+
+  // ── M3 Set 24 — Cities of USA ────────────────────────────────────
+  newyork:     "https://cdn.pixabay.com/photo/2019/12/28/16/22/new-york-4725115_640.jpg",
+  losangeles:  "https://plus.unsplash.com/premium_photo-1725408106567-a77bd9beff7c?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8bG9zJTIwYW5nZWxlc3xlbnwwfHwwfHx8MA%3D%3D",
+  chicago:     "https://www.shutterstock.com/image-photo/drone-photograph-chicago-river-outer-600nw-2513128999.jpg",
+  houston:     "https://media.istockphoto.com/id/1483998656/photo/houstons-skyline.jpg?s=612x612&w=0&k=20&c=wtNd7Vpm_lcw__O3AXim0TshupqmLVzyXU8H3GpARiU=",
+  miami:       "https://images.unsplash.com/photo-1589083130544-0d6a2926e519?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NHx8bWlhbWl8ZW58MHx8MHx8fDA%3D",
+
+  // ── M3 Set 25 — Synonyms for Silly (only goofy has photo; others noPhoto) ──
+  goofy:       "https://static.vecteezy.com/system/resources/thumbnails/073/706/087/small/a-cute-baby-makes-a-funny-face-with-wide-surprised-eyes-against-a-grey-background-photo.jpg",
+
+  // ── M3 Set 26 — Synonyms for Fast (only quick has photo; others noPhoto) ──
+  quick:       "https://media.istockphoto.com/id/153694824/photo/shortage-of-time.jpg?s=612x612&w=0&k=20&c=2rHRG3_NmB06EmkOxNOXsOEG4SlkVLnkRLVQ8iBcvgs=",
+
+  // ── M3 Set 27 — Insects ──────────────────────────────────────────
+  bee:         "https://www.shutterstock.com/image-photo/detail-bee-honeybee-latin-apis-600nw-2418453905.jpg",
+  ant:         "https://thumbs.dreamstime.com/b/ant-white-single-background-35588766.jpg",
+  butterfly:   "https://thumbs.dreamstime.com/b/monarch-butterfly-beautiful-isolated-white-background-46589350.jpg",
+  ladybug:     "https://media.istockphoto.com/id/481311907/photo/ladybug-on-leaf.jpg?s=612x612&w=0&k=20&c=xnIqjtouoywN_-zfcIEzfbg62c5USWxE-hKUeeQVA8c=",
+  dragonfly:   "https://www.shutterstock.com/image-photo/extreme-macro-shots-dragonfly-wings-600nw-2092492768.jpg",
+
+  // ── M3 Set 28 — Body Parts (organs) ──────────────────────────────
+  // Note: "heart" key already exists earlier (Set 22 of M2 — feelings).
+  // We use photoKey override on this set's items to disambiguate.
+  organ_heart:  "https://static.vecteezy.com/system/resources/thumbnails/071/873/387/small/realistic-whole-raw-heart-photo.jpeg",
+  lung:         "https://cdn.pixabay.com/photo/2021/10/09/12/36/lungs-6694030_1280.png",
+  liver:        "https://thumbs.dreamstime.com/b/transparent-human-body-shows-location-liver-red-anatomical-study-medical-illustration-anatomy-378562614.jpg",
+  kidney:       "https://media.istockphoto.com/id/465015220/photo/human-female-kidney-anatomy.jpg?s=612x612&w=0&k=20&c=a_xoCCCAIHewczNZEwsZCT--fw1Thz_FiXKd9OrEtw8=",
+  brain:        "https://media.istockphoto.com/id/484757150/photo/medical-illustrate.jpg?s=612x612&w=0&k=20&c=jp6RaYHu4HCzNEPcnlEw7N-5YiL_kKj5U5DpoMuxyTA=",
+
+  // ── M3 Set 29 — Parts of the Head ────────────────────────────────
+  // "temple" and "crown" are also separately disambiguated via photoKey
+  // since they have other meanings (temple=religious site; crown=royal headpiece).
+  skull:        "https://static.vecteezy.com/system/resources/thumbnails/070/182/824/small/scary-skull-image-with-realistic-details-free-png.png",
+  scalp:        "https://www.shutterstock.com/image-photo/closeup-brown-hair-scalp-caucasian-260nw-2641189311.jpg",
+  head_temple:  "https://i.guim.co.uk/img/static/sys-images/Guardian/About/General/2011/8/22/1314032057308/The-temple-007.jpg?width=465&dpr=1&s=none&crop=none",
+  head_crown:   "https://thumbs.dreamstime.com/b/bald-man-back-view-head-hair-loss-bald-man-head-back-154199609.jpg",
+  nape:         "https://media.istockphoto.com/id/2219733767/photo/woman-suffering-from-nape-pain.jpg?s=612x612&w=0&k=20&c=Cw0zQ0ZOVPN-k2jel0piwvQS98XJYZJt4Kf8zu2ZuJ0=",
+
+  // ── M2 Set 24 — Emotions (grateful is noPhoto) ───────────────────
+  surprised:   "https://static.vecteezy.com/system/resources/thumbnails/058/564/163/small/blonde-woman-with-shocked-face-expression-photo.jpg",
+  confused:    "https://st.depositphotos.com/3489481/4889/i/450/depositphotos_48893449-stock-photo-confused-business-man-short-term.jpg",
+  proud:       "https://www.shutterstock.com/image-photo/young-latina-posing-studio-feels-260nw-2739448643.jpg",
+  shy:         "https://www.shutterstock.com/image-photo/shy-teenage-girl-peeking-through-260nw-2502980493.jpg",
+
+  // ── M2 Set 25 — Directions ── (emoji on curriculum item, no URL needed)
+
+  // ── M2 Set 26 — Body Parts (chest is noPhoto) ────────────────────
+  stomach:     "https://www.shutterstock.com/image-illustration/anatomy-human-stomach-digestive-organs-260nw-2591275631.jpg",
+  back:        "https://www.shutterstock.com/image-vector/human-body-part-back-260nw-1174120819.jpg",
+  neck:        "https://static.vecteezy.com/system/resources/thumbnails/068/686/502/small/illustration-of-human-neck-and-shoulders-vector.jpg",
+  waist:       "https://thumbs.dreamstime.com/b/belly-14117580.jpg",
+
+  // ── M2 Set 27 — Actions ──────────────────────────────────────────
+  walk:        "https://www.shutterstock.com/image-photo/baby-falls-into-grass-learns-600nw-2360083799.jpg",
+  stand:       "https://www.shutterstock.com/image-photo/curious-baby-standing-arms-slightly-600nw-2562028965.jpg",
+  sit:         "https://media.istockphoto.com/id/1138809673/photo/smiling-baby-sitting-on-bed.jpg?s=612x612&w=0&k=20&c=Xq0KEq1YuxnlZaZdqobYnq5_0_4RZnT_mzrxd-CWtcc=",
+  lie:         "https://www.shutterstock.com/image-photo/cute-newborn-baby-lying-on-600nw-2572869653.jpg",
+  crawl:       "https://media.istockphoto.com/id/1337850728/photo/happy-black-father-looking-at-infant-baby-crawling-on-floor-at-home.jpg?s=612x612&w=0&k=20&c=rpkgyNS14wM_yKiUNSbH3JEwpqnqcdoRXWQO72Wasdc=",
+
+  // ── M2 Set 28 — Locations (also uploadable in next iteration) ────
+  // These have stock defaults but the long-term plan is to let parents
+  // upload photos of THEIR kitchen / bedroom / etc. so kids learn the
+  // word with their own home as the visual anchor.
+  kitchen:     "https://thumbs.dreamstime.com/b/space-saving-solution-small-kitchen-idea-stylish-white-furniture-backsplash-solid-worktop-77974038.jpg",
+  bedroom:     "https://images.unsplash.com/photo-1615874959474-d609969a20ed?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8c21hbGwlMjBiZWRyb29tfGVufDB8fDB8fHww",
+  bathroom:    "https://thumbs.dreamstime.com/b/joliet-il-usa-january-small-half-bathroom-shiplap-accent-wall-bathroom-has-dark-vanity-speckled-marble-top-195370946.jpg",
+  livingroom:  "https://media.istockphoto.com/id/1449364000/photo/minimalist-style-tiny-room.jpg?s=612x612&w=0&k=20&c=uokTOpJl8Hoc4HGqJPicYjy8SBMwCEWkGLUhhvJYgTA=",
+  garden:      "https://t3.ftcdn.net/jpg/02/72/62/62/360_F_272626251_CUuRmj1pfZySv7nTtvUPAOsCtpT0wG7z.jpg",
+
+  // ── M2 Set 29 — Synonyms for Tasty (only delicious has photo) ────
+  delicious:   "https://media.istockphoto.com/id/1477917285/photo/beautiful-woman-eating-tasty-delicious-food.jpg?s=612x612&w=0&k=20&c=LeHFOS1Swy-M0Txst2BpqwPfT_BH-XTWvNxQhkP0wdQ=",
+
+  // ── M2 Set 30 — Parts of the Mouth ───────────────────────────────
+  lip:         "https://www.shutterstock.com/image-photo/lip-anatomy-cosmetology-shape-correction-260nw-2643540747.jpg",
+  tongue:      "https://thumbs.dreamstime.com/b/human-tongue-anatomy-open-mouth-sticking-out-showing-its-different-parts-digital-illustration-129581969.jpg",
+  tooth:       "https://plus.unsplash.com/premium_photo-1722782989291-06e1cf0b98a5?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8dG9vdGh8ZW58MHx8MHx8fDA%3D",
+  gum:         "https://assets.clevelandclinic.org/transform/d3deacc8-b82c-43b1-b79a-a7f92fb7b68e/healthy-gums-teeth-2022395665",
+  palate:      "https://www.shutterstock.com/image-illustration/hard-palate-soft-oral-cavity-260nw-2449993281.jpg",
+
+  // ── M3 Set 1 — European Countries ────────────────────────────────
+  france:      "https://static.vecteezy.com/system/resources/thumbnails/011/097/356/small/grey-france-map-free-vector.jpg",
+  germany:     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQQYEGzl7te8v1b1KZbcNMy02mq0gcLLx50nQ&s",
+  italy:       "https://cdn.pixabay.com/photo/2023/03/08/14/13/italy-7837885_1280.png",
+  spain:       "https://cdn.vectorstock.com/i/1000v/74/78/spain-map-silhouette-vector-17017478.jpg",
+  greece:      "https://media.istockphoto.com/id/470863180/vector/greece-country-map.jpg?s=612x612&w=0&k=20&c=4_alDNO1-kMyoEebFcyPcCtHw3WVYIzzVjgohedqTSc=",
+
+  // ── M3 Set 2 — Emotions (round 2) ────────────────────────────────
+  jealous:     "https://www.shutterstock.com/image-photo/jealous-little-girl-upset-about-260nw-2670348291.jpg",
+  nervous:     "https://www.shutterstock.com/image-photo/little-girl-biting-nails-classroom-260nw-2670394589.jpg",
+  calm:        "https://thumbs.dreamstime.com/b/african-american-woman-meditating-nature-young-55144432.jpg",
+  relaxed:     "https://thumbs.dreamstime.com/b/young-beautiful-woman-relaxing-home-cute-african-american-girl-resting-her-room-enjoy-life-rest-relaxation-wellbeing-210561738.jpg",
+  bored:       "https://www.shutterstock.com/image-photo/bored-laptop-tired-business-woman-600nw-2603762769.jpg",
+
+  // ── M3 Set 3 — Joints (knee/elbow/shoulder replaced earlier; hip/knuckle new) ──
+  hip:         "https://www.shutterstock.com/image-photo/asian-man-suffering-hip-pain-260nw-2739486533.jpg",
+  knuckle:     "https://thumbs.dreamstime.com/b/finger-knuckle-hand-joint-pain-sprain-213597821.jpg",
+
+  // ── M3 Set 4 — Traveling ─────────────────────────────────────────
+  suitcase:    "https://www.shutterstock.com/image-photo/travel-suitcase-multi-colors-600nw-2613911093.jpg",
+  passport:    "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR_xNsIXOnRQc2qR67Zn5jzubYR7fTrvHtnwA&s",
+  ticket:      "https://thumbs.dreamstime.com/b/blank-plane-tickets-business-trip-travel-vacation-journey-isolated-vector-illustration-37895057.jpg",
+  map:         "https://thumbs.dreamstime.com/b/detailed-world-map-29681182.jpg",
+  hotel:       "https://thumbs.dreamstime.com/b/hotel-rooms-8146308.jpg",
+
+  // ── M3 Set 5 — Parts of the Face ─────────────────────────────────
+  eyebrow:     "https://media.istockphoto.com/id/1370102323/photo/female-face-during-professional-eyebrow-mapping-procedure-before-permanent-makeup.jpg?s=612x612&w=0&k=20&c=o9hbqABjoE2aEeJamPgDI5HLM5CfmCRFR8KVUgZhszE=",
+  eyelash:     "https://media.istockphoto.com/id/122255030/photo/woman-eye.jpg?s=612x612&w=0&k=20&c=0kbIOqcTNwKMv6dsN5MqKlkwdD1pcEFdrA2H_N88D28=",
+  chin:        "https://media.istockphoto.com/id/157579749/photo/close-up-of-a-females-chin-and-lips.jpg?s=612x612&w=0&k=20&c=Yw1vMBzIyvvRsdqddpeNSSFqn8Xc1fyTAZmZ1qBQw_s=",
+  forehead:    "https://thumbs.dreamstime.com/b/forehead-upper-part-man-s-face-portrait-young-mans-eyes-empty-space-179736504.jpg",
+  jaw:         "https://static.vecteezy.com/system/resources/thumbnails/069/646/328/small/close-up-of-woman-s-perfect-neck-and-chin-showing-beauty-and-skincare-photo.jpg",
+
+  // ── M3 Set 30 — Synonyms for Rude (all noPhoto in curriculum) ──
 };
 
 // Look up a curriculum photo URL for a single-word card. The photoKey override
@@ -4494,15 +4715,15 @@ const CHILD_EMOJIS = ["👶","🧒","👧","👦","🐣","🐥","🦊","🐻","�
 // Default for new children: all classes enrolled (parent can uncheck).
 // Default for existing children (backward compat): all classes enrolled.
 const AVAILABLE_CLASSES = [
-  { id:"reading",   label:"Reading",   emoji:"📖", desc:"Words, phrases, and stories" },
-  { id:"math",      label:"Math",      emoji:"🔢", desc:"Quantities and equations" },
-  { id:"knowledge", label:"Knowledge", emoji:"🌍", desc:"Facts about the world" },
+  { id:"reading",   label:"Reading",   emoji:"📖", desc:"Words, phrases, and stories · 0–6 years" },
+  { id:"math",      label:"Math",      emoji:"🔢", desc:"Quantities and equations · 0–30 months" },
+  { id:"knowledge", label:"Knowledge", emoji:"🌍", desc:"Facts about the world · 0–6 years" },
   // Music uses English-only note names (C, D, E, F, G, A, B) — translating
   // those into other languages doesn't make pedagogical sense (the international
   // standard for note literacy is the English letter system, even in non-English
   // music programs). Per Olivia: music tile only appears when "English" is the
   // active language, and enrollment is force-locked to ["English"].
-  { id:"music",     label:"Music",     emoji:"🎵", desc:"Perfect pitch + rhythm training", englishOnly:true },
+  { id:"music",     label:"Music",     emoji:"🎵", desc:"Perfect pitch + rhythm training · 0–6 years", englishOnly:true },
 ];
 
 // Enrollment data model — child.enrolledClasses can be either:
@@ -5649,6 +5870,45 @@ function FamilySharingSheet({ onImported, onClose }) {
 // Shown to free-tier parents after every session. Pitches premium with a
 // short headline + a soft CTA. Dismissible after 3 seconds (skip button
 // fades in) so we're not blocking parents who really just want to keep going.
+// One-shot prompt shown after the parent completes their first full Day 1
+// (3 sessions in any category). Reminds them to upload extended-family
+// photos because grandma/grandpa/aunt/uncle appear in the curriculum
+// around Day 30 — about a month away. Pre-uploading means those photos
+// are ready to go when the curriculum reaches them.
+function ExtendedFamilyPrompt({ onUploadNow, onLater }) {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{background:"#fff",borderRadius:24,padding:"28px 26px",maxWidth:380,width:"100%",boxShadow:"0 16px 48px rgba(0,0,0,.3)",position:"relative"}}>
+        <div style={{position:"absolute",top:10,right:14,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#bbb",letterSpacing:.5,textTransform:"uppercase"}}>{t("Heads up")}</div>
+        <div style={{fontSize:46,textAlign:"center",marginBottom:6}}>👨‍👩‍👧‍👦</div>
+        <h3 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:21,color:"#111",margin:"0 0 8px",textAlign:"center",lineHeight:1.2}}>
+          {t("Day 1 done — amazing! 🎉")}
+        </h3>
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#666",lineHeight:1.55,textAlign:"center",margin:"0 0 14px"}}>
+          {t("Coming up around Day 30: extended family — grandma, grandpa, aunt, and uncle. Upload photos now and they'll be ready when the curriculum reaches those words.")}
+        </p>
+
+        <div style={{display:"flex",justifyContent:"center",gap:14,fontSize:32,marginBottom:14}}>
+          <span title="grandma">👵</span>
+          <span title="grandpa">👴</span>
+          <span title="aunt">👩</span>
+          <span title="uncle">👨</span>
+        </div>
+
+        <button onClick={onUploadNow}
+          style={{width:"100%",background:RED,border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
+          {t("upload extended family photos →")}
+        </button>
+
+        <button onClick={onLater}
+          style={{width:"100%",background:"transparent",border:"none",padding:"10px",marginTop:6,cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#888"}}>
+          {t("remind me later")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PostSessionAd({ onUpgrade, onDismiss }) {
   const [canSkip, setCanSkip] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(3);
@@ -5694,7 +5954,7 @@ function PostSessionAd({ onUpgrade, onDismiss }) {
 // content: customize child level, EC potty-training course, crawling course,
 // VIP WhatsApp chat. For free users, the entire screen is grayed out behind
 // a "Premium feature" overlay that pushes them to the upsell.
-function ParentProfile({ premium, onClose, onUpgrade, onAdjustLevel }) {
+function ParentProfile({ premium, onClose, onUpgrade, onAdjustLevel, onToggleDevPremium }) {
   const items = [
     {
       id: "level-customize",
@@ -5796,6 +6056,23 @@ function ParentProfile({ premium, onClose, onUpgrade, onAdjustLevel }) {
           {premium && (
             <div style={{marginTop:18,padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",lineHeight:1.55}}>
               💡 We're building EC, Crawling, and the VIP chat — they'll appear here once they're ready. Subscribers are first in line.
+            </div>
+          )}
+
+          {/* DEV-ONLY: Toggle premium for testing without signing out.
+              Visible to anyone but only useful during testing/QA. Once
+              the real subscription flow is wired up, this can be removed
+              or restricted to a debug build flag. */}
+          {onToggleDevPremium && (
+            <div style={{marginTop:24,padding:"10px 12px",background:"#FFFAF0",border:"1.5px dashed #FFB347",borderRadius:10,textAlign:"center"}}>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#8B6F1A",letterSpacing:.5,textTransform:"uppercase",marginBottom:6}}>🔧 Dev / testing</div>
+              <button onClick={onToggleDevPremium}
+                style={{background:premium?"#fff":"#fef3c7",border:`1.5px solid ${premium?"#888":"#d97706"}`,borderRadius:50,padding:"8px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:premium?"#555":"#92400e"}}>
+                {premium ? "↓ Switch to free tier" : "↑ Switch to premium (dev)"}
+              </button>
+              <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#a98a3a",lineHeight:1.4,marginTop:6}}>
+                Currently: <strong>{premium ? "Premium" : "Free"}</strong>. Use this to preview both tiers without signing out.
+              </div>
             </div>
           )}
         </div>
@@ -5923,7 +6200,7 @@ function PremiumUpsell({ onClose, onSubscribed, reason }) {
           </div>
           <ul style={{listStyle:"none",padding:0,margin:0,display:"flex",flexDirection:"column",gap:10}}>
             {[
-              { e:"👨‍👩‍👧‍👦", t:"Up to 4 children",     d:"Free supports one child profile. Premium adds siblings, twins, or family circle of up to 4 under age 3." },
+              { e:"👨‍👩‍👧‍👦", t:"Up to 4 children",     d:"Free supports one child profile. Premium adds siblings, twins, or family circle of up to 4 under age 6." },
               { e:"📸", t:"Custom family photos",   d:"Upload photos of mom, dad, grandma, friends — they appear when your baby learns family words across all languages." },
               { e:"🚫", t:"No ads",                  d:"Free tier shows a brief ad after every session." },
               { e:"⚙️", t:"Customize your child's level", d:"Skip ahead, repeat sets, or fine-tune the curriculum to match their pace." },
@@ -6478,7 +6755,9 @@ function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, prem
               </div>
             )}
 
-            {/* Base family photo slots (always shown) */}
+            {/* Base family photo slots — all free in free tier (May 2026):
+                family is the first set in the curriculum, so personalized
+                photos are foundational, not a premium add-on. */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:8}}>
               {FAMILY_PHOTO_WORDS.map(word => {
                 const photo = familyPhotos[word];
@@ -6507,7 +6786,7 @@ function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, prem
             </div>
 
             {/* Kinship-specific slots — only shown if the child is learning
-                a language that differentiates (decision C from user). */}
+                a language that distinguishes (older/younger, paternal/maternal). */}
             {activeKinshipSlots.length > 0 && (
               <>
                 <div style={{marginTop:14,marginBottom:8,padding:"8px 10px",background:"#FFF8F8",border:`1px dashed ${RED}55`,borderRadius:10,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#777",lineHeight:1.4}}>
@@ -6572,15 +6851,46 @@ function ChildEditor({ child, onSave, onDelete, onClose, onOpenEnrollments, prem
                 setFamilyPhoto(child.id, "baby", avatarPhoto);
               } catch {}
             }
+            // Auto-enroll new languages in all classes (May 2026):
+            // when a parent adds a language, by default the child is enrolled
+            // in all available classes (Reading, Math, Knowledge) for that
+            // language. Music stays English-only. Parents can unenroll later
+            // via the class enrollment sheet.
+            const finalLangs = langs.length ? langs : ["English"];
+            const existingEnrollment = child?.enrolledClasses;
+            let autoEnrollment;
+            if (existingEnrollment && typeof existingEnrollment === "object" && !Array.isArray(existingEnrollment)) {
+              // Existing enrollment object — add new languages to all class enrollments
+              autoEnrollment = { ...existingEnrollment };
+              for (const c of AVAILABLE_CLASSES) {
+                const current = autoEnrollment[c.id] || [];
+                if (c.englishOnly) {
+                  // Music: only English
+                  autoEnrollment[c.id] = current.includes("English") ? current : [...current, "English"].filter(l=>l==="English");
+                } else {
+                  const merged = new Set(current);
+                  finalLangs.forEach(l => merged.add(l));
+                  // Drop languages no longer in child.languages
+                  autoEnrollment[c.id] = [...merged].filter(l => finalLangs.includes(l) || l === "English");
+                }
+              }
+            } else {
+              // First-time save or legacy array format — auto-enroll all classes for all langs
+              autoEnrollment = {};
+              for (const c of AVAILABLE_CLASSES) {
+                autoEnrollment[c.id] = c.englishOnly
+                  ? (finalLangs.includes("English") ? ["English"] : [])
+                  : [...finalLangs];
+              }
+            }
             onSave({
               id: child?.id || newChildId(),
               name: name.trim(), emoji,
               avatarPhoto: avatarPhoto || null,
-              languages: langs.length ? langs : ["English"],
+              languages: finalLangs,
               birthdate: birthdate || null,
               gender: gender || "prefer",
-              // Preserve enrollment if it exists (managed via ClassEnrollmentsSheet)
-              enrolledClasses: child?.enrolledClasses,
+              enrolledClasses: autoEnrollment,
               // Preserve whatever position data already exists — position is
               // now edited from the home screen per-language, not here.
               position: child?.position,
@@ -6961,8 +7271,8 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
   // ----------------------------------------------------------------------
   const startHereVideos = [
     {
-      title: "What is the Doman method?",
-      desc: "A 5-minute primer on Glenn Doman's flashcard methodology and why it works.",
+      title: "How early learning works",
+      desc: "A 5-minute primer on the early-childhood flashcard approach and why it works.",
       url: null,  // replace with YouTube embed URL when available
     },
     {
@@ -6992,7 +7302,7 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
     { emoji:"📺", title:"Mirror to a TV for a bigger view.", body:"If you can, screen-mirror your phone to a TV or larger display so your baby can see the cards on a bigger medium. In our home, we mirror from the phone to the TV and turn the TV speakers off — the audio plays from the phone next to the caregiver. Limitless Babies is designed for minimal/low-screen families: the device is a delivery tool, not a babysitter." },
     { emoji:"✨", title:"Babies are truly limitless.", body:"Start from any age — the earlier the better, but it's never too late." },
     { emoji:"👨‍👩‍👧", title:"Upload family photos.", body:"In your child's profile, add photos of mom, dad, siblings, grandparents, and more. Your baby will see familiar faces when learning family words — so they can learn to recognize and name each person." },
-    { emoji:"🌍", title:"Finish Sentences before starting a new language.", body:"Once your child has finished (not just reached) the Sentences stage, they can keep reading books in that language while you begin introducing a new one." },
+    { emoji:"🌍", title:"Finish Sentences before starting a new language.", body:"Once your child has finished the Sentences stage of one language, they can keep reading books in that language while you begin introducing a new one." },
     { emoji:"📅", title:"Aim for 9 sessions a day.", body:"Three Reading + three Math + three Knowledge sessions. If that's too much today — no pressure." },
     { emoji:"⏱️", title:"Take 5-minute breaks between sessions.", body:"Even between different subjects. A baby's brain needs a moment to rest between bursts of input. You know your child best — adjust as needed." },
     { emoji:"💛", title:"If a day slips by, no worries.", body:"You're already far ahead just by having this tool in your hand. Consistency over intensity." },
@@ -7020,7 +7330,7 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
         </h2>
         <p style={{fontFamily:"Nunito,sans-serif",fontSize:12,color:"#888",fontWeight:700,marginTop:6,marginBottom:14,lineHeight:1.4}}>
           {tab === "start"
-            ? t("Brand-new to Doman? Watch these short videos first.")
+            ? t("New to early learning? Watch these short videos first.")
             : tab === "welcome"
               ? t("A few things to know before you dive in.")
               : tab === "faq"
@@ -7053,10 +7363,10 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={{padding:"14px 16px",background:"linear-gradient(135deg,#FFF0F1 0%,#FFE4E6 100%)",border:`1px solid ${RED}33`,borderRadius:16}}>
               <div style={{fontFamily:"'Fredoka One','Baloo 2',system-ui,sans-serif",fontSize:17,color:"#111",lineHeight:1.2,marginBottom:8}}>
-                👋 New to Doman? Welcome.
+                👋 New to early learning? Welcome.
               </div>
               <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#444",lineHeight:1.55}}>
-                Limitless Babies is built around the methodology of Glenn Doman, a pioneer of early childhood development. The idea is simple: babies' brains are extraordinarily plastic in the first 3 years, and they can learn to read, do math, and recognize knowledge categories far earlier than we typically expect — IF the input is delivered the right way.
+                Limitless Babies is built around early-childhood research showing that babies' brains are extraordinarily plastic in the first six years, and they can learn to read, do math, and recognize knowledge categories far earlier than we typically expect — IF the input is delivered the right way.
                 <br/><br/>
                 These videos walk you through everything you need to know. Watch them in order before your first session.
               </div>
@@ -7096,7 +7406,7 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
             ))}
 
             <div style={{padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#666",lineHeight:1.5,textAlign:"center",marginTop:6}}>
-              📚 For deeper reading: search "Glenn Doman How To Teach Your Baby To Read" or check the <a href="https://gentlerevolutionpress.com" target="_blank" rel="noopener noreferrer" style={{color:RED,fontWeight:800}}>Gentle Revolution Press</a>.
+              📚 For deeper reading, check the <a href="https://gentlerevolutionpress.com" target="_blank" rel="noopener noreferrer" style={{color:RED,fontWeight:800}}>Gentle Revolution Press</a> for early-learning books.
             </div>
           </div>
         )}
@@ -7139,9 +7449,9 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
                 UC Berkeley Linguistics · Columbia Business School
               </div>
               <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:13,color:"#444",lineHeight:1.6}}>
-                Limitless Babies is <strong>heavily inspired by the Doman method</strong> — Olivia's approach to teaching her twins reading, math, knowledge, and music draws directly from Glenn Doman's research and curriculum structure. But this app isn't <em>exactly</em> like the Doman method.
+                Limitless Babies is built around the early-learning approach Olivia used with her own twins for reading, math, knowledge, and music — drawing on decades of research showing how much young children's brains can absorb when input is delivered the right way.
                 <br/><br/>
-                <strong>Important note:</strong> the Doman Institute does <em>not</em> recommend screens for early-childhood learning, and they have good reasons for that position. This app is on a screen — that's an intentional trade-off. Limitless Babies exists for the real-world reality of busy families, multilingual households, and parents who can't physically print and laminate thousands of flash cards a month. The cards here are designed to be as close to real flash cards as possible: no distracting animations, no gimmicks, no autoplay videos — just the cards.
+                <strong>Important note on screens:</strong> traditional flash-card programs are typically done with physical cards, not screens, and there are good reasons for that. This app is on a screen — that's an intentional trade-off. Limitless Babies exists for the real-world reality of busy families, multilingual households, and parents who can't physically print and laminate thousands of flash cards a month. The cards here are designed to be as close to real flash cards as possible: no distracting animations, no gimmicks, no autoplay videos — just the cards.
                 <br/><br/>
                 If your family has the time and resources to do physical flash cards instead, that's wonderful and we'd recommend it. For everyone else, this is here to help.
               </div>
@@ -7171,14 +7481,14 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
 
             <div style={{padding:"14px 16px",background:"#F6F8FC",borderRadius:14}}>
               <div style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:14,color:"#111",marginBottom:8}}>
-                🎓 Doman courses
+                🎓 In-depth courses for parents
               </div>
               <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#555",lineHeight:1.55,marginBottom:10}}>
-                All three Doman courses are highly recommended for the best results with this program. Limitless Babies is not exactly like their cards, but it's an excellent companion.
+                For parents who want to go deeper into the methodology behind early flash-card learning, these courses are highly recommended companions to Limitless Babies.
               </div>
               <a href="https://courses.domanlearning.com/a/aff_2094qsd8/external?affcode=606622_n1gt4mbs" target="_blank" rel="noopener noreferrer"
                 style={{display:"inline-block",background:RED,color:"#fff",borderRadius:50,padding:"8px 16px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,textDecoration:"none"}}>
-                explore Doman courses →
+                explore courses →
               </a>
             </div>
 
@@ -7286,10 +7596,10 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
   }, []);
 
   const allCategoryMeta = [
-    { id:"reading",   label:"Reading",   emoji:"📖", color:"#FFF0F1", statusKey:"reading",      desc:"Words, phrases, and stories", classIds:["reading"] },
-    { id:"math",      label:"Math",      emoji:"🔢", color:"#F0F8FF", statusKey:"math",         desc:"Quantities and equations",     classIds:["math"] },
-    { id:"knowledge", label:"Knowledge", emoji:"🌍", color:"#F0FFF4", statusKey:"encyclopedia", desc:"Facts about the world",         classIds:["knowledge"] },
-    { id:"music",     label:"Music",     emoji:"🎵", color:"#FDF4FF", statusKey:"music",        desc:"Perfect pitch + rhythm training",        classIds:["music"] },
+    { id:"reading",   label:"Reading",   emoji:"📖", color:"#FFF0F1", statusKey:"reading",      desc:"Words, phrases, and stories · 0–6 years", classIds:["reading"] },
+    { id:"math",      label:"Math",      emoji:"🔢", color:"#F0F8FF", statusKey:"math",         desc:"Quantities and equations · 0–30 months", classIds:["math"] },
+    { id:"knowledge", label:"Knowledge", emoji:"🌍", color:"#F0FFF4", statusKey:"encyclopedia", desc:"Facts about the world · 0–6 years",      classIds:["knowledge"] },
+    { id:"music",     label:"Music",     emoji:"🎵", color:"#FDF4FF", statusKey:"music",        desc:"Perfect pitch + rhythm training · 0–6 years", classIds:["music"] },
   ];
 
   // Only show categories where the child is enrolled in this class for the
@@ -7939,7 +8249,7 @@ function RoadmapView({ stageId, category, activeChild, language, onBack, onStart
         </div>
 
         <div style={{marginTop:18,padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",lineHeight:1.5,textAlign:"center"}}>
-          Your child progresses naturally as they complete each session. In a few months, we'll add a fun Doman-style check-in to help fine-tune where they are.
+          Your child progresses naturally as they complete each session. In a few months, we'll add a fun gentle check-in to help fine-tune where they are.
         </div>
       </div>
     </div>
@@ -8164,16 +8474,26 @@ function useIsPhonePortrait() {
   return portrait;
 }
 
-function LandscapePrompt({ onDismiss }) {
+function LandscapePrompt({ onDismiss, onBack }) {
   return (
     <div style={{position:"fixed",inset:0,background:"#fff",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center"}}>
+      {/* Back button (upper-left) — lets parent exit the session even before
+          they rotate the phone. Without this, the only way out was to rotate
+          first and then tap back, which was confusing for testers. */}
+      {onBack && (
+        <button onClick={onBack}
+          aria-label="back"
+          style={{position:"absolute",top:16,left:16,background:"#f5f5f5",border:"none",borderRadius:50,padding:"8px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#555",display:"flex",alignItems:"center",gap:4}}>
+          ← {t("back")}
+        </button>
+      )}
       <div style={{fontSize:64,marginBottom:20,animation:"lbRotate 2s ease-in-out infinite"}}>📱</div>
       <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:0,marginBottom:10}}>{t("Rotate your phone")}</h2>
       <p style={{fontFamily:"Nunito,sans-serif",fontSize:14,fontWeight:700,color:"#777",maxWidth:280,lineHeight:1.5,marginTop:0,marginBottom:28}}>
-        Cards look best in landscape so the red word can fill the whole screen.
+        {t("Cards look best in landscape so the red word can fill the whole screen.")}
       </p>
       <button onClick={onDismiss} style={{background:"#f5f5f5",border:"none",borderRadius:50,padding:"10px 22px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#666"}}>
-        use portrait anyway
+        {t("use portrait anyway")}
       </button>
       <style>{`
         @keyframes lbRotate {
@@ -8529,7 +8849,7 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
 
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      {isPhonePortrait && !orientationDismissed && <LandscapePrompt onDismiss={()=>setOrientationDismissed(true)}/>}
+      {isPhonePortrait && !orientationDismissed && <LandscapePrompt onDismiss={()=>setOrientationDismissed(true)} onBack={onBack}/>}
       <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)} extraDots={frameDots}/>
       {transError && <div style={{background:"#FFF0F1",padding:"6px 14px",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:RED,textAlign:"center",wordBreak:"break-word"}}>{transError}</div>}
 
@@ -9413,7 +9733,7 @@ function EncyclopediaSession({ knowledge, language, speechOn, sessionNum, factsM
 
   return (
     <div style={{minHeight:"100vh",background:"#fff",display:"flex",flexDirection:"column"}}>
-      {isPhonePortrait && !orientationDismissed && <LandscapePrompt onDismiss={()=>setOrientationDismissed(true)}/>}
+      {isPhonePortrait && !orientationDismissed && <LandscapePrompt onDismiss={()=>setOrientationDismissed(true)} onBack={onBack}/>}
       <SessionHeader onBack={onBack} index={idx} total={cards.length} sessionNum={sessionNum} autoPlay={autoPlay} onAutoPlay={()=>setAutoPlay(a=>!a)}/>
 
       <div onClick={advance}
@@ -9628,6 +9948,11 @@ export default function App() {
   const [showUpsell, setShowUpsell] = useState(null); // null | "multilingual" | "parent-profile" | "general"
   // `showAd` shows the post-session ad to free-tier users
   const [showAd, setShowAd] = useState(false);
+  // `showExtendedFamilyPrompt` is a one-shot reminder shown the first time
+  // the parent returns to home after completing Day 1 — invites them to
+  // upload extended-family photos (grandma/grandpa/aunt/uncle) which appear
+  // in the curriculum around Day 30.
+  const [showExtendedFamilyPrompt, setShowExtendedFamilyPrompt] = useState(false);
   // `showParentProfile` opens the parent profile screen
   const [showParentProfile, setShowParentProfile] = useState(false);
   // Re-read premium from storage when upsell closes (in case user just subscribed)
@@ -10007,6 +10332,24 @@ export default function App() {
       const fresh = loadChildren();
       setChildren(fresh);
     } catch {}
+
+    // First-Day-1-completion prompt: if the parent has just finished their
+    // first ever full day (3 sessions), and we haven't shown the extended-
+    // family prompt yet, show it now. This is a one-shot — we set a flag
+    // immediately so it never reappears for this child.
+    try {
+      if (activeChildId) {
+        const day1Key = `lb-day1-complete-${activeChildId}`;
+        const promptShownKey = `lb-extended-family-prompt-${activeChildId}`;
+        const day1Complete = localStorage.getItem(day1Key);
+        const promptShown = localStorage.getItem(promptShownKey);
+        if (day1Complete && !promptShown) {
+          // Mark immediately to avoid double-fire on rapid back-button taps
+          localStorage.setItem(promptShownKey, String(Date.now()));
+          setShowExtendedFamilyPrompt(true);
+        }
+      }
+    } catch {}
     // If we were reviewing a past set/stage, return to the roadmap that
     // launched it so parents can pick another item easily.
     if (reviewCards) {
@@ -10303,6 +10646,18 @@ export default function App() {
         />
       )}
 
+      {/* One-shot prompt after first Day 1 completion, inviting the parent
+          to upload extended-family photos that will appear ~Day 30. */}
+      {showExtendedFamilyPrompt && (
+        <ExtendedFamilyPrompt
+          onUploadNow={() => {
+            setShowExtendedFamilyPrompt(false);
+            if (activeChild) setEditingChild(activeChild);
+          }}
+          onLater={() => setShowExtendedFamilyPrompt(false)}
+        />
+      )}
+
       {/* Parent profile — gated overlay for free users */}
       {showParentProfile && (
         <ParentProfile
@@ -10310,6 +10665,12 @@ export default function App() {
           onClose={() => setShowParentProfile(false)}
           onUpgrade={() => { setShowParentProfile(false); setShowUpsell("parent-profile"); }}
           onAdjustLevel={() => { setShowParentProfile(false); setShowLangLevel(true); }}
+          onToggleDevPremium={() => {
+            // Dev-only premium toggle for testing without sign-out
+            if (premium) setPremium(null);
+            else setPremium({ tier: "family", interval: "yearly", at: Date.now(), dev: true });
+            refreshPremium();
+          }}
         />
       )}
 
