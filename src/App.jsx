@@ -1012,7 +1012,7 @@ const RED   = "#E8192C";
 // time we ship. Format: yyyy-mm-dd-HHMM (UTC-ish; we just want monotonic).
 // If the user's screen shows an OLD version, the service worker is serving
 // stale cache — the "Force refresh" button next to it clears the SW + reloads.
-const BUILD_VERSION = "2026-05-04-2330 · audio-test+gentle-rev-removed";
+const BUILD_VERSION = "2026-05-04-2400 · audio-wizard";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 // Use local time, not UTC — otherwise late-evening sessions in negative-offset
@@ -6602,6 +6602,393 @@ function ParentProfilePromoEntry({ premium }) {
   );
 }
 
+// Detects the user's platform from navigator.userAgent. Used by the voice
+// setup wizard to show OS-specific instructions. Returns one of:
+//   "ios"    — iPhone, iPad, iPod (any iOS Safari, Chrome, or PWA)
+//   "android" — Android phone or tablet
+//   "macos"  — Mac desktop (Safari/Chrome on macOS)
+//   "windows" — Windows desktop
+//   "other"  — Linux, ChromeOS, anything else
+// We can't perfectly detect every device but these five cover 99% of testers.
+function detectPlatform() {
+  try {
+    const ua = (navigator.userAgent || "").toLowerCase();
+    const platform = (navigator.platform || "").toLowerCase();
+    // iPad on iOS 13+ reports as Mac in userAgent; check maxTouchPoints
+    if (/ipad|iphone|ipod/.test(ua) || (platform === "macintel" && navigator.maxTouchPoints > 1)) {
+      return "ios";
+    }
+    if (/android/.test(ua)) return "android";
+    if (/mac/.test(platform)) return "macos";
+    if (/win/.test(platform)) return "windows";
+    return "other";
+  } catch { return "other"; }
+}
+
+// Step-by-step instructions for installing a voice for a given language on
+// the user's platform. Returns an object:
+//   { title: string, steps: string[], voiceName: string|null, postNote: string }
+// The voiceName is the iOS/macOS-specific voice name to look for (e.g.
+// "Sin-ji" for Cantonese), so the parent knows what to tap when scrolling
+// through a list of voices.
+function getVoiceInstallInstructions(language, platform) {
+  // Maps from app language string → human-readable language name + iOS voice
+  // name (where known). On iOS, voices are listed by their proper-noun name
+  // (e.g. "Sin-ji" not "Cantonese"), so we hand-hold the parent through it.
+  const langInfo = {
+    "Chinese (Cantonese-Traditional)":   { display: "Chinese (Cantonese)",  iosVoice: "Sin-ji",    iosCategory: "Chinese" },
+    "Chinese (Cantonese-Simplified)":    { display: "Chinese (Cantonese)",  iosVoice: "Sin-ji",    iosCategory: "Chinese" },
+    "Chinese (Cantonese)":               { display: "Chinese (Cantonese)",  iosVoice: "Sin-ji",    iosCategory: "Chinese" },
+    "Chinese (Mandarin-Traditional)":    { display: "Chinese (Mandarin, Taiwan)", iosVoice: "Mei-Jia", iosCategory: "Chinese" },
+    "Chinese (Mandarin-Simplified)":     { display: "Chinese (Mandarin)",   iosVoice: "Tian-Tian", iosCategory: "Chinese" },
+    "Chinese (Mandarin)":                { display: "Chinese (Mandarin)",   iosVoice: "Tian-Tian", iosCategory: "Chinese" },
+    "Vietnamese (Northern)":             { display: "Vietnamese",            iosVoice: "Linh",      iosCategory: "Vietnamese" },
+    "Vietnamese (Southern)":             { display: "Vietnamese",            iosVoice: "Linh",      iosCategory: "Vietnamese" },
+    "Vietnamese":                        { display: "Vietnamese",            iosVoice: "Linh",      iosCategory: "Vietnamese" },
+    "Spanish":                           { display: "Spanish",               iosVoice: "Mónica",    iosCategory: "Spanish" },
+    "French":                            { display: "French",                iosVoice: "Amélie",    iosCategory: "French" },
+    "German":                            { display: "German",                iosVoice: "Anna",      iosCategory: "German" },
+    "Italian":                           { display: "Italian",               iosVoice: "Alice",     iosCategory: "Italian" },
+    "Portuguese (Brazil)":               { display: "Portuguese (Brazil)",   iosVoice: "Luciana",   iosCategory: "Portuguese" },
+    "Portuguese":                        { display: "Portuguese (Portugal)", iosVoice: "Joana",     iosCategory: "Portuguese" },
+    "Japanese":                          { display: "Japanese",              iosVoice: "Kyoko",     iosCategory: "Japanese" },
+    "Korean":                            { display: "Korean",                iosVoice: "Yuna",      iosCategory: "Korean" },
+    "Hebrew":                            { display: "Hebrew",                iosVoice: "Carmit",    iosCategory: "Hebrew" },
+    "Arabic":                            { display: "Arabic",                iosVoice: "Maged",     iosCategory: "Arabic" },
+    "Hindi":                             { display: "Hindi",                 iosVoice: "Lekha",     iosCategory: "Hindi" },
+    "Thai":                              { display: "Thai",                  iosVoice: "Kanya",     iosCategory: "Thai" },
+    "Russian":                           { display: "Russian",               iosVoice: "Milena",    iosCategory: "Russian" },
+    "Polish":                            { display: "Polish",                iosVoice: "Zosia",     iosCategory: "Polish" },
+    "Dutch":                             { display: "Dutch",                 iosVoice: "Ellen",     iosCategory: "Dutch" },
+    "Swedish":                           { display: "Swedish",               iosVoice: "Alva",      iosCategory: "Swedish" },
+    "Greek":                             { display: "Greek",                 iosVoice: "Melina",    iosCategory: "Greek" },
+    "Turkish":                           { display: "Turkish",               iosVoice: "Yelda",     iosCategory: "Turkish" },
+  };
+  const info = langInfo[language] || { display: language, iosVoice: null, iosCategory: language };
+
+  if (platform === "ios") {
+    return {
+      title: `Install the ${info.display} voice on your iPhone`,
+      steps: [
+        "Open the iPhone Settings app (gear icon).",
+        "Tap Accessibility.",
+        "Tap Spoken Content.",
+        "Tap Voices.",
+        `Tap ${info.iosCategory}.`,
+        info.iosVoice
+          ? `Find and tap "${info.iosVoice}" — that's the ${info.display} voice. (Tip: tap the cloud icon ☁️ next to it to download. The "Premium" or "Enhanced" version sounds better but takes more space.)`
+          : `Find a voice for ${info.display} and tap the cloud icon ☁️ to download.`,
+        "Wait for the download to finish (a few seconds to a minute).",
+        "Come back to Limitless Babies and tap 'I downloaded the voice — re-test' below.",
+      ],
+      voiceName: info.iosVoice,
+      postNote: "The voice download is one-time. Once installed, every app on your iPhone (including Limitless Babies) can use it automatically.",
+    };
+  }
+
+  if (platform === "android") {
+    return {
+      title: `Install the ${info.display} voice on Android`,
+      steps: [
+        "Open the Android Settings app.",
+        "Tap System (or General Management on Samsung).",
+        "Tap Languages & input → Text-to-speech output. (On some Androids: Settings → Accessibility → Text-to-speech.)",
+        "Tap the gear icon ⚙️ next to your preferred TTS engine (usually 'Google Text-to-speech Engine' or 'Samsung TTS').",
+        `Tap "Install voice data" or "Languages".`,
+        `Find ${info.display} in the list and tap the download icon.`,
+        "Wait for the download to finish.",
+        "Come back to Limitless Babies and tap 'I downloaded the voice — re-test' below.",
+      ],
+      voiceName: null,
+      postNote: "If you don't see the language in the list, your TTS engine doesn't support it on this phone. Try switching engines (Settings → Text-to-speech) — Google's engine usually has the most languages.",
+    };
+  }
+
+  if (platform === "macos") {
+    return {
+      title: `Install the ${info.display} voice on Mac`,
+      steps: [
+        "Open System Settings (or System Preferences on older macOS).",
+        "Click Accessibility.",
+        "Click Spoken Content.",
+        "Click the System Voice dropdown → Manage Voices.",
+        `Find ${info.iosCategory} in the list, expand it.`,
+        info.iosVoice
+          ? `Check the box next to "${info.iosVoice}" — that's the ${info.display} voice.`
+          : `Check the box next to a ${info.display} voice.`,
+        "Wait for the download.",
+        "Refresh this page and tap 'I downloaded the voice — re-test'.",
+      ],
+      voiceName: info.iosVoice,
+      postNote: "If you don't see the System Settings path above, your macOS version may use a slightly different menu. Search 'voices' in the System Settings search box at the top.",
+    };
+  }
+
+  // Windows / other — generic fallback
+  return {
+    title: `Install the ${info.display} voice`,
+    steps: [
+      "Browser TTS uses your operating system's voice library.",
+      "On Windows: Settings → Time & language → Language & region → Add a language → install with 'Speech' option.",
+      "On Linux: install via espeak-ng or your distribution's TTS package manager.",
+      "After installing, restart this browser tab and re-test.",
+    ],
+    voiceName: null,
+    postNote: "Browser TTS quality varies a lot by OS. iPhone and Mac usually have the best voices. Android and Windows are decent. Linux is hit-or-miss.",
+  };
+}
+
+// Self-contained voice setup wizard. Walks the parent through diagnosing why
+// a language voice isn't working: silent phone, missing voice, or wrong-region
+// fallback (e.g. Cantonese → Mandarin). Renders a multi-step flow:
+//
+//   Step 1: TEST — speak the language, ask "did you hear it correctly?"
+//   Step 2a: SUCCESS — confirm and dismiss
+//   Step 2b: SILENT/UNCLEAR — silent-mode + volume troubleshooting
+//   Step 2c: WRONG VOICE — install instructions for the right regional voice
+//   Step 3: RE-TEST — speak again, confirm fix worked
+//
+// Driven by the same SPEECH_LANG/voice-pick logic as the real session, so
+// what they hear here is exactly what they'd hear in a session.
+function VoiceSetupWizard({ language, onClose }) {
+  const [step, setStep] = useState("test");        // test | silent | wrong | install | success
+  const [voices, setVoices] = useState([]);
+  const [speaking, setSpeaking] = useState(false);
+  const [, forceRerender] = useState(0);
+  const platform = detectPlatform();
+
+  useEffect(() => {
+    const load = () => {
+      try { setVoices(window.speechSynthesis ? window.speechSynthesis.getVoices() : []); }
+      catch {}
+    };
+    load();
+    if (window.speechSynthesis) {
+      try { window.speechSynthesis.onvoiceschanged = load; } catch {}
+    }
+    const t1 = setTimeout(load, 250);
+    const t2 = setTimeout(load, 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
+  const bcp47 = SPEECH_LANG[language] || "en-US";
+  const pickVoice = () => {
+    if (!voices.length) return null;
+    const exact = voices.find(v => v.lang === bcp47);
+    if (exact) return exact;
+    const prefix = bcp47.split("-")[0];
+    return voices.find(v => v.lang.startsWith(prefix + "-")) || null;
+  };
+  const chosenVoice = pickVoice();
+  const isWrongRegion = chosenVoice && chosenVoice.lang !== bcp47;
+  const noVoiceAtAll = !chosenVoice;
+
+  const phraseFor = (lang) => {
+    const map = {
+      "English": "Hello, this is the English voice test.",
+      "Spanish": "Hola, esta es la prueba de voz en español.",
+      "French": "Bonjour, ceci est le test de voix en français.",
+      "Italian": "Ciao, questo è il test della voce in italiano.",
+      "German": "Hallo, das ist der Stimmtest auf Deutsch.",
+      "Portuguese": "Olá, este é o teste de voz em português.",
+      "Portuguese (Brazil)": "Olá, este é o teste de voz em português do Brasil.",
+      "Russian": "Привет, это тест голоса на русском.",
+      "Japanese": "こんにちは、これは日本語の音声テストです。",
+      "Korean": "안녕하세요, 한국어 음성 테스트입니다.",
+      "Chinese (Mandarin-Simplified)": "你好,这是普通话语音测试。",
+      "Chinese (Mandarin-Traditional)": "你好,這是國語語音測試。",
+      "Chinese (Cantonese-Traditional)": "你好,呢個係廣東話語音測試。",
+      "Chinese (Cantonese-Simplified)": "你好,呢个係广东话语音测试。",
+      "Vietnamese (Northern)": "Xin chào, đây là bài kiểm tra giọng nói tiếng Việt.",
+      "Vietnamese (Southern)": "Xin chào, đây là bài kiểm tra giọng nói tiếng Việt.",
+      "Hebrew": "שלום, זוהי בדיקת קול בעברית.",
+      "Arabic": "مرحبا، هذا اختبار الصوت بالعربية.",
+      "Hindi": "नमस्ते, यह हिंदी आवाज़ परीक्षण है।",
+      "Thai": "สวัสดี นี่คือการทดสอบเสียงภาษาไทย",
+    };
+    return map[lang] || `Hello, this is the ${lang} voice test.`;
+  };
+
+  const speakTest = () => {
+    if (!window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(phraseFor(language));
+      utt.lang = bcp47;
+      if (chosenVoice) utt.voice = chosenVoice;
+      utt.rate = 0.9; utt.pitch = 1; utt.volume = 1;
+      utt.onstart = () => setSpeaking(true);
+      utt.onend = () => setSpeaking(false);
+      utt.onerror = () => setSpeaking(false);
+      window.speechSynthesis.speak(utt);
+    } catch { setSpeaking(false); }
+  };
+
+  const reload = () => {
+    // Force voice list reload — important after user installs a voice and
+    // taps "I downloaded — re-test". On iOS the voice list updates after
+    // the SW returns, so we re-query.
+    try {
+      const v = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+      setVoices(v || []);
+      forceRerender(n => n + 1);
+    } catch {}
+  };
+
+  // ── Render helpers ─────────────────────────────────────────────────────
+  const Header = ({ subtitle, emoji }) => (
+    <div style={{padding:"22px 22px 14px",background:"linear-gradient(180deg,#FFF6E5 0%,#fff 100%)",borderTopLeftRadius:24,borderTopRightRadius:24}}>
+      <div style={{fontSize:38,textAlign:"center",marginBottom:6}}>{emoji}</div>
+      <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:21,color:"#111",margin:"0 0 6px",textAlign:"center",lineHeight:1.15}}>
+        {language} voice setup
+      </h2>
+      {subtitle && (
+        <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#666",textAlign:"center",margin:"0",lineHeight:1.5}}>{subtitle}</p>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:340,display:"flex",alignItems:"center",justifyContent:"center",padding:14}}>
+      <div style={{background:"#fff",borderRadius:24,maxWidth:440,width:"100%",maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 20px 50px rgba(0,0,0,.35)"}}>
+
+        {step === "test" && (
+          <>
+            <Header subtitle={`Tap "play test" and listen carefully. Does it sound right?`} emoji="🔊" />
+            <div style={{flex:1,overflowY:"auto",padding:"4px 22px 18px"}}>
+              <div style={{padding:"12px 14px",background:"#fafafa",border:"1px solid #eee",borderRadius:10,marginBottom:14}}>
+                <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#888",marginBottom:4}}>Phrase to listen for:</div>
+                <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#111",lineHeight:1.4}}>"{phraseFor(language)}"</div>
+                <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:"#888",marginTop:6}}>
+                  requested: {bcp47}{chosenVoice ? ` → using ${chosenVoice.name} (${chosenVoice.lang})` : " → no matching voice"}
+                </div>
+              </div>
+              <button onClick={speakTest} disabled={speaking}
+                style={{width:"100%",background:speaking?"#10b981":RED,border:"none",borderRadius:50,padding:"14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",marginBottom:10,boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
+                {speaking ? "🔊 speaking…" : "▶ play test"}
+              </button>
+              <div style={{display:"flex",gap:8,marginTop:14}}>
+                <button onClick={() => setStep("success")}
+                  style={{flex:1,background:"#10b981",border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}>
+                  ✓ I heard it correctly
+                </button>
+                <button onClick={() => {
+                  // Branch based on what we detect:
+                  if (noVoiceAtAll)         setStep("install");
+                  else if (isWrongRegion)   setStep("wrong");
+                  else                       setStep("silent");
+                }}
+                  style={{flex:1,background:"#fff",border:"2px solid #c44",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#c44"}}>
+                  ✗ silent / wrong
+                </button>
+              </div>
+              <button onClick={onClose}
+                style={{width:"100%",background:"transparent",border:"none",padding:"10px",marginTop:8,cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#888"}}>
+                close
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "silent" && (
+          <>
+            <Header subtitle="If you can't hear anything, try these checks first." emoji="🔇" />
+            <div style={{flex:1,overflowY:"auto",padding:"4px 22px 18px"}}>
+              <ol style={{margin:"0 0 14px 0",padding:"0 0 0 22px",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#333",lineHeight:1.6}}>
+                {platform === "ios" && (
+                  <>
+                    <li><strong>Check the silent switch</strong> on the side of your iPhone (above the volume buttons). If the switch shows orange, your phone is on silent — flip it the other way.</li>
+                    <li><strong>Turn up the media volume</strong>. iPhones have separate volumes for ringer and media — press the volume-up button on the side of the phone WHILE this app is open, and a media volume slider will appear.</li>
+                    <li><strong>Check Bluetooth</strong>. If you have AirPods or another Bluetooth device paired, audio may be playing there instead of on your phone. Disconnect Bluetooth or put the AirPods in your ears.</li>
+                    <li><strong>Try a different browser</strong>. If you're using the PWA (added to home screen), try opening the URL directly in Safari to compare.</li>
+                  </>
+                )}
+                {platform === "android" && (
+                  <>
+                    <li><strong>Check Do Not Disturb mode</strong>. Some Androids block all sounds in DND. Turn it off in Quick Settings.</li>
+                    <li><strong>Turn up the media volume</strong>. Android has separate volumes for ringer, media, and notifications — press volume-up while the app is open to adjust the right one.</li>
+                    <li><strong>Check Bluetooth</strong>. If a Bluetooth device is paired, audio may be playing there.</li>
+                    <li><strong>Try Chrome</strong>. Some Android browsers handle TTS poorly. Chrome's the most reliable.</li>
+                  </>
+                )}
+                {(platform === "macos" || platform === "windows" || platform === "other") && (
+                  <>
+                    <li><strong>Check your computer's volume</strong>. Make sure it's not muted.</li>
+                    <li><strong>Check audio output</strong>. If you have headphones or external speakers, audio may be playing there.</li>
+                    <li><strong>Try a different browser</strong>. Chrome and Safari handle TTS most reliably.</li>
+                  </>
+                )}
+              </ol>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={() => setStep("test")}
+                  style={{flex:1,background:"#10b981",border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}>
+                  ↻ try again
+                </button>
+                <button onClick={onClose}
+                  style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#666"}}>
+                  close
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {(step === "wrong" || step === "install") && (() => {
+          const inst = getVoiceInstallInstructions(language, platform);
+          return (
+            <>
+              <Header subtitle={step === "wrong"
+                ? `Your phone doesn't have a ${language} voice installed — it's using a similar voice instead. Here's how to install the right one:`
+                : `Your phone doesn't have a voice for ${language}. Here's how to install one:`}
+                emoji={step === "wrong" ? "⚠️" : "🌐"} />
+              <div style={{flex:1,overflowY:"auto",padding:"4px 22px 18px"}}>
+                <div style={{padding:"10px 12px",background:"#FFF6E0",border:"1px solid #F5C97A",borderRadius:10,marginBottom:14}}>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#92400e",marginBottom:6,lineHeight:1.3}}>
+                    {inst.title}
+                  </div>
+                  <ol style={{margin:0,padding:"0 0 0 18px",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#5a3a05",lineHeight:1.65}}>
+                    {inst.steps.map((s, i) => <li key={i} style={{marginBottom:4}}>{s}</li>)}
+                  </ol>
+                </div>
+                {inst.postNote && (
+                  <div style={{padding:"8px 10px",background:"#F0FFF4",border:"1px solid #BBF7D0",borderRadius:8,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#065f46",lineHeight:1.5,marginBottom:14}}>
+                    💡 {inst.postNote}
+                  </div>
+                )}
+                <button onClick={() => { reload(); setStep("test"); }}
+                  style={{width:"100%",background:RED,border:"none",borderRadius:50,padding:"13px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#fff",marginBottom:8,boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
+                  ✓ I downloaded the voice — re-test
+                </button>
+                <button onClick={onClose}
+                  style={{width:"100%",background:"transparent",border:"none",padding:"8px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#888"}}>
+                  I'll do this later — close
+                </button>
+              </div>
+            </>
+          );
+        })()}
+
+        {step === "success" && (
+          <>
+            <Header subtitle={`Great — ${language} audio is working on your phone.`} emoji="🎉" />
+            <div style={{padding:"4px 22px 22px",textAlign:"center"}}>
+              <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#666",lineHeight:1.5,margin:"6px 0 18px"}}>
+                You're all set. Your child's sessions in {language} will use this voice.
+              </p>
+              <button onClick={onClose}
+                style={{width:"100%",background:"#10b981",border:"none",borderRadius:50,padding:"13px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#fff"}}>
+                done
+              </button>
+            </div>
+          </>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+
 // Inline audio diagnostic shown inside Parent Profile. Lets a parent or
 // tester verify that their device can speak each language their child is
 // learning, BEFORE hitting "Audio doesn't work" in a real session.
@@ -6727,13 +7114,17 @@ function AudioTestPanel({ activeChild }) {
     return null;
   };
 
+  // Tracks which language (if any) the user has opened the setup wizard for.
+  // null = no wizard open. Set to a language string to open the wizard for it.
+  const [wizardLang, setWizardLang] = useState(null);
+
   return (
     <div style={{marginTop:14,padding:"12px 14px",background:"#F0FFF4",border:"1px solid #BBF7D0",borderRadius:10}}>
       <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#065f46",marginBottom:4}}>
         🔊 Audio test
       </div>
       <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#555",lineHeight:1.4,marginBottom:10}}>
-        Test each language to make sure your phone has the voices installed. If audio is silent, check your phone isn't on silent mode and your media volume is up.
+        Tap "▶ test" to hear each language. If something sounds wrong, tap "fix this" — we'll walk you through it.
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {childLangs.map(lang => {
@@ -6741,6 +7132,7 @@ function AudioTestPanel({ activeChild }) {
           const v = pickVoice(bcp47);
           const isSpeaking = speaking === lang;
           const warning = mismatchWarning(lang, lastSpoken[lang]);
+          const hasIssue = !v || !!warning;
           return (
             <div key={lang} style={{padding:"8px 10px",background:"#fff",border:"1px solid #eee",borderRadius:8}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -6762,13 +7154,57 @@ function AudioTestPanel({ activeChild }) {
               )}
               {!v && (
                 <div style={{marginTop:6,padding:"6px 8px",background:"#FFF0F0",borderRadius:6,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#c44",lineHeight:1.4}}>
-                  ⚠️ No voice for {lang} on this device. Install one from your phone's Settings (iOS: Accessibility → Spoken Content → Voices · Android: Languages → Text-to-speech).
+                  ⚠️ No voice for {lang} on this device.
                 </div>
+              )}
+              {/* Per-row "fix this" button — opens the wizard pointed at this
+                  specific language. Visible only when there's a clear issue
+                  (no voice or wrong region) OR if the parent simply wants
+                  to walk through it (always shown via the bottom link). */}
+              {hasIssue && (
+                <button onClick={() => setWizardLang(lang)}
+                  style={{marginTop:6,width:"100%",background:"#fff",border:"1.5px solid #c44",borderRadius:50,padding:"6px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#c44"}}>
+                  → walk me through fixing this
+                </button>
               )}
             </div>
           );
         })}
       </div>
+
+      {/* Bottom link — open the wizard for ANY language (parent picks).
+          Useful when audio is just silent and they don't know which lang
+          to start debugging from. */}
+      <div style={{marginTop:10,paddingTop:8,borderTop:"1px dashed #BBF7D0"}}>
+        <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#555",marginBottom:6}}>
+          Audio not working? Walk me through fixing it for:
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+          {childLangs.map(lang => (
+            <button key={lang} onClick={() => setWizardLang(lang)}
+              style={{background:"#fff",border:"1px solid #BBF7D0",borderRadius:50,padding:"5px 10px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#065f46"}}>
+              {lang}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Render the wizard when a language is selected */}
+      {wizardLang && (
+        <VoiceSetupWizard
+          language={wizardLang}
+          onClose={() => {
+            setWizardLang(null);
+            // After the wizard closes, re-query voices in case the parent
+            // installed one. This refreshes the row labels in the panel
+            // without requiring a manual page reload.
+            try {
+              const v = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+              setVoices(v || []);
+            } catch {}
+          }}
+        />
+      )}
     </div>
   );
 }
