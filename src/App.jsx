@@ -1012,7 +1012,7 @@ const RED   = "#E8192C";
 // time we ship. Format: yyyy-mm-dd-HHMM (UTC-ish; we just want monotonic).
 // If the user's screen shows an OLD version, the service worker is serving
 // stale cache — the "Force refresh" button next to it clears the SW + reloads.
-const BUILD_VERSION = "2026-05-05-0030 · voice-override+novelty-block";
+const BUILD_VERSION = "2026-05-05-0830 · global-music-rhythm-knowledge-progression";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 // Use local time, not UTC — otherwise late-evening sessions in negative-offset
@@ -1167,8 +1167,25 @@ function voiceScore(voice, targetLang, preferredAccent) {
   const tlang = targetLang.toLowerCase();
 
   // Language match is most important
+  // Language match is most important.
+  // Special case for Chinese: the BCP-47 codes wuu-CN (Wu/Shanghainese),
+  // nan-TW (Min Nan/Teochew/Taiwanese), and yue-* (Cantonese) are technically
+  // separate language tags from zh-*, but in practice no consumer device
+  // ships voices under those tags — they're all under zh-CN, zh-HK, zh-TW.
+  // So for the "rare" Chinese variants, we treat ANY zh-* voice as a valid
+  // family match. The ACCENT_HINTS system still biases toward voices that
+  // mention "shanghai"/"wu"/"toisan"/"teochew" in their name when available,
+  // but the fallback ensures the user hears SOMETHING in Chinese rather
+  // than getting "no voice found" and having the word render in English.
+  const CHINESE_FAMILY_PREFIXES = ["zh", "wuu", "nan", "yue", "cmn"];
+  const tlangPrefix = tlang.split("-")[0];
+  const vlangPrefix = vlang.split("-")[0];
+  const bothChinese = CHINESE_FAMILY_PREFIXES.includes(tlangPrefix) &&
+                      CHINESE_FAMILY_PREFIXES.includes(vlangPrefix);
+
   if (vlang === tlang) score += 100;
-  else if (vlang.startsWith(tlang.split("-")[0])) score += 60;
+  else if (vlangPrefix === tlangPrefix) score += 60;
+  else if (bothChinese) score += 40; // family fallback — lower than direct match
   else return -1; // wrong language — disqualify
 
   // AVOID hints take priority over everything else: if the voice name matches
@@ -2444,6 +2461,47 @@ function setSetProgress(childId, category, language, n) {
   try { localStorage.setItem(setProgressKey(childId, category, language), String(n)); } catch {}
 }
 
+// Some categories should advance LANGUAGE-AGNOSTICALLY: the underlying
+// content isn't language-specific, so 3 sessions in 3 different languages
+// should still count as 3 sessions toward graduation.
+//   - music & rhythm: a G-major scale or 4/4 beat sounds identical in any
+//     language session. The "language" of a music session is just whatever
+//     the child has selected globally; it doesn't change the audio.
+//   - knowledge subjects (M1-M3): the photo of a peacock is the same in
+//     every language. M4-M6 (facts mode) IS language-specific (the facts
+//     get translated), so those keep per-language tracking.
+//
+// Reading (words/couplets/sentences) is GENUINELY per-language — "apple"
+// vs "manzana" vs "蘋果" each need their own progression because the
+// printed word is different.
+//
+// We funnel the cross-language categories through a single sentinel key
+// so their per-set counter accumulates across whatever language the parent
+// selects. Daily session count + cooldown remain per-language so the
+// cooldown UX feels right within a single session.
+const GLOBAL_LANG_KEY = "__global__";
+
+function isLanguageAgnosticCategory(category, child, language) {
+  if (category === "music" || category === "rhythm") return true;
+  if (category === "encyclopedia") {
+    // Knowledge subjects (M1-M3) are visual/universal; facts (M4-M6) are
+    // genuinely per-language (translated facts). Read the child's current
+    // knowledge position for THIS language to decide.
+    try {
+      const pos = getChildPosition(child, "knowledge", language);
+      const month = pos?.month || 1;
+      return month <= 3; // subjects mode → global; facts mode → per-language
+    } catch { return true; }
+  }
+  return false;
+}
+
+function progressLangKey(category, child, language) {
+  return isLanguageAgnosticCategory(category, child, language)
+    ? GLOBAL_LANG_KEY
+    : language;
+}
+
 function markSessionComplete(childId, category, language) {
   try {
     const dk = todayKey();
@@ -2468,13 +2526,25 @@ function markSessionComplete(childId, category, language) {
     // if yesterday ended with 2/3 sessions on Set N, today's first
     // session is the 3rd and graduates the set; remaining sessions
     // today (if any) advance into Set N+1.
-    const newSetCount = getSetProgress(childId, category, language) + 1;
+    //
+    // For language-agnostic categories (music/rhythm/knowledge-subjects)
+    // we use a global pseudo-language key so 3 sessions in 3 different
+    // language tabs still count as 3 toward set graduation. For reading
+    // and knowledge facts, the per-set counter remains per-language.
+    const child = (() => {
+      try {
+        const kids = JSON.parse(localStorage.getItem("lb-children") || "[]");
+        return kids.find(c => c.id === childId);
+      } catch { return null; }
+    })();
+    const progressLang = progressLangKey(category, child, language);
+    const newSetCount = getSetProgress(childId, category, progressLang) + 1;
     if (newSetCount >= 3) {
       // Set complete → reset and advance position
-      setSetProgress(childId, category, language, 0);
+      setSetProgress(childId, category, progressLang, 0);
       advancePositionAfterFinalSession(childId, category, language);
     } else {
-      setSetProgress(childId, category, language, newSetCount);
+      setSetProgress(childId, category, progressLang, newSetCount);
     }
 
     // Track first-ever Day 1 completion so we can prompt the parent to
@@ -2576,6 +2646,37 @@ function advancePositionAfterFinalSession(childId, category, language) {
       }
       langPos[posKey] = { month: nextMonth, setIdx: nextSetIdx };
       kids[idx].position[lang] = langPos;
+
+      // Cross-language mirror for knowledge SUBJECTS (M1-M3 only). The
+      // visual content is the same in every language — same peacock photo,
+      // same musical-instrument photo. So when a session in any language
+      // graduates a subject set, all other enrolled languages should jump
+      // forward too. Once the child enters facts mode (M4+), the content
+      // genuinely diverges per language and we revert to per-language
+      // tracking. Reading-category posKeys (words/couplets/sentences) stay
+      // strictly per-language because the printed text differs by language.
+      if (posKey === "knowledge" && nextMonth <= 3) {
+        const allLangs = Array.from(new Set([
+          lang,
+          ...((kids[idx].languages) || []),
+          ...Object.keys(kids[idx].position || {}),
+        ]));
+        for (const L of allLangs) {
+          if (!kids[idx].position[L]) kids[idx].position[L] = {};
+          // Only mirror if the OTHER language hasn't already advanced past
+          // this point — we want to push forward, never backward, and we
+          // don't clobber a language that's individually ahead.
+          const other = kids[idx].position[L].knowledge;
+          const ahead = other && (
+            (other.month > nextMonth) ||
+            (other.month === nextMonth && other.setIdx >= nextSetIdx)
+          );
+          if (!ahead) {
+            kids[idx].position[L].knowledge = { month: nextMonth, setIdx: nextSetIdx };
+          }
+        }
+      }
+
       localStorage.setItem("lb-children", JSON.stringify(kids));
       return;
     }
@@ -2586,22 +2687,42 @@ function advancePositionAfterFinalSession(childId, category, language) {
       // to the next scale every full day of practice (rather than the
       // original 7-day weekly cadence). Per Olivia, music should feel
       // like daily forward progress, not stagnation.
+      //
+      // Cross-language sync (Nov 2026 fix): music/rhythm content is
+      // language-agnostic (a G-major scale sounds the same regardless of
+      // which language tab the parent picked). When the global per-set
+      // counter graduates, we advance the position in the CURRENT language
+      // AND mirror that advance to every other language the child has
+      // enrolled in — so they don't see G-major in English but stale
+      // C-major in Spanish.
+      const allLangs = Array.from(new Set([
+        lang,
+        ...((kids[idx].languages) || []),
+        ...Object.keys(kids[idx].position || {}),
+      ]));
       if (category === "music") {
         const stages = MUSIC_SCALES;
         const curId = langPos.music || stages[0].id;
         const i = stages.findIndex(s => s.id === curId);
         if (i >= 0 && i < stages.length - 1) {
-          langPos.music = stages[i + 1].id;
+          const nextId = stages[i + 1].id;
+          for (const L of allLangs) {
+            if (!kids[idx].position[L]) kids[idx].position[L] = {};
+            kids[idx].position[L].music = nextId;
+          }
         }
       } else {
         const stages = RHYTHM_STAGES;
         const curId = langPos.rhythm || stages[0].id;
         const i = stages.findIndex(s => s.id === curId);
         if (i >= 0 && i < stages.length - 1) {
-          langPos.rhythm = stages[i + 1].id;
+          const nextId = stages[i + 1].id;
+          for (const L of allLangs) {
+            if (!kids[idx].position[L]) kids[idx].position[L] = {};
+            kids[idx].position[L].rhythm = nextId;
+          }
         }
       }
-      kids[idx].position[lang] = langPos;
       localStorage.setItem("lb-children", JSON.stringify(kids));
     }
     // Math: if the parent has pinned a granular position {stageId, offsetDay},
@@ -3909,9 +4030,10 @@ const WORD_PHOTO_URLS = {
   rabbit:     "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/4-Week-Old_Netherlands_Dwarf_Rabbit.JPG/250px-4-Week-Old_Netherlands_Dwarf_Rabbit.JPG",
 
   // Set 3 — Fruit (strawberry was renamed to "berries")
-  apple:      "https://cdn.pixabay.com/photo/2016/09/29/08/33/apple-1702316_1280.jpg",
-  banana:     "https://upload.wikimedia.org/wikipedia/commons/d/de/Bananavarieties.jpg",
-  orange:     "https://upload.wikimedia.org/wikipedia/commons/e/e3/Oranges_-_whole-halved-segment.jpg",
+  // URLs sourced from Olivia's curated spreadsheet (May 2026 update).
+  apple:      "https://media.istockphoto.com/id/95761550/photo/professional-photograph-of-a-green-apple.jpg?s=612x612&w=0&k=20&c=bgmacIRnZ7skrpJgBOQ-sF4SQZ_nHUKs9MjT73jC05g=",
+  banana:     "https://media.istockphoto.com/id/1395906587/photo/two-perfect-ripe-yellow-bananas-isolated-on-white-background.jpg?s=612x612&w=0&k=20&c=wbr6Rm02OXJvYSGxcSrLR5AIIl-vBy4lnyLTjIe-arc=",
+  orange:     "https://media.istockphoto.com/id/2124102567/photo/orange-fruit-with-leaf.jpg?s=612x612&w=0&k=20&c=TUXQZs76_KNXdbffr6B9Jm74SQ-KbXAaikxTE78Qy6o=",
   grapes:     "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Grapes%2C_Rostov-on-Don%2C_Russia.jpg/1280px-Grapes%2C_Rostov-on-Don%2C_Russia.jpg",
   fruits:     "https://media.istockphoto.com/id/995518546/photo/assortment-of-colorful-ripe-tropical-fruits-top-view.jpg?s=612x612&w=0&k=20&c=bz2zksjSPikOYm9I-mG-f8SAQWVpFsR4M_u4K9soLQ0=",
 
@@ -4232,12 +4354,33 @@ const WORD_PHOTO_URLS = {
   ferry:       "https://www.shutterstock.com/image-photo/ferry-on-open-water-cruising-260nw-2614295567.jpg",
   subway:      "https://www.shutterstock.com/image-photo/man-waiting-train-london-underground-260nw-2694820287.jpg",
 
-  // Set 22 — Fruit (M2 — exotic fruits beyond M1's basic fruit set)
-  mango:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTQVvzR5EkiMuG8xlamz6vZDrhUCZzWcQUvaQ&s",
-  pineapple:   "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRaYNSXy2fZuNs93BqaQ6wXPndHyglykooD2g&s",
-  kiwi:        "https://media.istockphoto.com/id/834807852/photo/whole-kiwi-fruit-and-half-kiwi-fruit-on-white.jpg?s=612x612&w=0&k=20&c=zliUVnZlYPcOxEDYef7PMmOEEODFr8FUkTYqqFVaRG8=",
-  watermelon:  "https://www.shutterstock.com/image-photo/fresh-whole-half-cut-watermelon-260nw-2759463297.jpg",
-  peach:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS3LnAP2Y6xenZN1_CY07l0EV5jnYX1N2ZLRA&s",
+  // ── MONTH 2 KNOWLEDGE — Sets 9-12 (Olivia spreadsheet, May 2026) ──
+  // kset9 — Musical Instruments
+  piano:       "https://i1.pickpik.com/photos/473/734/331/keyboard-art-piano-music-preview.jpg",
+  guitar:      "https://media.istockphoto.com/id/505288924/photo/classical-acoustic-guitar.jpg?s=612x612&w=0&k=20&c=JImWVTt__4bbJf6HTtYYEGXP55eLUDcCYEzn8VX9Cvg=",
+  violin:      "https://www.shutterstock.com/image-photo/violin-isolated-on-white-background-260nw-2645106631.jpg",
+  drums:       "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTIIEde3VUF4URabas4Q98sI1_USvumk5Z5KQ&s",
+  flute:       "https://media.istockphoto.com/id/479526668/photo/cute-pupil-playing-flute-in-classroom.jpg?s=612x612&w=0&k=20&c=woo4JuFY5Suf-ApGHU5ZQL8Hb4f85Gxr-ejNcRaZ2rc=",
+  // kset10 — Fruit (curriculum is mango/pineapple/kiwi/dragonfruit/papaya).
+  // The previous entries here listed watermelon/peach which are stale —
+  // those aren't in the current curriculum. Replaced with the actual cards.
+  mango:       "https://media.istockphoto.com/id/1417819877/photo/beautiful-delicious-mango-isolated-on-white-table-background.jpg?s=612x612&w=0&k=20&c=Nc7qBj0bnVzg6eUoFUw4YvUc0MFlcvWpxEsyDBBpDFI=",
+  pineapple:   "https://media.istockphoto.com/id/869246292/photo/fresh-pineapple-isolated-on-white-background.jpg?s=612x612&w=0&k=20&c=IZBgmcmY9Dg_PEkqzqwPPDyAilJ8R3vtYZwzTz6oiEw=",
+  kiwi:        "https://thumbs.dreamstime.com/b/kiwi-fruit-white-background-49486991.jpg",
+  dragonfruit: "https://media.istockphoto.com/id/641958158/photo/fresh-gragon-fruit-slice-and-cubic-on-wooden-table.jpg?s=612x612&w=0&k=20&c=oVud3Ifv866TGkyMHG1DX0EzerK3mlkOP9bJoDJAz_g=",
+  papaya:      "https://media.istockphoto.com/id/96912054/photo/halved-papaya-isolated-on-white-background.jpg?s=612x612&w=0&k=20&c=BM2aMqcedmJMx-s8C0a1JbIwjJ9EbUy-sBsXR59cNwk=",
+  // kset11 — Exotic Birds
+  peacock:     "https://www.shutterstock.com/image-photo/male-peacock-colorful-feathers-fanned-260nw-2755667801.jpg",
+  parrot:      "https://www.shutterstock.com/image-photo/stunning-closeup-image-parrot-wildlife-260nw-2708114475.jpg",
+  flamingo:    "https://www.shutterstock.com/image-photo/pink-flamingo-standing-on-one-260nw-2755668049.jpg",
+  toucan:      "https://media.istockphoto.com/id/2198129078/photo/costa-rica-wildlife-tucan-on-tree-branch-keel-billed-toucan-ramphastos-sulfuratus-bird-with.jpg?s=612x612&w=0&k=20&c=FjKZbvA9djcBDdba1URPC9ez7Ezj9QNN2hoJAd_YNFU=",
+  hornbill:    "https://media.istockphoto.com/id/1161698440/photo/great-horn-bill-flight-shot-from-the-western-ghats-of-india.jpg?s=612x612&w=0&k=20&c=hW_ukmrqr3SCMsNdA37PACziLMIFDyR_jFhvJrTpo7k=",
+  // kset12 — African Countries (using political maps from spreadsheet)
+  egypt:       "https://media.istockphoto.com/id/497272875/vector/egypt-political-map.jpg?s=612x612&w=0&k=20&c=WPpDqWpbk9NuRCTVOK4u1FIKOoPe5uFpluBanoi5cDE=",
+  kenya:       "https://cdn.vectorstock.com/i/1000v/46/82/kenya-map-republic-of-kenya-vector-1734682.jpg",
+  nigeria:     "https://t4.ftcdn.net/jpg/04/31/06/43/360_F_431064313_TkivgOvEjFiQdLUm1O3URMALATyeX2Hr.jpg",
+  morocco:     "https://static.vecteezy.com/system/resources/thumbnails/049/615/437/small/morocco-political-map-with-capital-cities-towns-national-borders-rivers-and-lakes-labeling-vector.jpg",
+  southafrica: "https://img.freepik.com/premium-vector/map-south-africa-provinces-regions_509477-2561.jpg?semt=ais_hybrid&w=740&q=80",
 
   // Set 23 — Synonyms for Small: noPhoto:true in curriculum, no entries here
 
@@ -4540,6 +4683,11 @@ async function fetchDailyCouplets(child, language) {
       out.push({
         words: item.words,
         word: item.words.join(" "),
+        // Couplet-specific photo URL when available (May 2026 spreadsheet
+        // update). When omitted, the renderer falls back to single-word
+        // photo lookup or family-photo override (whichever the renderer
+        // resolves first based on word + parent setup).
+        photoUrl: item.photoUrl || null,
         setName: s.name,
         setId: s.id,
       });
@@ -4559,6 +4707,9 @@ async function fetchDailySentences(child, language) {
       out.push({
         sentence: item.sentence,
         word: item.sentence,
+        // Sentence-specific photo URL when available (May 2026 spreadsheet
+        // update). Same fallback chain as couplets.
+        photoUrl: item.photoUrl || null,
         setName: s.name,
         setId: s.id,
       });
@@ -7276,8 +7427,11 @@ function AudioTestPanel({ activeChild }) {
                 </div>
               )}
               {!v && (
-                <div style={{marginTop:6,padding:"6px 8px",background:"#FFF0F0",borderRadius:6,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#c44",lineHeight:1.4}}>
-                  ⚠️ No voice for {lang} on this device.
+                <div style={{marginTop:6,padding:"8px 10px",background:"#F6F8FC",border:"1px solid #DBE4F5",borderRadius:8,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#1e3a8a",lineHeight:1.5}}>
+                  <div style={{fontSize:11,marginBottom:4}}>🤫 No {lang} voice on this device</div>
+                  <div style={{fontWeight:700,color:"#475569"}}>
+                    The app won't speak the words in {lang} (rather than reading them in English with the wrong sounds). For the best results: <strong style={{color:"#1e3a8a"}}>have a native speaker read the cards aloud while you swipe through them</strong> — that's how this content was meant to be taught anyway.
+                  </div>
                 </div>
               )}
               {/* Manual voice picker — opens an inline list so user can override
@@ -10563,7 +10717,14 @@ function ReadingSession({ childId, words, language, speechOn, sessionNum, gender
               }
               const englishWord = card.original || card.word;
               const familyPhoto = lookupFamilyPhoto(familyPhotos, englishWord, card.note);
-              const curriculumPhoto = familyPhoto ? null : photoUrlForWord(englishWord, card.photoKey);
+              // Photo source priority:
+              //   1. Family photo (parent uploaded → render that)
+              //   2. card.photoUrl (couplet/sentence curated photo from
+              //      curriculum.js — these are specific to the phrase, e.g.
+              //      "red apple" gets a photo of a red apple, not just any apple)
+              //   3. Single-word stock photo (WORD_PHOTO_URLS)
+              const cardPhoto = card.photoUrl || null;
+              const curriculumPhoto = familyPhoto ? null : (cardPhoto || photoUrlForWord(englishWord, card.photoKey));
               const photo = familyPhoto || curriculumPhoto;
               return photo ? (
                 <img src={photo} alt=""
@@ -11589,7 +11750,92 @@ function useParentLang() {
   return lang;
 }
 
-export default function App() {
+// ── BETA PASSWORD GATE ────────────────────────────────────────────────────
+// Wave 1 beta gate: prompts for a shared password on first visit and stores
+// a flag in localStorage so testers don't get re-prompted. NOT real auth —
+// just keeps casual non-testers from bumping into the deployment URL by
+// accident. The password lives in VITE_BETA_PASSWORD (Vercel env var) so we
+// can rotate it without a code change. Default fallback "founding10" matches
+// the value the founder hands out, so the gate works even before the env
+// var is set on Vercel.
+//
+// To remove this gate at GA: delete the BetaPasswordGate component, remove
+// the wrapper around <App />, and remove VITE_BETA_PASSWORD from Vercel.
+//
+// To rotate the password: change VITE_BETA_PASSWORD on Vercel and bump the
+// PASSWORD_VERSION below — the version bump invalidates existing localStorage
+// flags so all testers re-enter on next load.
+function BetaPasswordGate({ children }) {
+  const PASSWORD_VERSION = "v1"; // bump to force re-entry across all testers
+  const STORAGE_KEY = `lb-beta-pwd-ok-${PASSWORD_VERSION}`;
+  const expected = (import.meta.env?.VITE_BETA_PASSWORD || "founding10").trim();
+
+  const [authed, setAuthed] = useState(() => {
+    try { return localStorage.getItem(STORAGE_KEY) === "1"; } catch { return false; }
+  });
+  const [error, setError] = useState("");
+  const [input, setInput] = useState("");
+
+  if (authed) return children;
+
+  const submit = (e) => {
+    if (e) e.preventDefault();
+    if (input.trim() === expected) {
+      try { localStorage.setItem(STORAGE_KEY, "1"); } catch {}
+      setAuthed(true);
+    } else {
+      setError("That's not the right password. Check the email/WhatsApp invite.");
+      setInput("");
+    }
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",padding:24,background:"linear-gradient(135deg,#FFF6E5 0%,#FFEACC 50%,#FFF0F1 100%)",fontFamily:"Nunito,sans-serif"}}>
+      <div style={{background:"#fff",borderRadius:24,boxShadow:"0 20px 60px rgba(0,0,0,.18)",padding:"32px 28px",maxWidth:400,width:"100%"}}>
+        <div style={{fontSize:48,textAlign:"center",marginBottom:8}}>🔐</div>
+        <h1 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:24,color:"#111",margin:"0 0 6px",textAlign:"center",lineHeight:1.15}}>
+          Limitless Babies — Beta
+        </h1>
+        <p style={{fontWeight:700,fontSize:13,color:"#666",textAlign:"center",margin:"0 0 22px",lineHeight:1.5}}>
+          This is a private beta for invited testers. Enter the access code from your invitation to continue.
+        </p>
+        <form onSubmit={submit}>
+          <input
+            type="text"
+            autoFocus
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            value={input}
+            onChange={(e) => { setInput(e.target.value); setError(""); }}
+            placeholder="access code"
+            style={{width:"100%",padding:"14px 16px",border:`2px solid ${error?"#c44":"#ddd"}`,borderRadius:14,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:15,outline:"none",boxSizing:"border-box"}}
+          />
+          {error && (
+            <div style={{marginTop:8,padding:"8px 12px",background:"#FFF0F0",borderRadius:8,fontWeight:700,fontSize:11,color:"#c44",lineHeight:1.4}}>
+              {error}
+            </div>
+          )}
+          <button type="submit"
+            style={{width:"100%",marginTop:14,background:RED,border:"none",borderRadius:50,padding:"14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:14,color:"#fff",boxShadow:"0 4px 14px rgba(232,25,44,.25)"}}>
+            enter beta →
+          </button>
+        </form>
+        <p style={{fontWeight:700,fontSize:10,color:"#bbb",textAlign:"center",margin:"18px 0 0",lineHeight:1.5,fontStyle:"italic"}}>
+          Don't have a code? Email <a href="mailto:hello@limitlessbabies.com" style={{color:"#888"}}>hello@limitlessbabies.com</a>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// AppInner holds the entire app logic. The exported `App` is a thin wrapper
+// that puts the password gate in front. This way the gate stays out of all
+// the existing useState/useEffect mounting work — those only run once the
+// tester is authenticated, so we don't waste effort or run into double-mount
+// issues for things like service-worker registration.
+function AppInner() {
   const [mode, setMode]               = useState(null);
   const [sessionStatus, setSessionStatus] = useState(null);
   // Review mode: when parent taps a past set in the roadmap, we load that
@@ -12444,3 +12690,14 @@ export default function App() {
     </>
   );
 }
+
+// Exported App: gates AppInner behind the beta password.
+// To remove gating at GA, replace this with: export default AppInner;
+export default function App() {
+  return (
+    <BetaPasswordGate>
+      <AppInner />
+    </BetaPasswordGate>
+  );
+}
+
