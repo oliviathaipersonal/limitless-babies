@@ -1012,7 +1012,7 @@ const RED   = "#E8192C";
 // time we ship. Format: yyyy-mm-dd-HHMM (UTC-ish; we just want monotonic).
 // If the user's screen shows an OLD version, the service worker is serving
 // stale cache — the "Force refresh" button next to it clears the SW + reloads.
-const BUILD_VERSION = "2026-05-04-2240 · pricing+trial+CAILIYA";
+const BUILD_VERSION = "2026-05-04-2330 · audio-test+gentle-rev-removed";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 // Use local time, not UTC — otherwise late-evening sessions in negative-offset
@@ -6602,7 +6602,178 @@ function ParentProfilePromoEntry({ premium }) {
   );
 }
 
-function ParentProfile({ premium, onClose, onUpgrade, onAdjustLevel, onToggleDevPremium }) {
+// Inline audio diagnostic shown inside Parent Profile. Lets a parent or
+// tester verify that their device can speak each language their child is
+// learning, BEFORE hitting "Audio doesn't work" in a real session.
+//
+// What this catches:
+//  - Silent / locked iPhone (most common — they hear nothing, blame app)
+//  - PWA hasn't unlocked WebAudio yet (iOS gates audio to user gestures)
+//  - Missing voices for a language (iOS doesn't ship every regional voice
+//    by default — Cantonese in particular often falls back to Mandarin
+//    because zh-HK voice isn't installed). We surface "no voice for this
+//    language" with a one-line fix.
+//
+// Implementation: queries window.speechSynthesis.getVoices() (forced via
+// onvoiceschanged in case voices aren't ready), maps the active child's
+// languages to their BCP-47 codes (same map used for actual speech),
+// and renders a row per language with a TEST button that speaks a short
+// canned phrase. Below each row, we display which voice was chosen by
+// the browser — the tester can immediately see if Cantonese is being
+// served by a Mandarin voice.
+function AudioTestPanel({ activeChild }) {
+  const [voices, setVoices] = useState([]);
+  const [lastSpoken, setLastSpoken] = useState({}); // lang -> {voiceName, lang}
+  const [speaking, setSpeaking] = useState(null);   // currently-speaking lang
+
+  // Voices populate asynchronously on iOS — listen for the event AND poll once
+  useEffect(() => {
+    const load = () => {
+      try {
+        const v = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+        setVoices(v || []);
+      } catch {}
+    };
+    load();
+    if (window.speechSynthesis) {
+      try { window.speechSynthesis.onvoiceschanged = load; } catch {}
+    }
+    // Sometimes onvoiceschanged never fires — retry a couple times
+    const t1 = setTimeout(load, 250);
+    const t2 = setTimeout(load, 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
+  const childLangs = activeChild?.languages || ["English"];
+
+  // Pick the best voice for a BCP-47 code, mirroring what the actual reading
+  // session does: exact match first, then prefix match (e.g. "zh-HK" matches
+  // "zh-HK" exactly, but if missing, falls back to anything starting with
+  // "zh-"). We surface BOTH the requested code AND the selected voice's lang
+  // so testers can see when zh-HK is being served by zh-CN.
+  const pickVoice = (bcp47) => {
+    if (!voices.length) return null;
+    const exact = voices.find(v => v.lang === bcp47);
+    if (exact) return exact;
+    const prefix = bcp47.split("-")[0];
+    return voices.find(v => v.lang.startsWith(prefix + "-")) || null;
+  };
+
+  const phraseFor = (lang) => {
+    // Short, friendly test phrases that include the language name in that
+    // language so even non-speakers can identify what they should be hearing.
+    const map = {
+      "English": "Hello, this is the English voice test.",
+      "Spanish": "Hola, esta es la prueba de voz en español.",
+      "French": "Bonjour, ceci est le test de voix en français.",
+      "Italian": "Ciao, questo è il test della voce in italiano.",
+      "German": "Hallo, das ist der Stimmtest auf Deutsch.",
+      "Portuguese": "Olá, este é o teste de voz em português.",
+      "Portuguese (Brazil)": "Olá, este é o teste de voz em português do Brasil.",
+      "Russian": "Привет, это тест голоса на русском.",
+      "Japanese": "こんにちは、これは日本語の音声テストです。",
+      "Korean": "안녕하세요, 한국어 음성 테스트입니다.",
+      "Chinese (Mandarin-Simplified)": "你好,这是普通话语音测试。",
+      "Chinese (Mandarin-Traditional)": "你好,這是國語語音測試。",
+      "Chinese (Cantonese-Traditional)": "你好,呢個係廣東話語音測試。",
+      "Chinese (Cantonese-Simplified)": "你好,呢个係广东话语音测试。",
+      "Chinese (Shanghainese)": "你好,这是上海话语音测试。",
+      "Vietnamese (Northern)": "Xin chào, đây là bài kiểm tra giọng nói tiếng Việt.",
+      "Vietnamese (Southern)": "Xin chào, đây là bài kiểm tra giọng nói tiếng Việt.",
+      "Hebrew": "שלום, זוהי בדיקת קול בעברית.",
+      "Arabic": "مرحبا، هذا اختبار الصوت بالعربية.",
+      "Hindi": "नमस्ते, यह हिंदी आवाज़ परीक्षण है।",
+      "Thai": "สวัสดี นี่คือการทดสอบเสียงภาษาไทย",
+    };
+    return map[lang] || `Hello, this is the ${lang} voice test.`;
+  };
+
+  const test = (lang) => {
+    if (!window.speechSynthesis) {
+      alert("Your browser doesn't support speech. Try Safari (iPhone) or Chrome (Android).");
+      return;
+    }
+    const bcp47 = SPEECH_LANG[lang] || "en-US";
+    const voice = pickVoice(bcp47);
+    setLastSpoken(s => ({ ...s, [lang]: voice ? { voiceName: voice.name, voiceLang: voice.lang } : null }));
+    try {
+      window.speechSynthesis.cancel(); // clear any pending
+      const utt = new SpeechSynthesisUtterance(phraseFor(lang));
+      utt.lang = bcp47;
+      if (voice) utt.voice = voice;
+      utt.rate = 0.9; utt.pitch = 1; utt.volume = 1;
+      utt.onstart = () => setSpeaking(lang);
+      utt.onend = () => setSpeaking(null);
+      utt.onerror = () => setSpeaking(null);
+      window.speechSynthesis.speak(utt);
+    } catch {
+      setSpeaking(null);
+    }
+  };
+
+  // Detect the "Cantonese being served by Mandarin" case explicitly
+  const mismatchWarning = (lang, lastV) => {
+    if (!lastV) return null;
+    const requested = SPEECH_LANG[lang] || "";
+    if (requested.startsWith("zh-HK") && !lastV.voiceLang.startsWith("zh-HK")) {
+      return "⚠️ No Cantonese voice on this device — your phone fell back to " + lastV.voiceLang + ". To fix: iOS Settings → Accessibility → Spoken Content → Voices → Chinese → download a Cantonese voice (Sin-ji).";
+    }
+    if (requested.startsWith("zh-TW") && !lastV.voiceLang.startsWith("zh-TW")) {
+      return "⚠️ No Taiwan-Mandarin voice on this device — your phone fell back to " + lastV.voiceLang + ". To fix: iOS Settings → Accessibility → Spoken Content → Voices → Chinese → download a Taiwan voice.";
+    }
+    if (requested.startsWith("vi-") && !lastV.voiceLang.startsWith("vi-")) {
+      return "⚠️ No Vietnamese voice on this device — your phone fell back to " + lastV.voiceLang + ".";
+    }
+    return null;
+  };
+
+  return (
+    <div style={{marginTop:14,padding:"12px 14px",background:"#F0FFF4",border:"1px solid #BBF7D0",borderRadius:10}}>
+      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#065f46",marginBottom:4}}>
+        🔊 Audio test
+      </div>
+      <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#555",lineHeight:1.4,marginBottom:10}}>
+        Test each language to make sure your phone has the voices installed. If audio is silent, check your phone isn't on silent mode and your media volume is up.
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {childLangs.map(lang => {
+          const bcp47 = SPEECH_LANG[lang] || "en-US";
+          const v = pickVoice(bcp47);
+          const isSpeaking = speaking === lang;
+          const warning = mismatchWarning(lang, lastSpoken[lang]);
+          return (
+            <div key={lang} style={{padding:"8px 10px",background:"#fff",border:"1px solid #eee",borderRadius:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#111"}}>{lang}</div>
+                  <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:"#888",marginTop:2}}>
+                    requested: {bcp47} {v ? `→ using ${v.name} (${v.lang})` : "→ NO VOICE FOUND"}
+                  </div>
+                </div>
+                <button onClick={() => test(lang)}
+                  style={{background:isSpeaking?"#10b981":RED,border:"none",borderRadius:50,padding:"6px 12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#fff",minWidth:70}}>
+                  {isSpeaking ? "speaking…" : "▶ test"}
+                </button>
+              </div>
+              {warning && (
+                <div style={{marginTop:6,padding:"6px 8px",background:"#FFF6E0",borderRadius:6,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#92400e",lineHeight:1.4}}>
+                  {warning}
+                </div>
+              )}
+              {!v && (
+                <div style={{marginTop:6,padding:"6px 8px",background:"#FFF0F0",borderRadius:6,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#c44",lineHeight:1.4}}>
+                  ⚠️ No voice for {lang} on this device. Install one from your phone's Settings (iOS: Accessibility → Spoken Content → Voices · Android: Languages → Text-to-speech).
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ParentProfile({ activeChild, premium, onClose, onUpgrade, onAdjustLevel, onToggleDevPremium }) {
   const items = [
     {
       id: "level-customize",
@@ -6710,6 +6881,12 @@ function ParentProfile({ premium, onClose, onUpgrade, onAdjustLevel, onToggleDev
           {/* PROMO CODE entry — visible to all parents. Founder uses CAILIYA
               for personal testing; partner/influencer codes go here too. */}
           <ParentProfilePromoEntry premium={premium} />
+
+          {/* AUDIO TEST — lets testers verify voices are installed before
+              they hit a real session. Surfaces the "no Cantonese voice"
+              issue specifically (a common iOS pitfall — falls back silently
+              to Mandarin which sounds wrong but doesn't error). */}
+          <AudioTestPanel activeChild={activeChild} />
 
           {/* DEV-ONLY: Toggle premium for testing without signing out.
               Visible to anyone but only useful during testing/QA. Once
@@ -8233,10 +8410,6 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
                 )}
               </div>
             ))}
-
-            <div style={{padding:"12px 14px",background:"#F6F8FC",borderRadius:12,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#666",lineHeight:1.5,textAlign:"center",marginTop:6}}>
-              📚 For deeper reading, check the <a href="https://gentlerevolutionpress.com" target="_blank" rel="noopener noreferrer" style={{color:RED,fontWeight:800}}>Gentle Revolution Press</a> for early-learning books.
-            </div>
           </div>
         )}
 
@@ -11598,6 +11771,7 @@ export default function App() {
       {/* Parent profile — gated overlay for free users */}
       {showParentProfile && (
         <ParentProfile
+          activeChild={activeChild}
           premium={premium}
           onClose={() => setShowParentProfile(false)}
           onUpgrade={() => { setShowParentProfile(false); setShowUpsell("parent-profile"); }}
