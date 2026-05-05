@@ -1012,7 +1012,7 @@ const RED   = "#E8192C";
 // time we ship. Format: yyyy-mm-dd-HHMM (UTC-ish; we just want monotonic).
 // If the user's screen shows an OLD version, the service worker is serving
 // stale cache — the "Force refresh" button next to it clears the SW + reloads.
-const BUILD_VERSION = "2026-05-05-0830 · global-music-rhythm-knowledge-progression";
+const BUILD_VERSION = "2026-05-05-1500 · speech-lang-fix+5day-music-ui+voice-diag";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 // Use local time, not UTC — otherwise late-evening sessions in negative-offset
@@ -1053,6 +1053,22 @@ const SPEECH_LANG = {
   Bengali:"bn-IN", Urdu:"ur-PK", Tamil:"ta-IN", Telugu:"te-IN", Marathi:"mr-IN",
   Catalan:"ca-ES", Slovak:"sk-SK", Bulgarian:"bg-BG", Croatian:"hr-HR",
   Lao:"lo-LA",
+  // South/Southeast Asian + Pacific languages. Most consumer devices don't
+  // ship voices for these, so speak() falls through to the "no voice — be
+  // silent" branch. The BCP-47 codes are correct so a future device update
+  // would activate audio automatically. (For pickBestVoice to find these,
+  // a real voice with matching lang prefix must exist — otherwise silence.)
+  Hawaiian:"haw-US", Khmer:"km-KH", Kazakh:"kk-KZ", Kyrgyz:"ky-KG",
+  Armenian:"hy-AM", Azerbaijani:"az-AZ", Javanese:"jv-ID",
+  Nepali:"ne-NP", Mongolian:"mn-MN", Burmese:"my-MM",
+  Sinhala:"si-LK", Pashto:"ps-AF", Punjabi:"pa-IN", Gujarati:"gu-IN",
+  Kannada:"kn-IN", Malayalam:"ml-IN",
+  Macedonian:"mk-MK", Slovenian:"sl-SI", Latvian:"lv-LV", Lithuanian:"lt-LT",
+  Estonian:"et-EE", Albanian:"sq-AL", Belarusian:"be-BY",
+  Amharic:"am-ET", Hausa:"ha-NG", Yoruba:"yo-NG", Igbo:"ig-NG", Zulu:"zu-ZA",
+  Malagasy:"mg-MG", "Haitian Creole":"ht-HT", Basque:"eu-ES", Welsh:"cy-GB",
+  Irish:"ga-IE", Icelandic:"is-IS", Maltese:"mt-MT", Latin:"la",
+  Esperanto:"eo", Kurdish:"ku-TR", Uzbek:"uz-UZ", Tajik:"tg-TJ",
   // Vietnamese regional — browsers only ship vi-VN so both fall back to it.
   // We still pick based on accent hints in the voice name.
   "Vietnamese (Northern)":"vi-VN",
@@ -1293,9 +1309,22 @@ function speak(text, language) {
   if (!text || !window.speechSynthesis) return;
   try {
     window.speechSynthesis.cancel();
-    const targetLang = SPEECH_LANG[language] || "en-US";
+    // Look up the BCP-47 code for this curriculum language.
+    // Critical: don't silently fall through to "en-US" for languages we
+    // don't recognize — that would let pickBestVoice find an English voice
+    // and read the foreign-language text in an English accent (which has
+    // been the long-standing bug for Hawaiian/Khmer/Kazakh/etc).
+    // Unknown language → bail rather than mispronounce.
+    const targetLang = SPEECH_LANG[language];
+    if (!targetLang) {
+      if (language !== "English") return;
+      // English fallback only when language is genuinely "English"
+      // — other code paths set language deliberately, so this branch
+      // exists for legacy callers that pass undefined/null/"".
+    }
+    const useLang = targetLang || "en-US";
     const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = targetLang;
+    utter.lang = useLang;
 
     // Infant-directed speech ("motherese"): slower rate, higher pitch,
     // warmer/brighter sound. Research shows babies are most responsive to these.
@@ -1305,7 +1334,7 @@ function speak(text, language) {
 
     const voices = window.speechSynthesis.getVoices();
     if (voices.length > 0) {
-      const match = pickBestVoice(voices, targetLang, language);
+      const match = pickBestVoice(voices, useLang, language);
       if (match) utter.voice = match;
       else if (language !== "English") return; // skip rather than mispronounce
     }
@@ -2206,6 +2235,13 @@ function lookupFamilyPhoto(familyPhotos, englishWord, note) {
   // Fall back to base word
   const base = englishWord.toLowerCase();
   if (familyPhotos[base]) return familyPhotos[base];
+  // Phrase-level fallback: if the card is a couplet ("tall daddy",
+  // "kind mommy") or a sentence ("Mommy is kind.", "I love Daddy."),
+  // englishWord here is the full phrase. The single-word slot lookup
+  // above won't match. Scan the phrase for family-keyword tokens and
+  // map them back to their photo slots.
+  const phraseMatch = lookupFamilyPhotoFromPhrase(familyPhotos, base);
+  if (phraseMatch) return phraseMatch;
   // ── PEOPLE → FAMILY-PHOTO ALIASES ─────────────────────────────────────────
   // Generic "people" curriculum words (woman/man/child/elder) reuse the
   // parent-uploaded family photos. Per Olivia's curriculum design:
@@ -2226,6 +2262,78 @@ function lookupFamilyPhoto(familyPhotos, englishWord, note) {
   if (aliasList) {
     for (const altSlot of aliasList) {
       if (familyPhotos[altSlot]) return familyPhotos[altSlot];
+    }
+  }
+  return null;
+}
+
+// Scan a phrase (couplet or sentence) for family-keyword tokens and return
+// the matching uploaded photo. Each phrase is expected to reference at most
+// one family member; if multiple are mentioned (rare — none in the current
+// curriculum), the first match wins. Mapping accounts for display-word
+// variations ("mommy"/"mom" → mother slot, "daddy"/"dad" → father slot,
+// "grandma"/"granny"/"nana" → grandma, "grandpa"/"granddad"/"papa" → grandpa).
+//
+// Token order matters: we test more-specific words before less-specific ones
+// (e.g. "grandma" before "ma") so the right slot wins. Word-boundary regex
+// avoids false positives — "I love mommy" should match, but "I love this
+// shimmery dress" should NOT match "mer" inside a longer word.
+//
+// Special semantic slots:
+//   "family" keyword → "family" slot (group photo of the whole family).
+//                       Uploaded via the JIT family-group prompt before
+//                       M3 sentences set 12 ("I love sentences") starts.
+//   "life"   keyword → "baby" slot (child's avatar — already mirrored
+//                       there at child creation). "I love my life" is
+//                       semantically about the child themselves.
+//   "home"   keyword → location photos (livingroom / kitchen / bedroom)
+function lookupFamilyPhotoFromPhrase(familyPhotos, phrase) {
+  if (!familyPhotos || !phrase) return null;
+  const lower = phrase.toLowerCase();
+  // Display word → photo slot. Order matters — more specific first.
+  const FAMILY_KEYWORDS = [
+    // Grandparents (test before "ma"/"pa" / "mom"/"dad" so they win)
+    [/\bgrandma\b/,    ["grandma", "grandma_paternal", "grandma_maternal"]],
+    [/\bgrandmother\b/,["grandma", "grandma_paternal", "grandma_maternal"]],
+    [/\bgranny\b/,     ["grandma", "grandma_paternal", "grandma_maternal"]],
+    [/\bnana\b/,       ["grandma", "grandma_paternal", "grandma_maternal"]],
+    [/\bgrandpa\b/,    ["grandpa", "grandpa_paternal", "grandpa_maternal"]],
+    [/\bgrandfather\b/,["grandpa", "grandpa_paternal", "grandpa_maternal"]],
+    [/\bgranddad\b/,   ["grandpa", "grandpa_paternal", "grandpa_maternal"]],
+    [/\bpapa\b/,       ["grandpa", "grandpa_paternal", "grandpa_maternal", "father"]],
+    // Aunts and uncles
+    [/\baunt\b|\bauntie\b/, ["aunt", "aunt_paternal", "aunt_maternal"]],
+    [/\buncle\b/,      ["uncle", "uncle_paternal", "uncle_maternal"]],
+    // Siblings
+    [/\bsister\b|\bsis\b/,    ["sister", "sister_older", "sister_younger"]],
+    [/\bbrother\b|\bbro\b/,   ["brother", "brother_older", "brother_younger"]],
+    // Parents (after grandparent tests so "grandma" doesn't get hijacked)
+    [/\bmommy\b|\bmom\b|\bmama\b|\bmother\b/, ["mother"]],
+    [/\bdaddy\b|\bdad\b|\bfather\b/,           ["father"]],
+    // Baby
+    [/\bbaby\b/,       ["baby"]],
+    // "I love my family" — group photo slot. Tested AFTER specific kinship
+    // words so something like "Mommy is family" (not in the curriculum but
+    // future-proofing) still resolves to mother first.
+    [/\bfamily\b/,     ["family"]],
+    // "I love my life" — points at the child themselves. Resolves to
+    // the child's avatar (which is auto-mirrored into the "baby" family
+    // slot at child creation). Falls back to whatever's in the baby slot
+    // if the parent uploaded one separately, then to null → emoji.
+    [/\blife\b/,       ["baby"]],
+    // Home → location photos (if uploaded). "I love my home." style.
+    [/\bhome\b|\bhouse\b/, ["livingroom", "kitchen", "bedroom"]],
+  ];
+  for (const [pattern, slots] of FAMILY_KEYWORDS) {
+    if (pattern.test(lower)) {
+      for (const slot of slots) {
+        if (familyPhotos[slot]) return familyPhotos[slot];
+      }
+      // Keyword was present but no photo uploaded for any candidate slot.
+      // Don't keep scanning — the card is clearly about this family member,
+      // and falling through to a different keyword (e.g. matching "baby"
+      // because the sentence happens to contain it later) would be wrong.
+      return null;
     }
   }
   return null;
@@ -2437,12 +2545,36 @@ function getSessionStatus(childId, category, language) {
   }
 }
 
+// Per-set graduation threshold by category. Number of sessions a child must
+// accumulate on the current set/stage before advancing to the next. Reading,
+// math, and knowledge use the standard Doman 3-sessions cadence. Music and
+// rhythm use a longer 15-session cadence (Nov 2026) — these are deeper
+// pattern-recognition disciplines that don't internalize after just 3 hits.
+//   reading/couplets/sentences/encyclopedia/math: 3 sessions per set
+//     (≈1 day of practice at 3 sessions/day)
+//   music/rhythm: 15 sessions per stage
+//     (≈5 days of practice at 3 sessions/day; carryover model — same as
+//     reading, missing days just delays graduation, doesn't reset)
+const SESSIONS_TO_GRADUATE = {
+  reading:      3,
+  couplets:     3,
+  sentences:    3,
+  encyclopedia: 3,
+  math:         3,
+  music:        15,
+  rhythm:       15,
+};
+const DEFAULT_SESSIONS_TO_GRADUATE = 3;
+function sessionsToGraduate(category) {
+  return SESSIONS_TO_GRADUATE[category] || DEFAULT_SESSIONS_TO_GRADUATE;
+}
+
 // Per-set session counter — separate from the daily count. Advancement
-// is tied to "have we done 3 sessions ON THIS SET" rather than "have
-// we done 3 sessions TODAY". This way, missing a day doesn't make the
+// is tied to "have we done N sessions ON THIS SET" rather than "have
+// we done N sessions TODAY". This way, missing a day doesn't make the
 // curriculum stop advancing: yesterday's incomplete session count
-// carries over to today, and the set graduates as soon as 3 cumulative
-// sessions are done — which might span 1, 2, or even 3 calendar days.
+// carries over to today, and the set graduates as soon as N cumulative
+// sessions are done.
 //
 // Daily count (sessionKey) is still used for cooldown and "you've done
 // your 3 today" UI gating, but does NOT trigger advancement on its own.
@@ -2454,7 +2586,12 @@ function getSetProgress(childId, category, language) {
     const raw = localStorage.getItem(setProgressKey(childId, category, language));
     if (!raw) return 0;
     const n = parseInt(raw, 10);
-    return Number.isFinite(n) ? Math.max(0, Math.min(2, n)) : 0;
+    if (!Number.isFinite(n)) return 0;
+    // Clamp to one less than the graduation threshold — that's the highest
+    // valid in-progress state. Anything at-or-above triggers graduation
+    // and resets to 0 inside markSessionComplete.
+    const max = sessionsToGraduate(category) - 1;
+    return Math.max(0, Math.min(max, n));
   } catch { return 0; }
 }
 function setSetProgress(childId, category, language, n) {
@@ -2539,7 +2676,8 @@ function markSessionComplete(childId, category, language) {
     })();
     const progressLang = progressLangKey(category, child, language);
     const newSetCount = getSetProgress(childId, category, progressLang) + 1;
-    if (newSetCount >= 3) {
+    const threshold = sessionsToGraduate(category);
+    if (newSetCount >= threshold) {
       // Set complete → reset and advance position
       setSetProgress(childId, category, progressLang, 0);
       advancePositionAfterFinalSession(childId, category, language);
@@ -6680,6 +6818,118 @@ function LocationPhotoPrompt({ child, otherChildren, onClose }) {
 // photos because grandma/grandpa/aunt/uncle appear in the curriculum
 // around Day 30 — about a month away. Pre-uploading means those photos
 // are ready to go when the curriculum reaches them.
+// JIT prompt shown right before M3 sentences set 12 ("I love sentences")
+// begins, asking the parent to upload a single group photo of the family.
+// Same storage model as other family photos (setFamilyPhoto under slot
+// "family"), same one-shot-flag pattern (`lb-family-group-prompt-shown-{id}`).
+//
+// Why this exists: the sentence "I love my family." doesn't map to any
+// individual person, so without a dedicated group photo it falls through
+// to a generic family emoji. A real photo of the whole family — even a
+// candid phone shot — turns the card into something the baby actually
+// recognizes and bonds with.
+function FamilyGroupPhotoPrompt({ child, onClose }) {
+  const [photo, setPhoto] = useState(() => {
+    const all = getFamilyPhotos(child.id);
+    return all.family || null;
+  });
+  const [error, setError] = useState("");
+
+  const handleUpload = async (file) => {
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      setError("Photo too large — please use one under 4 MB.");
+      return;
+    }
+    try {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const dataUrl = e.target?.result;
+        if (typeof dataUrl !== "string") return;
+        const ok = setFamilyPhoto(child.id, "family", dataUrl);
+        if (!ok) {
+          setError("Storage is full — try removing photos in another profile first.");
+          return;
+        }
+        setPhoto(dataUrl);
+        setError("");
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setError("Couldn't read that file — try a different photo.");
+    }
+  };
+
+  const handleRemove = () => {
+    try {
+      const all = getFamilyPhotos(child.id);
+      delete all.family;
+      localStorage.setItem(`lb-photos-${child.id}`, JSON.stringify(all));
+      setPhoto(null);
+    } catch {}
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:340,display:"flex",alignItems:"center",justifyContent:"center",padding:14}}>
+      <div style={{background:"#fff",borderRadius:24,maxWidth:440,width:"100%",maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 20px 50px rgba(0,0,0,.35)"}}>
+
+        <div style={{padding:"24px 22px 14px",background:"linear-gradient(180deg,#FFF6E5 0%,#fff 100%)"}}>
+          <div style={{fontSize:42,textAlign:"center",marginBottom:6}}>👨‍👩‍👧‍👦</div>
+          <h2 style={{fontFamily:"'Fredoka One','Baloo 2',cursive",fontSize:21,color:"#111",margin:"0 0 6px",textAlign:"center",lineHeight:1.15}}>
+            A photo of your whole family
+          </h2>
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#666",textAlign:"center",margin:0,lineHeight:1.5}}>
+            {child.name}'s next set has the sentence <strong>"I love my family."</strong> — a real photo of everyone together makes this card click. Even a candid phone shot works.
+          </p>
+        </div>
+
+        <div style={{flex:1,overflowY:"auto",padding:"4px 22px 18px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+          <label style={{cursor:"pointer",position:"relative",width:200,height:200,borderRadius:20,overflow:"hidden",background:"#fff",border:photo?`3px solid ${RED}`:"3px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center",margin:"14px 0 10px"}}>
+            {photo ? (
+              <img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            ) : (
+              <div style={{textAlign:"center",padding:14}}>
+                <div style={{fontSize:36,marginBottom:6}}>📸</div>
+                <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#888",lineHeight:1.4}}>tap to upload</div>
+              </div>
+            )}
+            <input type="file" accept="image/*" style={{display:"none"}}
+              onChange={e => handleUpload(e.target.files?.[0])}/>
+          </label>
+
+          {photo && (
+            <button onClick={handleRemove}
+              style={{background:"transparent",border:"none",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#888",textDecoration:"underline",padding:"4px 8px",marginBottom:6}}>
+              remove photo
+            </button>
+          )}
+
+          {error && (
+            <div style={{padding:"8px 12px",background:"#FFF0F0",borderRadius:8,fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#c44",lineHeight:1.4,marginBottom:10,textAlign:"center"}}>
+              {error}
+            </div>
+          )}
+
+          <div style={{display:"flex",gap:8,width:"100%",marginTop:6}}>
+            <button onClick={onClose}
+              style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#666"}}>
+              {photo ? "skip rest" : "skip for now"}
+            </button>
+            <button onClick={onClose}
+              style={{flex:2,background:photo?"#10b981":RED,border:"none",borderRadius:50,padding:"12px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,color:"#fff",boxShadow:photo?"0 4px 14px rgba(16,185,129,.25)":"0 4px 14px rgba(232,25,44,.25)"}}>
+              {photo ? "✓ done — start session" : "start session"}
+            </button>
+          </div>
+
+          <p style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#aaa",lineHeight:1.45,textAlign:"center",margin:"12px 0 0",fontStyle:"italic"}}>
+            You can always add this later from Parent Profile if you skip now.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ExtendedFamilyPrompt({ onUploadNow, onLater }) {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
@@ -7384,11 +7634,34 @@ function AudioTestPanel({ activeChild }) {
           // sorted with Premium/Enhanced first, then by name. We hide AVOID-
           // listed novelty voices entirely so the picker only shows real
           // regional voices the user might actually want.
+          // Voices for the picker dropdown — same-language candidates only,
+          // sorted with Premium/Enhanced first, then by name. We hide AVOID-
+          // listed novelty voices entirely so the picker only shows real
+          // regional voices the user might actually want.
+          //
+          // For "rare" Chinese variants (Shanghainese / Toisanese / Teochew /
+          // Cantonese) the user-facing language code (wuu-CN, yue-HK, nan-TW)
+          // doesn't match what consumer devices actually ship — iOS lists
+          // every Chinese voice under zh-* tags. So when the requested
+          // language is in the Chinese family, we pull ALL zh-* voices into
+          // the picker. Same logic voiceScore uses for auto-selection.
+          const CHINESE_FAMILY_PREFIXES_FOR_PICKER = ["zh", "wuu", "nan", "yue", "cmn"];
           const candidates = (() => {
             const exact   = voices.filter(vv => vv.lang === bcp47);
             const prefix  = bcp47.split("-")[0];
             const related = voices.filter(vv => vv.lang !== bcp47 && vv.lang.startsWith(prefix + "-"));
-            const all = [...exact, ...related];
+            // Cross-family fallback for Chinese — pull in zh-* / yue-* / etc.
+            // when the user is on a Wu/Min/Cantonese variant that has no
+            // device-native voices.
+            const familyMatches = CHINESE_FAMILY_PREFIXES_FOR_PICKER.includes(prefix)
+              ? voices.filter(vv => {
+                  const vp = (vv.lang || "").split("-")[0].toLowerCase();
+                  return vp !== prefix && CHINESE_FAMILY_PREFIXES_FOR_PICKER.includes(vp);
+                })
+              : [];
+            const all = Array.from(new Map(
+              [...exact, ...related, ...familyMatches].map(v => [v.name + "|" + v.lang, v])
+            ).values());
             // Filter out novelty voices to keep the list short and useful.
             const filtered = all.filter(vv => {
               const n = (vv.name || "").toLowerCase();
@@ -7531,6 +7804,61 @@ function AudioTestPanel({ activeChild }) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Diagnostic panel — dump every voice the OS exposes to web speech.
+          Useful when something looks wrong (e.g. parent thinks Nannan or
+          Sin-ji is on their phone but the picker doesn't show it). The
+          definitive answer: if a voice is listed below, the app CAN use it;
+          if it isn't listed, iOS hasn't authorized it for Web Speech API
+          (Apple ships some voices for VoiceOver/Speak Selection only).
+          Letting the parent see the raw list also helps support debugging. */}
+      <div style={{marginTop:10,paddingTop:8,borderTop:"1px dashed #BBF7D0"}}>
+        <details style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#555"}}>
+          <summary style={{cursor:"pointer",padding:"4px 0"}}>
+            🔍 show all voices on this device ({voices.length})
+          </summary>
+          <div style={{marginTop:6,maxHeight:240,overflowY:"auto",background:"#FAFAFA",border:"1px solid #eee",borderRadius:6,padding:6}}>
+            {voices.length === 0 ? (
+              <div style={{padding:6,fontSize:10,color:"#888"}}>
+                No voices loaded yet. Try closing this panel and re-opening,
+                or refresh the page.
+              </div>
+            ) : (
+              voices
+                .slice()
+                .sort((a, b) => (a.lang || "").localeCompare(b.lang || ""))
+                .map(vv => (
+                  <div key={vv.name + vv.lang}
+                    style={{display:"flex",alignItems:"center",gap:6,padding:"4px 6px",borderBottom:"1px solid #f0f0f0",fontSize:9}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:800,color:"#111"}}>{vv.name}</div>
+                      <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:"#888"}}>{vv.lang}{vv.localService === false ? " · cloud" : " · local"}</div>
+                    </div>
+                    <button onClick={() => {
+                      try {
+                        window.speechSynthesis.cancel();
+                        const u = new SpeechSynthesisUtterance("Hello, this is a voice test.");
+                        u.voice = vv;
+                        u.lang = vv.lang;
+                        u.rate = 0.9; u.pitch = 1.2;
+                        window.speechSynthesis.speak(u);
+                      } catch {}
+                    }}
+                      style={{background:"#fff",border:"1px solid #ccc",borderRadius:50,padding:"3px 8px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#555"}}>
+                      ▶ test
+                    </button>
+                  </div>
+                ))
+            )}
+          </div>
+          <div style={{marginTop:6,padding:"6px 8px",background:"#FFFAF0",borderRadius:6,fontWeight:700,fontSize:9,color:"#92400e",lineHeight:1.4}}>
+            Don't see a voice you've installed in iOS Settings? Apple sometimes
+            withholds certain voices (especially additional dialect voices like
+            Nannan / Sin-ji) from web pages — they only work in apps that use
+            iOS's native APIs, not Safari. Nothing the app can do about that.
+          </div>
+        </details>
       </div>
 
       {/* Render the wizard when a language is selected */}
@@ -7716,7 +8044,7 @@ function ParentProfile({ activeChild, premium, onClose, onUpgrade, onAdjustLevel
                 try {
                   for (let i = localStorage.length - 1; i >= 0; i--) {
                     const k = localStorage.key(i);
-                    if (k && (k.startsWith("lb-prompt-") || k.startsWith("lb-location-prompt-shown-") || k.startsWith("lb-day1-complete-"))) {
+                    if (k && (k.startsWith("lb-prompt-") || k.startsWith("lb-location-prompt-shown-") || k.startsWith("lb-day1-complete-") || k.startsWith("lb-family-group-prompt-shown-"))) {
                       localStorage.removeItem(k);
                     }
                   }
@@ -9665,9 +9993,28 @@ function HomeScreen({ activeChild, activeChildId, streak, onSelectCategory, lang
 function MusicMenu({ activeChild, onOpenPitch, onOpenRhythm, onBack }) {
   const musicEnrolled = isClassEnrolled(activeChild, "music");
   const musicGraduated = isClassGraduated(activeChild, "music");
+
+  // Compute "Day X of 5 on Y" for each subsection. Music & rhythm both use
+  // the global per-set counter (15 sessions = 5 days × 3 sessions/day).
+  // setProgress is 0..14 → day = floor(setProgress/3) + 1 (so 1..5).
+  // Show the current scale/stage label so the parent sees both progress
+  // and what's actually being practiced.
+  const childId = activeChild?.id;
+  const pos = activeChild ? (migratePosition(activeChild.position)?.English || {}) : {};
+  const pitchProgress = childId ? getSetProgress(childId, "music", "__global__") : 0;
+  const rhythmProgress = childId ? getSetProgress(childId, "rhythm", "__global__") : 0;
+  const pitchDay = Math.floor(pitchProgress / 3) + 1;
+  const rhythmDay = Math.floor(rhythmProgress / 3) + 1;
+  const currentPitchScale = MUSIC_SCALES.find(s => s.id === pos.music) || MUSIC_SCALES[0];
+  const currentRhythmStage = RHYTHM_STAGES.find(s => s.id === pos.rhythm) || RHYTHM_STAGES[0];
+
   const items = [
-    { id:"pitch",  label:"Pitch",        emoji:"🎹", desc:"Perfect pitch training · circle of fifths",    color:"#FDF4FF", available:musicEnrolled,  graduated:musicGraduated,  onSelect:onOpenPitch },
-    { id:"rhythm", label:"Rhythm",       emoji:"🥁", desc:"Note values and time signatures",                color:"#FFF4E6", available:musicEnrolled,  graduated:musicGraduated,  onSelect:onOpenRhythm },
+    { id:"pitch",  label:"Pitch",        emoji:"🎹", desc:"Perfect pitch training · circle of fifths",    color:"#FDF4FF", available:musicEnrolled,  graduated:musicGraduated,  onSelect:onOpenPitch,
+      progressLabel: `Day ${pitchDay} of 5 on ${currentPitchScale.majorLabel}`,
+      sessionInSet: pitchProgress },
+    { id:"rhythm", label:"Rhythm",       emoji:"🥁", desc:"Note values and time signatures",                color:"#FFF4E6", available:musicEnrolled,  graduated:musicGraduated,  onSelect:onOpenRhythm,
+      progressLabel: `Day ${rhythmDay} of 5 on ${currentRhythmStage.label}`,
+      sessionInSet: rhythmProgress },
     { id:"sight",  label:"Sight Reading",emoji:"👀", desc:"Combines pitch + rhythm on a staff",             color:"#F4FFF0", available:false, graduated:false, onSelect:null },
   ];
 
@@ -9703,6 +10050,11 @@ function MusicMenu({ activeChild, onOpenPitch, onOpenRhythm, onBack }) {
                   <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:11,color:"#888",marginTop:3,lineHeight:1.4}}>
                     {isNotEnrolled ? "Enroll in this class via your child's profile" : it.desc}
                   </div>
+                  {it.available && it.progressLabel && (
+                    <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",background:"#fff",border:"1px solid #E9D5FF",borderRadius:50,fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#7C3AED",lineHeight:1.3}}>
+                      {it.progressLabel}
+                    </div>
+                  )}
                 </div>
                 {it.available && <span style={{fontSize:18,color:"#ccc"}}>›</span>}
               </div>
@@ -11886,6 +12238,10 @@ function AppInner() {
   // sheet closes (skip or save), we fire pendingSessionStart() to let the
   // session begin.
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
+  // Sibling prompt to upload a family group photo before the M3 sentences
+  // set 12 ("I love sentences") starts. One-shot per child via
+  // `lb-family-group-prompt-shown-{childId}`.
+  const [showFamilyGroupPrompt, setShowFamilyGroupPrompt] = useState(false);
   const [pendingSessionStart, setPendingSessionStart] = useState(null);
   // `showParentProfile` opens the parent profile screen
   const [showParentProfile, setShowParentProfile] = useState(false);
@@ -12280,6 +12636,35 @@ function AppInner() {
       } catch {}
     }
 
+    // JIT family-group photo prompt: fires before the M3 sentences set 12
+    // ("I love sentences") starts. We detect the set by scanning the daily
+    // sentence cards for "I love my family." — that sentence only appears
+    // in this set. One-shot per child via lb-family-group-prompt-shown-{id}.
+    // Skipped if the parent has already uploaded a "family" photo (no need
+    // to nag a parent who pre-uploaded via Parent Profile).
+    if (stageId === "sentences" && activeChildId) {
+      try {
+        const promptKey = `lb-family-group-prompt-shown-${activeChildId}`;
+        const alreadyShown = localStorage.getItem(promptKey);
+        // Match "i love my family" case/punctuation-insensitively. The
+        // canonical sentence is stored under card.sentence and also as
+        // card.word (joined). card.original is the same text.
+        const containsLoveFamily = (dailySentences || []).some(c => {
+          const s = (c?.sentence || c?.word || c?.original || "").toLowerCase();
+          return /\bi love my family\b/.test(s);
+        });
+        const existing = activeChild ? getFamilyPhotos(activeChild.id) : {};
+        const hasGroupPhotoAlready = !!existing.family;
+        if (!alreadyShown && containsLoveFamily && !hasGroupPhotoAlready) {
+          localStorage.setItem(promptKey, String(Date.now()));
+          const status = getSessionStatus(activeChildId, sessionCategory, language);
+          setPendingSessionStart({ stageId, status });
+          setShowFamilyGroupPrompt(true);
+          return;
+        }
+      } catch {}
+    }
+
     const status = getSessionStatus(activeChildId, sessionCategory, language);
     setSessionStatus(status);
     setMode(stageId);
@@ -12631,6 +13016,21 @@ function AppInner() {
           onClose={() => {
             setShowLocationPrompt(false);
             // Now actually start the session that was pending
+            if (pendingSessionStart) {
+              setSessionStatus(pendingSessionStart.status);
+              setMode(pendingSessionStart.stageId);
+              setPendingSessionStart(null);
+            }
+          }}
+        />
+      )}
+
+      {showFamilyGroupPrompt && activeChild && (
+        <FamilyGroupPhotoPrompt
+          child={activeChild}
+          onClose={() => {
+            setShowFamilyGroupPrompt(false);
+            // Launch the deferred session now
             if (pendingSessionStart) {
               setSessionStatus(pendingSessionStart.status);
               setMode(pendingSessionStart.stageId);
