@@ -1012,7 +1012,7 @@ const RED   = "#E8192C";
 // time we ship. Format: yyyy-mm-dd-HHMM (UTC-ish; we just want monotonic).
 // If the user's screen shows an OLD version, the service worker is serving
 // stale cache — the "Force refresh" button next to it clears the SW + reloads.
-const BUILD_VERSION = "2026-05-04-2400 · audio-wizard";
+const BUILD_VERSION = "2026-05-05-0030 · voice-override+novelty-block";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 // Use local time, not UTC — otherwise late-evening sessions in negative-offset
@@ -1132,8 +1132,30 @@ const YOUNG_VOICE_HINTS = ["junior","kid","child","young","girl","boy"];
 const PREMIUM_VOICE_HINTS = [
   "premium","enhanced","neural","natural","siri","online","wavenet","studio",
 ];
+
+// iOS 17+ added a class of "personality" / "novelty" voices that LIE about
+// their language: they list themselves under en-US but actually speak in many
+// languages (with terrible pronunciation in non-English). Examples: Eddy, Flo,
+// Grandma, Grandpa, Sandy, Reed, Rocko, Shelley, Jester. Apple also has a set
+// of joke voices from older macOS days (Albert, Bahh, Bells, Boing, Bubbles,
+// Cellos, Deranged, "Good News", "Bad News", Hysterical, Pipe Organ, Trinoids,
+// Whisper, Zarvox) that we never want for a baby learning app.
+//
+// These names get a SEVERE penalty in voiceScore, so even if they appear
+// before Audrey/Anna/Tingting in getVoices() output, the proper regional
+// voice wins.
 const AVOID_VOICE_HINTS = [
-  "compact","espeak","festival",  // low-quality legacy voices
+  // Low-quality legacy engines
+  "compact","espeak","festival",
+  // iOS 17+ novelty / personality voices that masquerade as multi-lingual
+  "eddy","flo","grandma","grandpa","sandy","reed","rocko","shelley","jester",
+  // Classic macOS joke voices
+  "albert","bahh","bells","boing","bubbles","cellos","deranged","good news",
+  "bad news","hysterical","pipe organ","trinoids","whisper","zarvox","ralph",
+  "fred","junior","kathy","princess","bruce","agnes","vicki",
+  // Note: "vicki" was previously in FEMALE_VOICE_HINTS as a positive signal,
+  // but on iOS 17+ it's actually a low-quality novelty-tier voice. The penalty
+  // here outweighs the female bonus, which is the right call for our use case.
 ];
 
 function voiceScore(voice, targetLang, preferredAccent) {
@@ -1149,9 +1171,24 @@ function voiceScore(voice, targetLang, preferredAccent) {
   else if (vlang.startsWith(tlang.split("-")[0])) score += 60;
   else return -1; // wrong language — disqualify
 
-  // Quality tier — this has the biggest impact on "sounds like a real person"
-  if (PREMIUM_VOICE_HINTS.some(h => name.includes(h))) score += 40;
-  if (AVOID_VOICE_HINTS.some(h => name.includes(h)))   score -= 50;
+  // AVOID hints take priority over everything else: if the voice name matches
+  // a novelty / character / low-quality voice, slam the score WAY down so it
+  // never beats a real regional voice. We use word-boundary matching here so
+  // "Eddy" doesn't accidentally match a substring of a real voice name.
+  // The penalty (-500) is intentionally larger than any combination of other
+  // bonuses (max ≈ 250) so AVOID is effectively a hard veto whenever a real
+  // option exists. If only AVOID voices exist for this language, the highest-
+  // scoring one still wins (better something than silence).
+  for (const h of AVOID_VOICE_HINTS) {
+    // Match as a whole word (avoids "eddy" hitting "freddy" etc.)
+    const wordRe = new RegExp("(^|[^a-z])" + h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z]|$)", "i");
+    if (wordRe.test(name)) { score -= 500; break; }
+  }
+
+  // Quality tier — strongly preferred. Premium/Enhanced voices are the ones
+  // the parent explicitly downloaded — we should always pick them over the
+  // base/compact equivalents.
+  if (PREMIUM_VOICE_HINTS.some(h => name.includes(h))) score += 60;
 
   // Gender preference: female strongly preferred
   const isFemale = FEMALE_VOICE_HINTS.some(h => name.includes(h));
@@ -1184,8 +1221,47 @@ const ACCENT_HINTS = {
   "Chinese (Teochew)":      ["teochew","chaoshan","chaozhou","chao-chou"],
 };
 
+// Manual voice overrides — when the heuristic picker chooses wrong (e.g. a
+// novelty voice we missed in AVOID_VOICE_HINTS), the user can pin a specific
+// voice for a language via the Audio Test panel. Storage shape:
+//   { [language]: voiceName }
+// We match by name (not URI/voiceURI) because Apple's voice URIs change with
+// downloads, but the name is stable.
+function getVoiceOverrides() {
+  try {
+    const raw = localStorage.getItem("lb-voice-overrides");
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === "object") ? parsed : {};
+  } catch { return {}; }
+}
+
+function setVoiceOverride(language, voiceName) {
+  try {
+    const overrides = getVoiceOverrides();
+    if (voiceName) overrides[language] = voiceName;
+    else delete overrides[language];
+    localStorage.setItem("lb-voice-overrides", JSON.stringify(overrides));
+  } catch {}
+}
+
 function pickBestVoice(voices, targetLang, language) {
   if (!voices || !voices.length) return null;
+  // Honor manual override first — if the user has explicitly pinned a voice
+  // for this language, use it (and don't second-guess them via scoring).
+  // Match by name (case-insensitive prefix is fine since overrides are
+  // populated from voices.name itself).
+  if (language) {
+    try {
+      const overrides = getVoiceOverrides();
+      const pinned = overrides[language];
+      if (pinned) {
+        const match = voices.find(v => v.name === pinned);
+        if (match) return match;
+      }
+    } catch {}
+  }
+  // Otherwise use the heuristic scorer
   const accentHints = ACCENT_HINTS[language] || null;
   let best = null;
   let bestScore = -1;
@@ -6772,13 +6848,11 @@ function VoiceSetupWizard({ language, onClose }) {
   }, []);
 
   const bcp47 = SPEECH_LANG[language] || "en-US";
-  const pickVoice = () => {
-    if (!voices.length) return null;
-    const exact = voices.find(v => v.lang === bcp47);
-    if (exact) return exact;
-    const prefix = bcp47.split("-")[0];
-    return voices.find(v => v.lang.startsWith(prefix + "-")) || null;
-  };
+  // Use production pickBestVoice — same logic the real session runs.
+  // This honors any manual override the user set in the audio test panel
+  // AND applies AVOID_VOICE_HINTS so novelty voices like Eddy/Flo/Grandma
+  // never get picked just because they appear first in getVoices().
+  const pickVoice = () => pickBestVoice(voices, bcp47, language);
   const chosenVoice = pickVoice();
   const isWrongRegion = chosenVoice && chosenVoice.lang !== bcp47;
   const noVoiceAtAll = !chosenVoice;
@@ -7033,18 +7107,22 @@ function AudioTestPanel({ activeChild }) {
 
   const childLangs = activeChild?.languages || ["English"];
 
-  // Pick the best voice for a BCP-47 code, mirroring what the actual reading
-  // session does: exact match first, then prefix match (e.g. "zh-HK" matches
-  // "zh-HK" exactly, but if missing, falls back to anything starting with
-  // "zh-"). We surface BOTH the requested code AND the selected voice's lang
-  // so testers can see when zh-HK is being served by zh-CN.
-  const pickVoice = (bcp47) => {
+  // Re-use the SAME production voice picker that drives real session speech.
+  // This way "what you test = what you hear in a session" — no more situations
+  // where the panel says one voice but the session uses another.
+  // Returns the voice object pickBestVoice would choose for this language.
+  const pickVoice = (lang) => {
     if (!voices.length) return null;
-    const exact = voices.find(v => v.lang === bcp47);
-    if (exact) return exact;
-    const prefix = bcp47.split("-")[0];
-    return voices.find(v => v.lang.startsWith(prefix + "-")) || null;
+    const bcp47 = SPEECH_LANG[lang] || "en-US";
+    return pickBestVoice(voices, bcp47, lang);
   };
+
+  // Override-management state. `pickerOpenFor` is the language whose voice
+  // picker is currently shown (if any). Setting an override updates
+  // localStorage and forces a re-render so the panel reflects it immediately.
+  const [pickerOpenFor, setPickerOpenFor] = useState(null);
+  const [overrideTick, setOverrideTick] = useState(0);
+  const overrides = getVoiceOverrides();
 
   const phraseFor = (lang) => {
     // Short, friendly test phrases that include the language name in that
@@ -7081,7 +7159,7 @@ function AudioTestPanel({ activeChild }) {
       return;
     }
     const bcp47 = SPEECH_LANG[lang] || "en-US";
-    const voice = pickVoice(bcp47);
+    const voice = pickVoice(lang);
     setLastSpoken(s => ({ ...s, [lang]: voice ? { voiceName: voice.name, voiceLang: voice.lang } : null }));
     try {
       window.speechSynthesis.cancel(); // clear any pending
@@ -7096,6 +7174,20 @@ function AudioTestPanel({ activeChild }) {
     } catch {
       setSpeaking(null);
     }
+  };
+
+  // Speaks a specific voice (used when previewing voices in the override
+  // picker). Uses the same phrase as test() so the user can compare.
+  const previewVoice = (lang, voice) => {
+    if (!window.speechSynthesis || !voice) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(phraseFor(lang));
+      utt.lang = voice.lang;
+      utt.voice = voice;
+      utt.rate = 0.9; utt.pitch = 1; utt.volume = 1;
+      window.speechSynthesis.speak(utt);
+    } catch {}
   };
 
   // Detect the "Cantonese being served by Mandarin" case explicitly
@@ -7129,10 +7221,40 @@ function AudioTestPanel({ activeChild }) {
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {childLangs.map(lang => {
           const bcp47 = SPEECH_LANG[lang] || "en-US";
-          const v = pickVoice(bcp47);
+          // Use the production picker (honors manual overrides + the new
+          // AVOID-novelty-voice scoring). What the panel shows is what a real
+          // session will use.
+          const v = pickVoice(lang);
           const isSpeaking = speaking === lang;
           const warning = mismatchWarning(lang, lastSpoken[lang]);
           const hasIssue = !v || !!warning;
+          const isOverridden = !!overrides[lang];
+          // Voices for the picker dropdown — same-language candidates only,
+          // sorted with Premium/Enhanced first, then by name. We hide AVOID-
+          // listed novelty voices entirely so the picker only shows real
+          // regional voices the user might actually want.
+          const candidates = (() => {
+            const exact   = voices.filter(vv => vv.lang === bcp47);
+            const prefix  = bcp47.split("-")[0];
+            const related = voices.filter(vv => vv.lang !== bcp47 && vv.lang.startsWith(prefix + "-"));
+            const all = [...exact, ...related];
+            // Filter out novelty voices to keep the list short and useful.
+            const filtered = all.filter(vv => {
+              const n = (vv.name || "").toLowerCase();
+              return !AVOID_VOICE_HINTS.some(h => {
+                const re = new RegExp("(^|[^a-z])" + h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z]|$)", "i");
+                return re.test(n);
+              });
+            });
+            // Sort: Premium/Enhanced first, then alphabetical
+            filtered.sort((a, b) => {
+              const ap = PREMIUM_VOICE_HINTS.some(h => (a.name || "").toLowerCase().includes(h));
+              const bp = PREMIUM_VOICE_HINTS.some(h => (b.name || "").toLowerCase().includes(h));
+              if (ap !== bp) return ap ? -1 : 1;
+              return (a.name || "").localeCompare(b.name || "");
+            });
+            return filtered;
+          })();
           return (
             <div key={lang} style={{padding:"8px 10px",background:"#fff",border:"1px solid #eee",borderRadius:8}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -7140,6 +7262,7 @@ function AudioTestPanel({ activeChild }) {
                   <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#111"}}>{lang}</div>
                   <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:"#888",marginTop:2}}>
                     requested: {bcp47} {v ? `→ using ${v.name} (${v.lang})` : "→ NO VOICE FOUND"}
+                    {isOverridden && <span style={{color:"#10b981",fontWeight:700}}> · manually pinned</span>}
                   </div>
                 </div>
                 <button onClick={() => test(lang)}
@@ -7157,16 +7280,83 @@ function AudioTestPanel({ activeChild }) {
                   ⚠️ No voice for {lang} on this device.
                 </div>
               )}
-              {/* Per-row "fix this" button — opens the wizard pointed at this
-                  specific language. Visible only when there's a clear issue
-                  (no voice or wrong region) OR if the parent simply wants
-                  to walk through it (always shown via the bottom link). */}
-              {hasIssue && (
-                <button onClick={() => setWizardLang(lang)}
-                  style={{marginTop:6,width:"100%",background:"#fff",border:"1.5px solid #c44",borderRadius:50,padding:"6px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#c44"}}>
-                  → walk me through fixing this
-                </button>
+              {/* Manual voice picker — opens an inline list so user can override
+                  the auto-picked voice with whatever they downloaded. Useful
+                  when our heuristic misses (e.g. iOS 17 added a new novelty
+                  voice we haven't blocklisted yet). */}
+              {pickerOpenFor === lang && (
+                <div style={{marginTop:8,padding:"8px",background:"#FAFCFF",border:"1px solid #DBE4F5",borderRadius:8}}>
+                  <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#1e3a8a",marginBottom:6}}>
+                    Pick which voice to use for {lang}:
+                  </div>
+                  {candidates.length === 0 && (
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#888",padding:"4px 0"}}>
+                      No real voices found for this language. Install one via your phone's Settings.
+                    </div>
+                  )}
+                  <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
+                    {candidates.map(vv => {
+                      const isPicked = overrides[lang] === vv.name;
+                      const isCurrent = !isPicked && v && v.name === vv.name;
+                      const isPremium = PREMIUM_VOICE_HINTS.some(h => (vv.name || "").toLowerCase().includes(h));
+                      return (
+                        <div key={vv.name + vv.lang}
+                          style={{display:"flex",alignItems:"center",gap:6,padding:"6px 8px",background:isPicked?"#DCFCE7":(isCurrent?"#F0FDF4":"#fff"),border:`1px solid ${isPicked?"#10b981":"#eee"}`,borderRadius:6}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:10,color:"#111"}}>
+                              {vv.name}
+                              {isPremium && <span style={{marginLeft:4,fontSize:8,color:"#10b981"}}>✦ premium</span>}
+                            </div>
+                            <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:"#888",marginTop:1}}>{vv.lang}{isCurrent && !isPicked ? " · auto-selected" : ""}</div>
+                          </div>
+                          <button onClick={() => previewVoice(lang, vv)}
+                            style={{background:"#fff",border:"1px solid #ccc",borderRadius:50,padding:"3px 8px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#555"}}>
+                            ▶ preview
+                          </button>
+                          {!isPicked && (
+                            <button onClick={() => { setVoiceOverride(lang, vv.name); setOverrideTick(n => n + 1); }}
+                              style={{background:RED,border:"none",borderRadius:50,padding:"3px 8px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#fff"}}>
+                              use this
+                            </button>
+                          )}
+                          {isPicked && (
+                            <span style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#10b981"}}>✓ picked</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{display:"flex",gap:6,marginTop:8}}>
+                    {isOverridden && (
+                      <button onClick={() => { setVoiceOverride(lang, null); setOverrideTick(n => n + 1); }}
+                        style={{flex:1,background:"#fff",border:"1px solid #c44",borderRadius:50,padding:"5px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#c44"}}>
+                        clear my pick (use auto)
+                      </button>
+                    )}
+                    <button onClick={() => setPickerOpenFor(null)}
+                      style={{flex:1,background:"#f5f5f5",border:"none",borderRadius:50,padding:"5px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#555"}}>
+                      done
+                    </button>
+                  </div>
+                </div>
               )}
+              {/* Action buttons row — pick voice manually, or open the wizard
+                  if there's no voice at all. Two separate buttons because they
+                  solve different problems: picker = "I have voices but the
+                  wrong one is being used", wizard = "I don't have any voice
+                  for this language". */}
+              <div style={{marginTop:6,display:"flex",gap:6}}>
+                <button onClick={() => setPickerOpenFor(pickerOpenFor === lang ? null : lang)}
+                  style={{flex:1,background:"#fff",border:"1px solid #DBE4F5",borderRadius:50,padding:"5px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#1e3a8a"}}>
+                  {pickerOpenFor === lang ? "▼ close picker" : "🎙 pick voice manually"}
+                </button>
+                {hasIssue && (
+                  <button onClick={() => setWizardLang(lang)}
+                    style={{flex:1,background:"#fff",border:"1.5px solid #c44",borderRadius:50,padding:"5px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:9,color:"#c44"}}>
+                    → walk me through fixing
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
