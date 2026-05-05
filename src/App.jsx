@@ -1012,7 +1012,7 @@ const RED   = "#E8192C";
 // time we ship. Format: yyyy-mm-dd-HHMM (UTC-ish; we just want monotonic).
 // If the user's screen shows an OLD version, the service worker is serving
 // stale cache — the "Force refresh" button next to it clears the SW + reloads.
-const BUILD_VERSION = "2026-05-05-1500 · speech-lang-fix+5day-music-ui+voice-diag";
+const BUILD_VERSION = "2026-05-05-1700 · honest-ios-voice-limit+mentor-removed";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 // Use local time, not UTC — otherwise late-evening sessions in negative-offset
@@ -7417,6 +7417,19 @@ function VoiceSetupWizard({ language, onClose }) {
                 : `Your phone doesn't have a voice for ${language}. Here's how to install one:`}
                 emoji={step === "wrong" ? "⚠️" : "🌐"} />
               <div style={{flex:1,overflowY:"auto",padding:"4px 22px 18px"}}>
+                {/* Important caveat for languages Apple gatekeeps from web speech.
+                    Even after installing the voice in iOS Settings, Safari/PWAs
+                    may not get access. The native iOS app (TestFlight) will. */}
+                {(platform === "ios-safari" || platform === "ios-pwa") && (
+                  <div style={{padding:"10px 12px",background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:10,marginBottom:14}}>
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:"#0c4a6e",lineHeight:1.5}}>
+                      📱 iOS web-app limitation
+                    </div>
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:10,color:"#0c4a6e",lineHeight:1.55,marginTop:4}}>
+                      Apple authorizes only some installed voices for use in Safari/web apps. Voices like <strong>Aru</strong> (Kazakh), <strong>Nannan</strong> (Shanghainese), and a few others won't appear here even after you download them — they'll work when the native iOS app launches on TestFlight. For now, native-speaker reading is recommended for those languages.
+                    </div>
+                  </div>
+                )}
                 <div style={{padding:"10px 12px",background:"#FFF6E0",border:"1px solid #F5C97A",borderRadius:10,marginBottom:14}}>
                   <div style={{fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,color:"#92400e",marginBottom:6,lineHeight:1.3}}>
                     {inst.title}
@@ -7717,8 +7730,8 @@ function AudioTestPanel({ activeChild }) {
                     Pick which voice to use for {lang}:
                   </div>
                   {candidates.length === 0 && (
-                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#888",padding:"4px 0"}}>
-                      No real voices found for this language. Install one via your phone's Settings.
+                    <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:9,color:"#666",padding:"6px 4px",lineHeight:1.5}}>
+                      No voices for this language available to web apps. Even if you've installed one in iOS Settings (Aru for Kazakh, Nannan for Shanghainese, etc.), Apple only authorizes a subset of system voices for use in Safari/PWAs. The voice will work in TestFlight when the native iOS app launches — meanwhile, native-speaker reading is recommended.
                     </div>
                   )}
                   <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
@@ -9607,7 +9620,7 @@ function WelcomeSheet({ onClose, startOnFaq = false }) {
                 ✂️ Printed cards from a trusted source
               </div>
               <div style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:"#555",lineHeight:1.55,marginBottom:10}}>
-                For parents who want to supplement with more physical cards in additional languages, Olivia's mentor has created thousands of them. Use code <strong>OLIVIA15</strong> for 15% off.
+                For parents who want to supplement with physical flashcards, this shop offers thousands of beautifully made cards in many languages. Use code <strong>OLIVIA15</strong> for 15% off.
               </div>
               <a href="https://earlyeducationmomma.etsy.com/?coupon=OLIVIA15" target="_blank" rel="noopener noreferrer"
                 style={{display:"inline-block",background:RED,color:"#fff",borderRadius:50,padding:"8px 16px",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:12,textDecoration:"none"}}>
