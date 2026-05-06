@@ -3,6 +3,17 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  // Externals: Capacitor plugins are only resolvable at runtime when the
+  // app is running inside the iOS native shell. During web builds, the
+  // package is intentionally NOT in node_modules. Marking it external
+  // tells Rollup "don't try to bundle this — it'll be present at runtime
+  // when needed." On web, the dynamic import() throws and our try/catch
+  // gracefully falls back to Web Speech API.
+  build: {
+    rollupOptions: {
+      external: ["@capacitor-community/text-to-speech"]
+    }
+  },
   plugins: [
     react(),
     VitePWA({
