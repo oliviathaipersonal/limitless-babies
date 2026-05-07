@@ -1014,7 +1014,7 @@ const RED   = "#E8192C";
 // time we ship. Format: yyyy-mm-dd-HHMM (UTC-ish; we just want monotonic).
 // If the user's screen shows an OLD version, the service worker is serving
 // stale cache — the "Force refresh" button next to it clears the SW + reloads.
-const BUILD_VERSION = "2026-05-07-0500 · revenuecat-iap-wired";
+const BUILD_VERSION = "2026-05-07-1600 · public-launch-no-gate";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 // Use local time, not UTC — otherwise late-evening sessions in negative-offset
@@ -13481,10 +13481,11 @@ function AppInner() {
 // Exported App: gates AppInner behind the beta password.
 // To remove gating at GA, replace this with: export default AppInner;
 export default function App() {
-  return (
-    <BetaPasswordGate>
-      <AppInner />
-    </BetaPasswordGate>
-  );
+  // Beta password gate removed for public App Store launch (v1.0 production).
+  // The BetaPasswordGate component is left in the source above for reference
+  // and so it can be re-enabled for future private beta cycles by wrapping
+  // <AppInner /> with it again. To bring it back, just restore the
+  // <BetaPasswordGate>...</BetaPasswordGate> wrap.
+  return <AppInner />;
 }
 
