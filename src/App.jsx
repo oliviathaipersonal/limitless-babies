@@ -1013,7 +1013,7 @@ const RED   = "#E8192C";
 // time we ship. Format: yyyy-mm-dd-HHMM (UTC-ish; we just want monotonic).
 // If the user's screen shows an OLD version, the service worker is serving
 // stale cache — the "Force refresh" button next to it clears the SW + reloads.
-const BUILD_VERSION = "2026-05-06-0200 · capacitor-tts-bridge+privacy+icon";
+const BUILD_VERSION = "2026-05-06-0900 · m3-knowledge-overhaul+sentence-photos";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 // Use local time, not UTC — otherwise late-evening sessions in negative-offset
@@ -3979,6 +3979,19 @@ const KNOWLEDGE_TITLES = {
   italy_map: "Map of Italy",
   spain_map: "Map of Spain",
   uk_map: "Map of the United Kingdom",
+  // Month 3 sports
+  figure_skating: "Figure Skating",
+  // Month 3 types of cars (May 2026 — replaced brand names with categories)
+  classic_car: "Classic Car",
+  electric_car: "Electric Car",
+  atv: "ATV",
+  race_car: "Race Car",
+  van: "Van",
+  // Month 3 flowers — Baby's Breath needs apostrophe override
+  babys_breath: "Baby's Breath",
+  hibiscus: "Hibiscus",
+  hydrangea: "Hydrangea",
+  peony: "Peony",
   // Misc overrides
   trex: "T. rex",
   shiba_inu: "Shiba Inu",
@@ -3989,10 +4002,6 @@ const KNOWLEDGE_TITLES = {
   southafrica: "South Africa",
   dragonfruit: "Dragonfruit",
   cpu: "CPU",
-  ferrari: "Ferrari",
-  tesla: "Tesla",
-  mustang: "Mustang",
-  jeep: "Jeep",
 };
 
 function titleForKnowledge(cardId, language) {
@@ -4543,6 +4552,40 @@ const WORD_PHOTO_URLS = {
   morocco:     "https://static.vecteezy.com/system/resources/thumbnails/049/615/437/small/morocco-political-map-with-capital-cities-towns-national-borders-rivers-and-lakes-labeling-vector.jpg",
   southafrica: "https://img.freepik.com/premium-vector/map-south-africa-provinces-regions_509477-2561.jpg?semt=ais_hybrid&w=740&q=80",
 
+  // ── MONTH 3 KNOWLEDGE — Sets 1-5 (Olivia spreadsheet, May 2026) ──
+  // kset1 — European Countries (political maps)
+  france_map:    "https://media.istockphoto.com/id/1464847689/vector/france-political-map-of-administrative-divisions.jpg?s=612x612&w=0&k=20&c=ap_zIBkcIeoPT9-Ebsa7-SMDIIdRywz_CqO5I4TwcQs=",
+  germany_map:   "https://thumbs.dreamstime.com/b/stylized-flat-vector-illustration-federal-republic-germany-prominently-displaying-its-internal-state-borders-map-401132040.jpg",
+  italy_map:     "https://cdn.pixabay.com/photo/2023/03/08/14/13/italy-7837885_1280.png",
+  spain_map:     "https://cdn.vectorstock.com/i/1000v/74/78/spain-map-silhouette-vector-17017478.jpg",
+  uk_map:        "https://fvmstatic.s3.amazonaws.com/maps/m/GB-EPS-02-4001.png",
+
+  // kset2 — Sports (figure_skating replaces boxing)
+  hockey:        "https://st2.depositphotos.com/1000423/11845/i/450/depositphotos_118453476-stock-photo-hockey-match-at-rink-mixed.jpg",
+  figure_skating:"https://img.magnific.com/free-photo/figure-skating-girl-ice-arena_654080-2219.jpg?semt=ais_hybrid&w=740&q=80",
+  gymnastics:    "https://www.shutterstock.com/image-photo/gymnast-performs-difficult-trick-on-260nw-2715488945.jpg",
+  skiing:        "https://media.istockphoto.com/id/2193052367/photo/teenage-boy-spending-winter-holiday-skiing-in-mountain.jpg?s=612x612&w=0&k=20&c=Yw8HaoCIpBdDbWi37R8MZffjMs-oXhoIEH2i7ew0jk0=",
+  cycling:       "https://media.istockphoto.com/id/2170704756/photo/family-riding-bicycles-in-the-forest.jpg?b=1&s=1024x1024&w=0&k=20&c=XVbwZSOuvzxbqPeTdhzYci6dI-auoFlcBGiyc3UCPS8=",
+
+  // kset3 — Types of Cars (categories replaced brand names)
+  classic_car:   "https://isorepublic.com/wp-content/uploads/2018/11/classic-cars-cuba.jpg",
+  electric_car:  "https://media.istockphoto.com/id/1477067152/photo/electric-car-power-charging.jpg?s=612x612&w=0&k=20&c=lG-k6FgVIZFzw4pP1eFgmG3T4t0rOJWU1sa-e-aWTrA=",
+  atv:           "https://thumbs.dreamstime.com/b/atvs-cappadocia-rocks-atvs-cappadocia-rocks-traveling-turkey-447610807.jpg",
+  race_car:      "https://cdn.pixabay.com/photo/2019/08/09/06/12/car-racing-4394450_1280.jpg",
+  van:           "https://static.vecteezy.com/system/resources/thumbnails/057/185/930/small/white-delivery-van-inside-a-spacious-warehouse-with-shelves-and-boxes-modern-logistics-setting-for-transportation-photo.jpg",
+
+  // kset4 — Flowers (M3 set — different from words "flower")
+  hydrangea:     "https://static.vecteezy.com/system/resources/thumbnails/048/843/981/small/beautiful-bouquets-of-colorful-hydrangea-in-kraft-paper-in-flower-store-photo.jpg",
+  babys_breath:  "https://thumbs.dreamstime.com/b/baby-s-breath-gypsophilia-paniculata-baby-s-breath-gypsophilia-paniculata-wooden-background-98819252.jpg",
+  hibiscus:      "https://media.istockphoto.com/id/668261224/photo/hibiscus-and-the-sea.jpg?s=612x612&w=0&k=20&c=RbXg4EIVD9izkAlpBhu1ZFDpimi-BO-6dHf2yxyrdhg=",
+  orchid:        "https://static.vecteezy.com/system/resources/thumbnails/044/650/806/small/a-pristine-white-orchid-with-delicate-petals-and-yellow-centers-png.png",
+  peony:         "https://images.unsplash.com/photo-1575178114667-c8a832c61f45?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8N3x8cGVvbnl8ZW58MHx8MHx8fDA%3D",
+
+  // kset5 — Canines (cards 1-3 from spreadsheet; 4-5 unchanged → picsum)
+  wolf:          "https://cdn.pixabay.com/photo/2016/04/18/10/17/wolf-1336229_640.jpg",
+  fox:           "https://t4.ftcdn.net/jpg/01/81/60/47/360_F_181604787_JeMY8mvSvANDxNjtBv8GaA8nRQGDm7Vv.jpg",
+  coyote:        "https://t4.ftcdn.net/jpg/00/04/83/45/360_F_4834578_JYZUDUdxWY7dZpCtj9ZZD705xLrMkkit.jpg",
+
   // Set 23 — Synonyms for Small: noPhoto:true in curriculum, no entries here
 
   // ── MONTH 3 ─────────────────────────────────────────────────────────────
@@ -4614,7 +4657,9 @@ const WORD_PHOTO_URLS = {
   seashell:    "https://media.istockphoto.com/id/471843685/photo/ocean-shell.jpg?s=612x612&w=0&k=20&c=x5kv7MFFjNNi2sF4yICv11-BdG1PgYl4RwQEvIMKEZU=",
   wave:        "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSikLV0cngpK8txKadfz97reG7kqmybLZdVoQ&s",
   umbrella:    "https://thumbs.dreamstime.com/b/yellow-beach-umbrella-relax-sea-resort-relax-comfort-beaches-vertical-view-summer-vacations-travel-seaside-438741708.jpg",
-  towel:       "https://thumbs.dreamstime.com/b/beach-towels-2985393.jpg",
+  // "towel" → "seagull" (May 2026 content update — removes redundancy with
+  // "Objects in the House" set 8, which also has towel).
+  seagull:     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ-C35OQZ7ducTZdYJQbIiqSfdtQE-64ECl6ipoSpkjzDSKofasgQCTtIA&s=10",
 
   // ── M3 Set 16 — Environments ─────────────────────────────────────
   forest:      "https://t4.ftcdn.net/jpg/02/55/17/43/360_F_255174366_ojDuATz84e5h7lIlxh2moUJa9Kpd5wKk.jpg",
