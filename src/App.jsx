@@ -1013,7 +1013,7 @@ const RED   = "#E8192C";
 // time we ship. Format: yyyy-mm-dd-HHMM (UTC-ish; we just want monotonic).
 // If the user's screen shows an OLD version, the service worker is serving
 // stale cache — the "Force refresh" button next to it clears the SW + reloads.
-const BUILD_VERSION = "2026-05-06-0900 · m3-knowledge-overhaul+sentence-photos";
+const BUILD_VERSION = "2026-05-06-1100 · m3-knowledge-complete-facts";
 const MODEL = "claude-sonnet-4-20250514";
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 // Use local time, not UTC — otherwise late-evening sessions in negative-offset
@@ -3995,6 +3995,8 @@ const KNOWLEDGE_TITLES = {
   // Misc overrides
   trex: "T. rex",
   shiba_inu: "Shiba Inu",
+  german_shepherd: "German Shepherd",
+  rosalind_franklin: "Rosalind Franklin",
   poison_dart: "Poison Dart Frog",
   tree_frog: "Tree Frog",
   glass_frog: "Glass Frog",
@@ -4002,6 +4004,7 @@ const KNOWLEDGE_TITLES = {
   southafrica: "South Africa",
   dragonfruit: "Dragonfruit",
   cpu: "CPU",
+  computer_mouse: "Computer Mouse",
 };
 
 function titleForKnowledge(cardId, language) {
@@ -4585,6 +4588,126 @@ const WORD_PHOTO_URLS = {
   wolf:          "https://cdn.pixabay.com/photo/2016/04/18/10/17/wolf-1336229_640.jpg",
   fox:           "https://t4.ftcdn.net/jpg/01/81/60/47/360_F_181604787_JeMY8mvSvANDxNjtBv8GaA8nRQGDm7Vv.jpg",
   coyote:        "https://t4.ftcdn.net/jpg/00/04/83/45/360_F_4834578_JYZUDUdxWY7dZpCtj9ZZD705xLrMkkit.jpg",
+  jackal:        "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRtMy8IkDZjVCjhHJIsFgdTmalsJ6UhBveopQ&s",
+  dingo:         "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Dingo_%28Canis_lupus_dingo%29_Kakadu_2.jpg/1280px-Dingo_%28Canis_lupus_dingo%29_Kakadu_2.jpg",
+
+  // kset6 — Berries (M3 set, distinct from M2 berries-and-colors couplet set)
+  // strawberry/blueberry/raspberry/blackberry already declared above (used by
+  // multiple curricula); goji is M3-knowledge-only.
+  goji:          "https://media.istockphoto.com/id/171354794/photo/goji-berries.jpg?s=612x612&w=0&k=20&c=lmEGsthoEwTuY2c_LUh_lSspZp4DclDfTXcfab5k-dk=",
+
+  // kset7 — Dog Breeds 2
+  german_shepherd:"https://t3.ftcdn.net/jpg/02/41/29/52/360_F_241295223_bIfEF64ZYw15rETnhigRBNQL0qFYbe92.jpg",
+  shiba_inu:     "https://www.shutterstock.com/image-photo/adorable-shiba-inu-dog-standing-260nw-2733376383.jpg",
+  samoyed:       "https://media.istockphoto.com/id/1003652324/photo/young-happy-smiling-white-samoyed-dog-or-bjelkier-smiley-sammy-outdoor-in-green-spring-meadow.jpg?s=612x612&w=0&k=20&c=CsfjkwnnPiyIGzFz0vu_S3Y0iHtwfOLS9WVvURrtwIM=",
+  beagle:        "https://www.shutterstock.com/image-photo/cute-beagle-dog-walking-on-600nw-2630759093.jpg",
+  boxer:         "https://www.shutterstock.com/image-photo/boxer-dog-brown-white-fur-600nw-2738885721.jpg",
+
+  // kset8 — Frogs
+  tree_frog:     "https://media.istockphoto.com/id/144219155/photo/close-up-of-a-green-tree-frog-on-a-white-background.jpg?s=612x612&w=0&k=20&c=p5KispRrj3uk4b-t5MEvdNlwUFvLPu-GGOTZi_qhs8c=",
+  bullfrog:      "https://media.istockphoto.com/id/157292038/photo/fat-frog-isolated-on-white-background.jpg?s=612x612&w=0&k=20&c=DRm5laGhfRjysnJUUTuMV2HLLXvamtNYip7ZRro3xuA=",
+  poison_dart:   "https://www.shutterstock.com/image-photo/green-black-poison-dart-frog-600nw-2716232951.jpg",
+  glass_frog:    "https://media.istockphoto.com/id/1327712730/photo/glass-frog.jpg?s=612x612&w=0&k=20&c=N_BlWJTiN3iQdFYfcLsqiRx_AgK2wXgCPJzD4kN2vYc=",
+  wood_frog:     "https://www.shutterstock.com/image-photo/wood-frog-siting-sunny-spot-260nw-2595776133.jpg",
+
+  // kset9 — Dinosaurs
+  trex:          "https://cdn.pixabay.com/photo/2020/11/16/17/58/tyrannosaurus-rex-5749815_1280.png",
+  triceratops:   "https://thumbs.dreamstime.com/b/triceratops-figurine-white-background-40335089.jpg",
+  brachiosaurus: "https://t3.ftcdn.net/jpg/04/79/52/90/360_F_479529045_OfeNQquFgupywIyrSLlvOIVYHRxQYMi6.jpg",
+  velociraptor: "https://www.shutterstock.com/image-photo/photography-velociraptor-outdoor-260nw-2356029547.jpg",
+  stegosaurus:   "https://cdn.pixabay.com/photo/2026/03/03/13/22/tanrica-stegosaurus-10153471_1280.png",
+
+  // kset10 — Important Scientists (einstein already declared above)
+  newton:        "https://www.shutterstock.com/image-photo/oil-painting-artistic-image-sir-260nw-2554368541.jpg",
+  darwin:        "https://www.shutterstock.com/image-vector/charles-darwin-colored-vector-illustration-600nw-2441677253.jpg",
+  rosalind_franklin:"https://cdn.britannica.com/30/99730-050-E68F62FF/Rosalind-Franklin.jpg?w=400&h=300&c=crop",
+  hawking:       "https://thumbs.dreamstime.com/b/professor-stephen-hawking-11010808.jpg",
+
+  // kset11 — Musical Instruments 2
+  cello:         "https://thumbs.dreamstime.com/b/cool-young-man-playing-cello-music-instrument-isolated-white-background-312253231.jpg",
+  trumpet:       "https://thumbs.dreamstime.com/b/trumpet-4274921.jpg",
+  saxophone:     "https://www.shutterstock.com/image-photo/best-instruments-curved-soprano-saxophone-600nw-2537217369.jpg",
+  harp:          "https://thumbs.dreamstime.com/b/elegant-wooden-harp-golden-strings-curved-frame-musical-instrument-string-numerous-isolated-white-background-408681744.jpg",
+  banjo:         "https://www.shutterstock.com/image-photo/banjo-red-pickup-against-white-600nw-2595629997.jpg",
+
+  // kset12 — Parts of a Computer ("computer_mouse" — disambiguated from animal mouse)
+  monitor:       "https://thumbs.dreamstime.com/b/computer-monitor-11021534.jpg",
+  keyboard:      "https://thumbs.dreamstime.com/b/computer-keyboard-22996418.jpg",
+  computer_mouse:"https://www.shutterstock.com/image-photo/computer-wireless-mouse-modern-design-600nw-2730879007.jpg",
+  cpu:           "https://thumbs.dreamstime.com/b/cpu-6601757.jpg",
+  motherboard:   "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQhRvLaQDoQeSp_29td14e8ud02dxmCCrqnPQ&s",
+  jackal:        "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRtMy8IkDZjVCjhHJIsFgdTmalsJ6UhBveopQ&s",
+  dingo:         "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Dingo_%28Canis_lupus_dingo%29_Kakadu_2.jpg/1280px-Dingo_%28Canis_lupus_dingo%29_Kakadu_2.jpg",
+
+  // kset6 — Berries
+  // strawberry/blueberry/raspberry/blackberry already in WORD_PHOTO_URLS for
+  // the words-curriculum, but knowledge cards look up KNOWLEDGE_PHOTO_URLS.
+  // We add knowledge-specific photos here (different framing — close-ups).
+  // strawberry knowledge photo:
+  // (intentionally distinct from word photo; uses spreadsheet URL)
+  // Note: keys here may collide with WORD_PHOTO_URLS but the lookups are separate maps.
+
+  // kset7 — Dog Breeds 2 (card 1 changed from goldendoodle → german_shepherd)
+  german_shepherd: "https://t3.ftcdn.net/jpg/02/41/29/52/360_F_241295223_bIfEF64ZYw15rETnhigRBNQL0qFYbe92.jpg",
+  shiba_inu:      "https://www.shutterstock.com/image-photo/adorable-shiba-inu-dog-standing-260nw-2733376383.jpg",
+  samoyed:        "https://media.istockphoto.com/id/1003652324/photo/young-happy-smiling-white-samoyed-dog-or-bjelkier-smiley-sammy-outdoor-in-green-spring-meadow.jpg?s=612x612&w=0&k=20&c=CsfjkwnnPiyIGzFz0vu_S3Y0iHtwfOLS9WVvURrtwIM=",
+  beagle:         "https://www.shutterstock.com/image-photo/cute-beagle-dog-walking-on-600nw-2630759093.jpg",
+  boxer:          "https://www.shutterstock.com/image-photo/boxer-dog-brown-white-fur-600nw-2738885721.jpg",
+
+  // kset8 — Frogs
+  tree_frog:      "https://media.istockphoto.com/id/144219155/photo/close-up-of-a-green-tree-frog-on-a-white-background.jpg?s=612x612&w=0&k=20&c=p5KispRrj3uk4b-t5MEvdNlwUFvLPu-GGOTZi_qhs8c=",
+  bullfrog:       "https://media.istockphoto.com/id/157292038/photo/fat-frog-isolated-on-white-background.jpg?s=612x612&w=0&k=20&c=DRm5laGhfRjysnJUUTuMV2HLLXvamtNYip7ZRro3xuA=",
+  poison_dart:    "https://www.shutterstock.com/image-photo/green-black-poison-dart-frog-600nw-2716232951.jpg",
+  glass_frog:     "https://media.istockphoto.com/id/1327712730/photo/glass-frog.jpg?s=612x612&w=0&k=20&c=N_BlWJTiN3iQdFYfcLsqiRx_AgK2wXgCPJzD4kN2vYc=",
+  wood_frog:      "https://www.shutterstock.com/image-photo/wood-frog-siting-sunny-spot-260nw-2595776133.jpg",
+
+  // kset9 — Dinosaurs
+  trex:           "https://cdn.pixabay.com/photo/2020/11/16/17/58/tyrannosaurus-rex-5749815_1280.png",
+  triceratops:    "https://thumbs.dreamstime.com/b/triceratops-figurine-white-background-40335089.jpg",
+  brachiosaurus:  "https://t3.ftcdn.net/jpg/04/79/52/90/360_F_479529045_OfeNQquFgupywIyrSLlvOIVYHRxQYMi6.jpg",
+  velociraptor:   "https://www.shutterstock.com/image-photo/photography-velociraptor-outdoor-260nw-2356029547.jpg",
+  // Note: spreadsheet stegosaurus URL has "2026" in the path — that's a future
+  // dated CDN slug from Pixabay's URL scheme (not a typo on my end).
+  stegosaurus:    "https://cdn.pixabay.com/photo/2026/03/03/13/22/tanrica-stegosaurus-10153471_1280.png",
+
+  // kset10 — Important Scientists (card 4 changed: curie → rosalind_franklin)
+  // einstein: already exists at line ~4102 — keep that one
+  newton:           "https://www.shutterstock.com/image-photo/oil-painting-artistic-image-sir-260nw-2554368541.jpg",
+  darwin:           "https://www.shutterstock.com/image-vector/charles-darwin-colored-vector-illustration-600nw-2441677253.jpg",
+  rosalind_franklin:"https://cdn.britannica.com/30/99730-050-E68F62FF/Rosalind-Franklin.jpg?w=400&h=300&c=crop",
+  hawking:          "https://thumbs.dreamstime.com/b/professor-stephen-hawking-11010808.jpg",
+
+  // kset11 — Musical Instruments 2
+  cello:          "https://thumbs.dreamstime.com/b/cool-young-man-playing-cello-music-instrument-isolated-white-background-312253231.jpg",
+  trumpet:        "https://thumbs.dreamstime.com/b/trumpet-4274921.jpg",
+  saxophone:      "https://www.shutterstock.com/image-photo/best-instruments-curved-soprano-saxophone-600nw-2537217369.jpg",
+  harp:           "https://thumbs.dreamstime.com/b/elegant-wooden-harp-golden-strings-curved-frame-musical-instrument-string-numerous-isolated-white-background-408681744.jpg",
+  banjo:          "https://www.shutterstock.com/image-photo/banjo-red-pickup-against-white-600nw-2595629997.jpg",
+
+  // kset12 — Parts of a Computer
+  monitor:        "https://thumbs.dreamstime.com/b/computer-monitor-11021534.jpg",
+  keyboard:       "https://thumbs.dreamstime.com/b/computer-keyboard-22996418.jpg",
+  // "mouse" (computer) shares the key with "mouse" (animal in WORD_PHOTO_URLS).
+  // KNOWLEDGE_PHOTO_URLS is its own map so no collision — this one is the
+  // computer mouse for the knowledge curriculum.
+  mouse:          "https://www.shutterstock.com/image-photo/computer-wireless-mouse-modern-design-600nw-2730879007.jpg",
+  cpu:            "https://thumbs.dreamstime.com/b/cpu-6601757.jpg",
+  motherboard:    "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQhRvLaQDoQeSp_29td14e8ud02dxmCCrqnPQ&s",
+
+  // Berries — knowledge map (separate from words map). These are the SAME
+  // URLs as the spreadsheet for clean visual matching across curricula.
+  // (strawberry/blueberry would clash with words map keys, but we're in
+  // KNOWLEDGE_PHOTO_URLS here so it's a separate lookup.)
+
+  // kset6 — Berries (using spreadsheet URLs)
+  // Note: Some keys (strawberry, blueberry, raspberry, blackberry) also exist
+  // in WORD_PHOTO_URLS for the words-curriculum berries set in M3. These
+  // KNOWLEDGE entries take precedence for knowledge cards (separate map).
+  strawberry:     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRzuu9QPFmtFMGK4sMLqZ89vrwnWdO9ADmX6w&s",
+  blueberry:      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRo3DS5V1DB2x0tB8um_vljgPfBfV3HJBQp7A&s",
+  raspberry:      "https://media.istockphoto.com/id/648967314/photo/raspberry-with-leaves-isolated-on-white-background.jpg?s=612x612&w=0&k=20&c=tv_hnCyZYtY-RoUI-Mm875oMlcsF7toRjOp0lHYGVGc=",
+  blackberry:     "https://media.istockphoto.com/id/173612468/photo/close-up-of-two-fresh-blackberry-with-leaves.jpg?s=612x612&w=0&k=20&c=Y9S5D76RtxS-at46xvOxHnlwpanj7zMlamAoAxe0afA=",
+  goji:           "https://media.istockphoto.com/id/171354794/photo/goji-berries.jpg?s=612x612&w=0&k=20&c=lmEGsthoEwTuY2c_LUh_lSspZp4DclDfTXcfab5k-dk=",
 
   // Set 23 — Synonyms for Small: noPhoto:true in curriculum, no entries here
 

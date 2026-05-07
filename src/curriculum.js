@@ -3201,57 +3201,214 @@ export const KNOWLEDGE_MONTH3 = [
       "Coyotes can run very fast.",
       "Coyotes live in many places.",
     ]},
-    { id:"jackal", photoSeed:"jackal", facts:[null,null,null] },
-    { id:"dingo", photoSeed:"dingo", facts:[null,null,null] },
+    { id:"jackal", photoSeed:"jackal", facts:[
+      "Jackals are wild dogs from Africa.",
+      "Jackals hunt in pairs.",
+      "Jackals have long, strong legs.",
+    ]},
+    { id:"dingo", photoSeed:"dingo", facts:[
+      "Dingoes are wild dogs from Australia.",
+      "Dingoes have golden-brown fur.",
+      "Dingoes are good hunters.",
+    ]},
   ]},
+  // ── Set 6: Berries ──
   { id:"kset6-berries", name:"Berries", items:[
-    { id:"strawberry", photoSeed:"strawberry", facts:[null,null,null] },
-    { id:"blueberry", photoSeed:"blueberry", facts:[null,null,null] },
-    { id:"raspberry", photoSeed:"raspberry", facts:[null,null,null] },
-    { id:"blackberry", photoSeed:"blackberry", facts:[null,null,null] },
-    { id:"goji", photoSeed:"goji", facts:[null,null,null] },
+    { id:"strawberry", photoSeed:"strawberry", facts:[
+      "Strawberries are sweet and red.",
+      "They have tiny seeds on the outside.",
+      "Strawberries grow close to the ground.",
+    ]},
+    { id:"blueberry", photoSeed:"blueberry", facts:[
+      "Blueberries are small and round.",
+      "They are blue and sweet.",
+      "Blueberries grow on bushes.",
+    ]},
+    { id:"raspberry", photoSeed:"raspberry", facts:[
+      "Raspberries are bumpy and red.",
+      "They taste sweet and a little tart.",
+      "Raspberries grow on prickly bushes.",
+    ]},
+    { id:"blackberry", photoSeed:"blackberry", facts:[
+      "Blackberries are dark and shiny.",
+      "They are sweet when ripe.",
+      "Blackberries grow on thorny vines.",
+    ]},
+    { id:"goji", photoSeed:"goji", facts:[
+      "Goji berries are red and sweet.",
+      "They come from China.",
+      "People dry goji berries to eat them.",
+    ]},
   ]},
+  // ── Set 7: Dog Breeds 2 ──
+  // Card 1 changed from goldendoodle → german_shepherd.
   { id:"kset7-dog-breeds-2", name:"Dog Breeds 2", items:[
-    { id:"goldendoodle", photoSeed:"goldendoodle", facts:[null,null,null] },
-    { id:"shiba_inu", photoSeed:"shiba_inu", facts:[null,null,null] },
-    { id:"samoyed", photoSeed:"samoyed", facts:[null,null,null] },
-    { id:"beagle", photoSeed:"beagle", facts:[null,null,null] },
-    { id:"boxer", photoSeed:"boxer", facts:[null,null,null] },
+    { id:"german_shepherd", photoSeed:"german_shepherd", facts:[
+      "German Shepherds are smart and strong.",
+      "They are often working dogs.",
+      "They have pointed ears.",
+    ]},
+    { id:"shiba_inu", photoSeed:"shiba_inu", facts:[
+      "Shiba Inus come from Japan.",
+      "They have curly tails.",
+      "Shiba Inus are small and clever.",
+    ]},
+    { id:"samoyed", photoSeed:"samoyed", facts:[
+      "Samoyeds have fluffy white fur.",
+      "They look like they are smiling.",
+      "Samoyeds love cold weather.",
+    ]},
+    { id:"beagle", photoSeed:"beagle", facts:[
+      "Beagles have long floppy ears.",
+      "They have a great sense of smell.",
+      "Beagles are friendly and playful.",
+    ]},
+    { id:"boxer", photoSeed:"boxer", facts:[
+      "Boxers are strong and muscular.",
+      "They are very loyal to their family.",
+      "Boxers love to play.",
+    ]},
   ]},
+  // ── Set 8: Frogs ──
   { id:"kset8-frogs", name:"Frogs", items:[
-    { id:"tree_frog", photoSeed:"tree_frog", facts:[null,null,null] },
-    { id:"bullfrog", photoSeed:"bullfrog", facts:[null,null,null] },
-    { id:"poison_dart", photoSeed:"poison_dart", facts:[null,null,null] },
-    { id:"glass_frog", photoSeed:"glass_frog", facts:[null,null,null] },
-    { id:"wood_frog", photoSeed:"wood_frog", facts:[null,null,null] },
+    { id:"tree_frog", photoSeed:"tree_frog", facts:[
+      "Tree frogs live up in trees.",
+      "Their toes have sticky pads.",
+      "Tree frogs are usually green.",
+    ]},
+    { id:"bullfrog", photoSeed:"bullfrog", facts:[
+      "Bullfrogs are big and loud.",
+      "Their croak sounds like a bull.",
+      "Bullfrogs live near ponds.",
+    ]},
+    { id:"poison_dart", photoSeed:"poison_dart", facts:[
+      "Poison dart frogs are very colorful.",
+      "Their bright colors warn other animals.",
+      "They live in rainforests.",
+    ]},
+    { id:"glass_frog", photoSeed:"glass_frog", facts:[
+      "Glass frogs have see-through skin.",
+      "You can see their tiny hearts.",
+      "Glass frogs live in Central America.",
+    ]},
+    { id:"wood_frog", photoSeed:"wood_frog", facts:[
+      "Wood frogs live in forests.",
+      "They can survive being frozen.",
+      "Wood frogs have brown skin.",
+    ]},
   ]},
+  // ── Set 9: Dinosaurs ──
   { id:"kset9-dinosaurs", name:"Dinosaurs", items:[
-    { id:"trex", photoSeed:"trex", facts:[null,null,null] },
-    { id:"triceratops", photoSeed:"triceratops", facts:[null,null,null] },
-    { id:"brachiosaurus", photoSeed:"brachiosaurus", facts:[null,null,null] },
-    { id:"velociraptor", photoSeed:"velociraptor", facts:[null,null,null] },
-    { id:"stegosaurus", photoSeed:"stegosaurus", facts:[null,null,null] },
+    { id:"trex", photoSeed:"trex", facts:[
+      "T. rex was a huge dinosaur.",
+      "It had sharp teeth and tiny arms.",
+      "T. rex lived millions of years ago.",
+    ]},
+    { id:"triceratops", photoSeed:"triceratops", facts:[
+      "Triceratops had three big horns.",
+      "It had a frill around its head.",
+      "Triceratops ate plants.",
+    ]},
+    { id:"brachiosaurus", photoSeed:"brachiosaurus", facts:[
+      "Brachiosaurus had a very long neck.",
+      "It was as tall as a building.",
+      "Brachiosaurus ate leaves from tall trees.",
+    ]},
+    { id:"velociraptor", photoSeed:"velociraptor", facts:[
+      "Velociraptors were small and fast.",
+      "They had sharp claws.",
+      "Velociraptors hunted in groups.",
+    ]},
+    { id:"stegosaurus", photoSeed:"stegosaurus", facts:[
+      "Stegosaurus had bony plates on its back.",
+      "Its tail had sharp spikes.",
+      "Stegosaurus ate plants.",
+    ]},
   ]},
+  // ── Set 10: Important Scientists ──
+  // Card 4 changed from "newton2" → rosalind_franklin (Olivia's update May 2026).
   { id:"kset10-important-scientists", name:"Important Scientists", items:[
-    { id:"einstein", photoSeed:"einstein", facts:[null,null,null] },
-    { id:"newton", photoSeed:"newton", facts:[null,null,null] },
-    { id:"darwin", photoSeed:"darwin", facts:[null,null,null] },
-    { id:"curie", photoSeed:"curie", facts:[null,null,null] },
-    { id:"hawking", photoSeed:"hawking", facts:[null,null,null] },
+    { id:"einstein", photoSeed:"einstein", facts:[
+      "Einstein was a famous scientist.",
+      "He came up with new ideas about time and space.",
+      "Einstein won a big prize for science.",
+    ]},
+    { id:"newton", photoSeed:"newton", facts:[
+      "Newton studied how things move.",
+      "He learned why apples fall down.",
+      "Newton lived a very long time ago.",
+    ]},
+    { id:"darwin", photoSeed:"darwin", facts:[
+      "Darwin studied animals and plants.",
+      "He sailed around the world on a ship.",
+      "Darwin learned how living things change over time.",
+    ]},
+    { id:"rosalind_franklin", photoSeed:"rosalind_franklin", facts:[
+      "Rosalind Franklin was a brilliant scientist.",
+      "She used special pictures to study DNA.",
+      "Her work helped us understand life.",
+    ]},
+    { id:"hawking", photoSeed:"hawking", facts:[
+      "Hawking studied black holes in space.",
+      "He used a computer to help him talk.",
+      "Hawking wrote books about the universe.",
+    ]},
   ]},
+  // ── Set 11: Musical Instruments 2 ──
   { id:"kset11-musical-instruments-2", name:"Musical Instruments 2", items:[
-    { id:"cello", photoSeed:"cello", facts:[null,null,null] },
-    { id:"trumpet", photoSeed:"trumpet", facts:[null,null,null] },
-    { id:"saxophone", photoSeed:"saxophone", facts:[null,null,null] },
-    { id:"harp", photoSeed:"harp", facts:[null,null,null] },
-    { id:"banjo", photoSeed:"banjo", facts:[null,null,null] },
+    { id:"cello", photoSeed:"cello", facts:[
+      "The cello is a big string instrument.",
+      "You play it with a bow.",
+      "Cellos make deep, warm sounds.",
+    ]},
+    { id:"trumpet", photoSeed:"trumpet", facts:[
+      "Trumpets are shiny and gold.",
+      "You blow into a trumpet to play it.",
+      "Trumpets sound bright and loud.",
+    ]},
+    { id:"saxophone", photoSeed:"saxophone", facts:[
+      "Saxophones are curvy and golden.",
+      "Players blow into a reed.",
+      "Saxophones are used in jazz music.",
+    ]},
+    { id:"harp", photoSeed:"harp", facts:[
+      "Harps are tall with many strings.",
+      "Players pluck the strings with their fingers.",
+      "Harps sound gentle and dreamy.",
+    ]},
+    { id:"banjo", photoSeed:"banjo", facts:[
+      "Banjos have a round body.",
+      "They have four or five strings.",
+      "Banjos are used in country music.",
+    ]},
   ]},
+  // ── Set 12: Parts of a Computer ──
   { id:"kset12-parts-of-a-computer", name:"Parts of a Computer", items:[
-    { id:"monitor", photoSeed:"monitor", facts:[null,null,null] },
-    { id:"keyboard", photoSeed:"keyboard", facts:[null,null,null] },
-    { id:"mouse", photoSeed:"mouse", facts:[null,null,null] },
-    { id:"cpu", photoSeed:"cpu", facts:[null,null,null] },
-    { id:"motherboard", photoSeed:"motherboard", facts:[null,null,null] },
+    { id:"monitor", photoSeed:"monitor", facts:[
+      "A monitor shows pictures and words.",
+      "It looks like a TV screen.",
+      "We look at the monitor when we use a computer.",
+    ]},
+    { id:"keyboard", photoSeed:"keyboard", facts:[
+      "A keyboard has many letter keys.",
+      "We press the keys to type words.",
+      "Keyboards have buttons for numbers too.",
+    ]},
+    { id:"computer_mouse", photoSeed:"computer_mouse", facts:[
+      "A computer mouse helps us click things.",
+      "We move it with our hand.",
+      "It is named after the small animal.",
+    ]},
+    { id:"cpu", photoSeed:"cpu", facts:[
+      "The CPU is the computer's brain.",
+      "It thinks and does math very fast.",
+      "Without a CPU, a computer can't work.",
+    ]},
+    { id:"motherboard", photoSeed:"motherboard", facts:[
+      "The motherboard connects all the parts.",
+      "It is the largest board inside a computer.",
+      "Tiny wires move information across it.",
+    ]},
   ]},
 ];
 
