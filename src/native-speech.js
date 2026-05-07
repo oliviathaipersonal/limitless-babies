@@ -21,9 +21,18 @@
 // dynamic so the PWA bundle doesn't bloat with native-only code that the
 // browser can never use.
 
+// Capacitor TTS plugin — statically imported. The plugin is safe to bundle
+// even for the web build because it's just JavaScript that detects whether
+// it's running in a Capacitor shell internally; on web, calls are no-ops.
+// Earlier we tried a dynamic import with @vite-ignore so the web bundle
+// wouldn't include the plugin, but Vite/Rollup stripped the import anyway,
+// causing it to fail to load at runtime in the iOS WebView. Static import
+// is more robust — Vite handles the resolution at build time.
+import { TextToSpeech } from "@capacitor-community/text-to-speech";
+
 let _capacitorChecked = false;
 let _isNative = false;
-let _nativeTTS = null;       // dynamically-loaded plugin instance
+let _nativeTTS = null;       // statically-loaded plugin
 let _nativeVoices = [];      // cache of native voice list (loaded once)
 
 // One-time check: are we running inside a Capacitor native shell?
@@ -35,31 +44,55 @@ let _nativeVoices = [];      // cache of native voice list (loaded once)
 // (it won't be in node_modules until step 2 of the TestFlight setup).
 // At runtime in the browser, isNativePlatform() returns false and the
 // import is never attempted — so the missing package never matters.
+// Diagnostic state — exposed via getNativeDiagnostics() so the AudioTestPanel
+// can show parents (and us) what's actually happening with the native bridge.
+// When something goes wrong, we can read the error message instead of having
+// it silently swallowed by the catch blocks.
+let _diagnostics = {
+  capacitorDetected: false,
+  isNativePlatform: false,
+  pluginImported: false,
+  pluginImportError: null,
+  voicesQueried: false,
+  voicesQueryError: null,
+  voiceCount: 0,
+};
+
 async function detectAndLoadNative() {
   if (_capacitorChecked) return _isNative;
   _capacitorChecked = true;
   try {
     const cap = (typeof window !== "undefined") ? window.Capacitor : null;
+    _diagnostics.capacitorDetected = !!cap;
     if (cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform()) {
       _isNative = true;
-      // Lazy-load the TTS plugin only when we know we need it. The
-      // /* @vite-ignore */ comment tells Vite not to try to resolve
-      // this dependency at build time — it's only present at runtime
-      // inside the Capacitor iOS shell where we DO have the package.
-      const mod = await import(/* @vite-ignore */ "@capacitor-community/text-to-speech");
-      _nativeTTS = mod.TextToSpeech;
-      // Pre-load the voice list so language matching is fast
+      _diagnostics.isNativePlatform = true;
+      // Static import — TextToSpeech imported at top of file. On web it's
+      // a no-op stub; on native it bridges to AVSpeechSynthesizer.
+      _nativeTTS = TextToSpeech;
+      _diagnostics.pluginImported = true;
       try {
         const result = await _nativeTTS.getSupportedVoices();
         _nativeVoices = result?.voices || [];
-      } catch {
+        _diagnostics.voicesQueried = true;
+        _diagnostics.voiceCount = _nativeVoices.length;
+      } catch (queryErr) {
+        _diagnostics.voicesQueryError = String(queryErr?.message || queryErr);
         _nativeVoices = [];
       }
     }
-  } catch {
+  } catch (outerErr) {
+    _diagnostics.pluginImportError = "outer: " + String(outerErr?.message || outerErr);
     _isNative = false;
   }
   return _isNative;
+}
+
+// Returns the diagnostic state object. Useful for displaying errors and
+// debugging the native bridge in the AudioTestPanel.
+export async function getNativeDiagnostics() {
+  await detectionPromise;
+  return { ..._diagnostics };
 }
 
 // Kick off detection on module load. This is fire-and-forget — the first
@@ -88,12 +121,25 @@ export async function isNativePlatform() {
   return _isNative;
 }
 
-// Synchronous variant — returns the cached value. Safe to call after the
-// app has been running for a moment (which it always has by the time
-// speech is invoked from a session). Used in render paths where async
-// would be awkward.
+// Synchronous variant — returns true if running inside Capacitor native shell.
+// Reads window.Capacitor directly (not the cached _isNative) so that the
+// answer is correct from the very first call, before async TTS plugin
+// loading has completed. This is what speak() checks to decide whether to
+// route through the native bridge or fall back to Web Speech.
+//
+// The first few calls may return true here but find _nativeTTS is still
+// null (because the dynamic plugin import is still in flight). The
+// speakBridge function handles that case gracefully — it awaits the
+// detection promise before invoking the plugin, so a slightly-late
+// utterance is queued correctly rather than silently dropped.
 export function isNativePlatformSync() {
-  return _isNative;
+  try {
+    const cap = (typeof window !== "undefined") ? window.Capacitor : null;
+    if (cap && typeof cap.isNativePlatform === "function") {
+      return cap.isNativePlatform();
+    }
+  } catch {}
+  return false;
 }
 
 // Pick the best native voice for a given BCP-47 language tag. The plugin's
